@@ -860,6 +860,7 @@ test('Final Exam sits between Chapter 9 and Module 1 and respects the separate F
   within(entry).getByText('Optional for Admins. You can take it without passing Chapter 9.')
 })
 
+// Twenty sequential selections across 80 bilingual controls can exceed 5s on a shared CI runner.
 test('the final exam shows twenty bilingual questions, grades at 16, and preserves a pass on a failed retake', async () => {
   const state = world()
   const exam = { ...quiz(0), category: 'Final Exam', total: 20, pass_mark: 16,
@@ -880,7 +881,7 @@ test('the final exam shows twenty bilingual questions, grades at 16, and preserv
   screen.getByText(/15 of 20 correct this time/)
   expect(screen.queryByText(/next chapter is unlocked/i)).toBeNull()
   expect(screen.getByText(/Your earlier pass still counts/)).toBeTruthy()
-})
+}, 15_000)
 
 test('admin progress shows the final score separately from the nine chapter passes', async () => {
   const person: TrainingPerson = { email: 'learner@example.invalid', name: 'Learner', role: 'reader', percent: 100,
