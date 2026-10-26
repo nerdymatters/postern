@@ -1,0 +1,1 @@
+date,time,timezone,city,state,network_type,isp_or_carrier,device,browser,vpn_if_any,site_or_version,video_title,first_frame_seconds,viewing_seconds,unexpected_stall_count,total_stall_seconds,stall_video_positions,forward_seek_resume_seconds,backward_seek_resume_seconds,progress_updated,errors_or_notes

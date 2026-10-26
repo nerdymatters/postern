@@ -1,0 +1,87 @@
+@import "tailwindcss";
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root {
+  color-scheme: light;
+  --page: #f4f4f2;
+  --surface: #ffffff;
+  --text: #171717;
+  --control-border: rgb(23 23 23 / 10%);
+  --control-hover: rgb(23 23 23 / 4%);
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #171717;
+  --text: #f5f5f5;
+  --control-border: rgb(255 255 255 / 15%);
+  --control-hover: rgb(255 255 255 / 5%);
+}
+html, body, #root { min-height: 100%; }
+body { background-color: var(--page); color: var(--text); }
+
+/* Shared header controls, based on Guest CRM's outlined theme button. */
+.header-action {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: var(--surface);
+  color: var(--text);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.header-action:hover { background: var(--control-hover); }
+.header-action:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+@media (min-width: 640px) {
+  .header-action { width: auto; height: 36px; padding: 6px 12px; }
+}
+
+/* Viewer hardening: no long-press "Save Image", no selection handles over a page. */
+.protected {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Keep English subtitles readable on narrow video players as well as desktop. */
+video::cue {
+  font-size: clamp(14px, 1.5vw, 24px);
+}
+
+/* Badges: a new medal pops in under a short confetti burst; readers who prefer reduced motion get neither. */
+@keyframes medal-pop {
+  0% { transform: scale(.3) rotate(-14deg); opacity: 0; }
+  65% { transform: scale(1.1) rotate(4deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); }
+}
+.medal-pop { animation: medal-pop .8s cubic-bezier(.2, .9, .3, 1.2) both; transform-origin: 50% 40%; }
+@keyframes confetti-fall {
+  from { transform: translate3d(0, -12px, 0) rotate(0); opacity: 1; }
+  to { transform: translate3d(var(--drift), 260px, 0) rotate(var(--spin)); opacity: 0; }
+}
+.confetti-piece {
+  position: absolute; top: 0; width: 7px; height: 11px; border-radius: 2px; opacity: 0;
+  animation: confetti-fall 1.8s cubic-bezier(.25, .6, .4, 1) var(--delay) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .medal-pop { animation: none; }
+  .confetti { display: none; }
+}
+
+/* Certificates print alone, on one landscape page, in their own colours. */
+.print-root { display: none; }
+@media print {
+  /* Sized from the page through percentages: WebKit (Safari, every iPhone browser) measures vh from the window when printing. */
+  html:has(> body > .print-root), body:has(> .print-root) { height: 100%; }
+  body:has(> .print-root) { background: #fff; }
+  body:has(> .print-root) > :not(.print-root) { display: none !important; }
+  .print-root { display: block; height: calc(100% - 2px); padding: 0.3in; break-inside: avoid; }
+  .print-root, .print-root * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

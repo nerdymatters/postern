@@ -1,0 +1,63 @@
+Postern
+Copyright (c) 2026 Chirayu (Kong) Wongchokprasitti
+https://github.com/nerdymatters/postern
+
+First-party source code, documentation and fictional sample training are
+available under MIT OR Apache-2.0. See LICENSE, LICENSE-MIT and LICENSE-APACHE.
+This NOTICE is informational and does not modify those licenses.
+
+Third-party material
+--------------------
+
+React, React DOM and Scheduler
+Copyright (c) Meta Platforms, Inc. and affiliates.
+https://github.com/facebook/react
+MIT; full notice: docs/licenses/REACT-MIT.txt.
+
+Tailwind CSS
+Copyright (c) Tailwind Labs, Inc.
+https://github.com/tailwindlabs/tailwindcss
+MIT; full notice: docs/licenses/TAILWIND-MIT.txt.
+
+Vite
+Copyright (c) 2019-present, VoidZero Inc. and Vite contributors
+https://github.com/vitejs/vite
+MIT; full core notice: docs/licenses/VITE-MIT.txt. Postern distributes the
+generated web application, including Vite's module-preload helper, rather
+than the Vite development server or its bundled build dependencies.
+
+Lucide and Feather icons
+Copyright (c) 2026 Lucide Icons and Contributors
+Copyright (c) 2013-present Cole Bemis
+https://github.com/lucide-icons/lucide
+ISC and MIT, as identified in docs/licenses/LUCIDE-LICENSE.txt.
+The theme controls and Postern UI icon set include adapted Lucide/Feather
+forms. Postern changes paths and proportions in the UI components and SVG
+exports. These functional icons are not restricted Postern brand artwork.
+
+Outfit
+Copyright 2021 The Outfit Project Authors
+https://github.com/Outfitio/Outfit-Fonts
+SIL Open Font License 1.1; source-font license: docs/licenses/OUTFIT-OFL.txt.
+The Postern wordmark uses outlined Outfit SemiBold lettering with a redrawn
+final letter. No Outfit font file is bundled. This is artwork made using the
+font, not a redistributed font. The Postern brand policy applies to the
+resulting Postern artwork, not to the Outfit font or its authors' rights.
+
+YuNet face-detection model
+Copyright (c) 2020 Shiqi Yu <shiqi.yu@gmail.com>
+https://github.com/opencv/opencv_zoo
+MIT; full notice: postern/models/YUNET-LICENSE.txt.
+The pinned model's source revision and checksum are in postern/models/README.md.
+
+NASA test photograph
+The face-detection test fixture is a crop of a NASA portrait of Eileen Collins,
+obtained from scikit-image's public-domain astronaut image. Provenance and
+modifications are described in tests/fixtures/README.md. Its inclusion is not
+an endorsement by NASA or the person pictured.
+
+The web distribution carries its applicable notices at
+dashboard/web/public/third-party-licenses.txt (served as /third-party-licenses.txt).
+Other dependencies installed by package managers retain the license files in
+their distributions. Python, macOS, FFmpeg and Poppler are not included in
+Postern's source-and-web pilot bundle.

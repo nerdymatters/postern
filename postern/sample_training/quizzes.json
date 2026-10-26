@@ -1,0 +1,3829 @@
+{
+  "chapters": [
+    {
+      "chapter": 1,
+      "questions": [
+        {
+          "id": "sample-c1q1",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 1, the practice map assigns book returns to the Willow desk. Which desk should a visitor use for book returns?",
+            "th": "ในห้องฝึกที่ 1 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับการคืนหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการคืนหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 1 names the Willow desk for book returns. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 1 กำหนดโต๊ะวิลโลว์ไว้สำหรับการคืนหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c1q2",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 1, the practice map assigns map collection to the Sycamore desk. Which desk should a visitor use for map collection?",
+            "th": "ในห้องฝึกที่ 1 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับการรับแผนที่ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการรับแผนที่"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 1 names the Sycamore desk for map collection. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 1 กำหนดโต๊ะซิคามอร์ไว้สำหรับการรับแผนที่ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c1q3",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 1, the practice map assigns pencil borrowing to the Oak desk. Which desk should a visitor use for pencil borrowing?",
+            "th": "ในห้องฝึกที่ 1 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับการยืมดินสอ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการยืมดินสอ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 1 names the Oak desk for pencil borrowing. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 1 กำหนดโต๊ะโอ๊กไว้สำหรับการยืมดินสอ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c1q4",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 1, the practice map assigns bookmark making to the Birch desk. Which desk should a visitor use for bookmark making?",
+            "th": "ในห้องฝึกที่ 1 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับการทำที่คั่นหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการทำที่คั่นหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "b",
+          "explanation": {
+            "en": "The practice map for room 1 names the Birch desk for bookmark making. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 1 กำหนดโต๊ะเบิร์ชไว้สำหรับการทำที่คั่นหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c1q5",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 1, the practice map assigns story cards to the Willow desk. Which desk should a visitor use for story cards?",
+            "th": "ในห้องฝึกที่ 1 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับบัตรเรื่องเล่า ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับบัตรเรื่องเล่า"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 1 names the Willow desk for story cards. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 1 กำหนดโต๊ะวิลโลว์ไว้สำหรับบัตรเรื่องเล่า เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c1q6",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 1, the practice map assigns puzzle storage to the Sycamore desk. Which desk should a visitor use for puzzle storage?",
+            "th": "ในห้องฝึกที่ 1 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับการเก็บเกมปริศนา ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการเก็บเกมปริศนา"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 1 names the Sycamore desk for puzzle storage. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 1 กำหนดโต๊ะซิคามอร์ไว้สำหรับการเก็บเกมปริศนา เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c1q7",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 1, the practice map assigns paper sorting to the Oak desk. Which desk should a visitor use for paper sorting?",
+            "th": "ในห้องฝึกที่ 1 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับการแยกกระดาษ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการแยกกระดาษ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 1 names the Oak desk for paper sorting. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 1 กำหนดโต๊ะโอ๊กไว้สำหรับการแยกกระดาษ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c1q8",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 1, the practice map assigns drawing supplies to the Birch desk. Which desk should a visitor use for drawing supplies?",
+            "th": "ในห้องฝึกที่ 1 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับอุปกรณ์วาดรูป ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับอุปกรณ์วาดรูป"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 1 names the Birch desk for drawing supplies. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 1 กำหนดโต๊ะเบิร์ชไว้สำหรับอุปกรณ์วาดรูป เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c1q9",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 1, the practice map assigns reading cushions to the Willow desk. Which desk should a visitor use for reading cushions?",
+            "th": "ในห้องฝึกที่ 1 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับเบาะนั่งอ่านหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับเบาะนั่งอ่านหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 1 names the Willow desk for reading cushions. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 1 กำหนดโต๊ะวิลโลว์ไว้สำหรับเบาะนั่งอ่านหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c1q10",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 1, the practice map assigns club notebooks to the Sycamore desk. Which desk should a visitor use for club notebooks?",
+            "th": "ในห้องฝึกที่ 1 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับสมุดของชมรม ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับสมุดของชมรม"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 1 names the Sycamore desk for club notebooks. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 1 กำหนดโต๊ะซิคามอร์ไว้สำหรับสมุดของชมรม เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c1q11",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 1, the practice map assigns visitor badges to the Oak desk. Which desk should a visitor use for visitor badges?",
+            "th": "ในห้องฝึกที่ 1 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับป้ายผู้เยี่ยมชม ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับป้ายผู้เยี่ยมชม"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 1 names the Oak desk for visitor badges. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 1 กำหนดโต๊ะโอ๊กไว้สำหรับป้ายผู้เยี่ยมชม เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c1q12",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 1, the practice map assigns suggestion cards to the Birch desk. Which desk should a visitor use for suggestion cards?",
+            "th": "ในห้องฝึกที่ 1 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับบัตรข้อเสนอแนะ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับบัตรข้อเสนอแนะ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 1 names the Birch desk for suggestion cards. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 1 กำหนดโต๊ะเบิร์ชไว้สำหรับบัตรข้อเสนอแนะ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        }
+      ]
+    },
+    {
+      "chapter": 2,
+      "questions": [
+        {
+          "id": "sample-c2q1",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 2, the practice map assigns book returns to the Sycamore desk. Which desk should a visitor use for book returns?",
+            "th": "ในห้องฝึกที่ 2 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับการคืนหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการคืนหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 2 names the Sycamore desk for book returns. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 2 กำหนดโต๊ะซิคามอร์ไว้สำหรับการคืนหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c2q2",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 2, the practice map assigns map collection to the Oak desk. Which desk should a visitor use for map collection?",
+            "th": "ในห้องฝึกที่ 2 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับการรับแผนที่ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการรับแผนที่"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "b",
+          "explanation": {
+            "en": "The practice map for room 2 names the Oak desk for map collection. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 2 กำหนดโต๊ะโอ๊กไว้สำหรับการรับแผนที่ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c2q3",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 2, the practice map assigns pencil borrowing to the Birch desk. Which desk should a visitor use for pencil borrowing?",
+            "th": "ในห้องฝึกที่ 2 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับการยืมดินสอ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการยืมดินสอ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 2 names the Birch desk for pencil borrowing. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 2 กำหนดโต๊ะเบิร์ชไว้สำหรับการยืมดินสอ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c2q4",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 2, the practice map assigns bookmark making to the Willow desk. Which desk should a visitor use for bookmark making?",
+            "th": "ในห้องฝึกที่ 2 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับการทำที่คั่นหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการทำที่คั่นหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            }
+          ],
+          "answer": "b",
+          "explanation": {
+            "en": "The practice map for room 2 names the Willow desk for bookmark making. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 2 กำหนดโต๊ะวิลโลว์ไว้สำหรับการทำที่คั่นหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c2q5",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 2, the practice map assigns story cards to the Sycamore desk. Which desk should a visitor use for story cards?",
+            "th": "ในห้องฝึกที่ 2 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับบัตรเรื่องเล่า ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับบัตรเรื่องเล่า"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 2 names the Sycamore desk for story cards. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 2 กำหนดโต๊ะซิคามอร์ไว้สำหรับบัตรเรื่องเล่า เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c2q6",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 2, the practice map assigns puzzle storage to the Oak desk. Which desk should a visitor use for puzzle storage?",
+            "th": "ในห้องฝึกที่ 2 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับการเก็บเกมปริศนา ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการเก็บเกมปริศนา"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "b",
+          "explanation": {
+            "en": "The practice map for room 2 names the Oak desk for puzzle storage. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 2 กำหนดโต๊ะโอ๊กไว้สำหรับการเก็บเกมปริศนา เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c2q7",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 2, the practice map assigns paper sorting to the Birch desk. Which desk should a visitor use for paper sorting?",
+            "th": "ในห้องฝึกที่ 2 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับการแยกกระดาษ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการแยกกระดาษ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            }
+          ],
+          "answer": "b",
+          "explanation": {
+            "en": "The practice map for room 2 names the Birch desk for paper sorting. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 2 กำหนดโต๊ะเบิร์ชไว้สำหรับการแยกกระดาษ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c2q8",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 2, the practice map assigns drawing supplies to the Willow desk. Which desk should a visitor use for drawing supplies?",
+            "th": "ในห้องฝึกที่ 2 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับอุปกรณ์วาดรูป ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับอุปกรณ์วาดรูป"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 2 names the Willow desk for drawing supplies. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 2 กำหนดโต๊ะวิลโลว์ไว้สำหรับอุปกรณ์วาดรูป เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c2q9",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 2, the practice map assigns reading cushions to the Sycamore desk. Which desk should a visitor use for reading cushions?",
+            "th": "ในห้องฝึกที่ 2 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับเบาะนั่งอ่านหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับเบาะนั่งอ่านหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "b",
+          "explanation": {
+            "en": "The practice map for room 2 names the Sycamore desk for reading cushions. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 2 กำหนดโต๊ะซิคามอร์ไว้สำหรับเบาะนั่งอ่านหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c2q10",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 2, the practice map assigns club notebooks to the Oak desk. Which desk should a visitor use for club notebooks?",
+            "th": "ในห้องฝึกที่ 2 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับสมุดของชมรม ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับสมุดของชมรม"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "b",
+          "explanation": {
+            "en": "The practice map for room 2 names the Oak desk for club notebooks. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 2 กำหนดโต๊ะโอ๊กไว้สำหรับสมุดของชมรม เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c2q11",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 2, the practice map assigns visitor badges to the Birch desk. Which desk should a visitor use for visitor badges?",
+            "th": "ในห้องฝึกที่ 2 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับป้ายผู้เยี่ยมชม ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับป้ายผู้เยี่ยมชม"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 2 names the Birch desk for visitor badges. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 2 กำหนดโต๊ะเบิร์ชไว้สำหรับป้ายผู้เยี่ยมชม เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c2q12",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 2, the practice map assigns suggestion cards to the Willow desk. Which desk should a visitor use for suggestion cards?",
+            "th": "ในห้องฝึกที่ 2 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับบัตรข้อเสนอแนะ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับบัตรข้อเสนอแนะ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 2 names the Willow desk for suggestion cards. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 2 กำหนดโต๊ะวิลโลว์ไว้สำหรับบัตรข้อเสนอแนะ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        }
+      ]
+    },
+    {
+      "chapter": 3,
+      "questions": [
+        {
+          "id": "sample-c3q1",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 3, the practice map assigns book returns to the Oak desk. Which desk should a visitor use for book returns?",
+            "th": "ในห้องฝึกที่ 3 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับการคืนหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการคืนหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 3 names the Oak desk for book returns. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 3 กำหนดโต๊ะโอ๊กไว้สำหรับการคืนหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c3q2",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 3, the practice map assigns map collection to the Birch desk. Which desk should a visitor use for map collection?",
+            "th": "ในห้องฝึกที่ 3 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับการรับแผนที่ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการรับแผนที่"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 3 names the Birch desk for map collection. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 3 กำหนดโต๊ะเบิร์ชไว้สำหรับการรับแผนที่ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c3q3",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 3, the practice map assigns pencil borrowing to the Willow desk. Which desk should a visitor use for pencil borrowing?",
+            "th": "ในห้องฝึกที่ 3 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับการยืมดินสอ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการยืมดินสอ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 3 names the Willow desk for pencil borrowing. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 3 กำหนดโต๊ะวิลโลว์ไว้สำหรับการยืมดินสอ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c3q4",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 3, the practice map assigns bookmark making to the Sycamore desk. Which desk should a visitor use for bookmark making?",
+            "th": "ในห้องฝึกที่ 3 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับการทำที่คั่นหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการทำที่คั่นหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 3 names the Sycamore desk for bookmark making. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 3 กำหนดโต๊ะซิคามอร์ไว้สำหรับการทำที่คั่นหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c3q5",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 3, the practice map assigns story cards to the Oak desk. Which desk should a visitor use for story cards?",
+            "th": "ในห้องฝึกที่ 3 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับบัตรเรื่องเล่า ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับบัตรเรื่องเล่า"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 3 names the Oak desk for story cards. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 3 กำหนดโต๊ะโอ๊กไว้สำหรับบัตรเรื่องเล่า เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c3q6",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 3, the practice map assigns puzzle storage to the Birch desk. Which desk should a visitor use for puzzle storage?",
+            "th": "ในห้องฝึกที่ 3 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับการเก็บเกมปริศนา ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการเก็บเกมปริศนา"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 3 names the Birch desk for puzzle storage. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 3 กำหนดโต๊ะเบิร์ชไว้สำหรับการเก็บเกมปริศนา เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c3q7",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 3, the practice map assigns paper sorting to the Willow desk. Which desk should a visitor use for paper sorting?",
+            "th": "ในห้องฝึกที่ 3 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับการแยกกระดาษ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการแยกกระดาษ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 3 names the Willow desk for paper sorting. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 3 กำหนดโต๊ะวิลโลว์ไว้สำหรับการแยกกระดาษ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c3q8",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 3, the practice map assigns drawing supplies to the Sycamore desk. Which desk should a visitor use for drawing supplies?",
+            "th": "ในห้องฝึกที่ 3 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับอุปกรณ์วาดรูป ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับอุปกรณ์วาดรูป"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 3 names the Sycamore desk for drawing supplies. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 3 กำหนดโต๊ะซิคามอร์ไว้สำหรับอุปกรณ์วาดรูป เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c3q9",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 3, the practice map assigns reading cushions to the Oak desk. Which desk should a visitor use for reading cushions?",
+            "th": "ในห้องฝึกที่ 3 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับเบาะนั่งอ่านหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับเบาะนั่งอ่านหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 3 names the Oak desk for reading cushions. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 3 กำหนดโต๊ะโอ๊กไว้สำหรับเบาะนั่งอ่านหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c3q10",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 3, the practice map assigns club notebooks to the Birch desk. Which desk should a visitor use for club notebooks?",
+            "th": "ในห้องฝึกที่ 3 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับสมุดของชมรม ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับสมุดของชมรม"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 3 names the Birch desk for club notebooks. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 3 กำหนดโต๊ะเบิร์ชไว้สำหรับสมุดของชมรม เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c3q11",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 3, the practice map assigns visitor badges to the Willow desk. Which desk should a visitor use for visitor badges?",
+            "th": "ในห้องฝึกที่ 3 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับป้ายผู้เยี่ยมชม ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับป้ายผู้เยี่ยมชม"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 3 names the Willow desk for visitor badges. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 3 กำหนดโต๊ะวิลโลว์ไว้สำหรับป้ายผู้เยี่ยมชม เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c3q12",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 3, the practice map assigns suggestion cards to the Sycamore desk. Which desk should a visitor use for suggestion cards?",
+            "th": "ในห้องฝึกที่ 3 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับบัตรข้อเสนอแนะ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับบัตรข้อเสนอแนะ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 3 names the Sycamore desk for suggestion cards. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 3 กำหนดโต๊ะซิคามอร์ไว้สำหรับบัตรข้อเสนอแนะ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        }
+      ]
+    },
+    {
+      "chapter": 4,
+      "questions": [
+        {
+          "id": "sample-c4q1",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 4, the practice map assigns book returns to the Birch desk. Which desk should a visitor use for book returns?",
+            "th": "ในห้องฝึกที่ 4 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับการคืนหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการคืนหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 4 names the Birch desk for book returns. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 4 กำหนดโต๊ะเบิร์ชไว้สำหรับการคืนหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c4q2",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 4, the practice map assigns map collection to the Willow desk. Which desk should a visitor use for map collection?",
+            "th": "ในห้องฝึกที่ 4 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับการรับแผนที่ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการรับแผนที่"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 4 names the Willow desk for map collection. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 4 กำหนดโต๊ะวิลโลว์ไว้สำหรับการรับแผนที่ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c4q3",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 4, the practice map assigns pencil borrowing to the Sycamore desk. Which desk should a visitor use for pencil borrowing?",
+            "th": "ในห้องฝึกที่ 4 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับการยืมดินสอ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการยืมดินสอ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 4 names the Sycamore desk for pencil borrowing. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 4 กำหนดโต๊ะซิคามอร์ไว้สำหรับการยืมดินสอ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c4q4",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 4, the practice map assigns bookmark making to the Oak desk. Which desk should a visitor use for bookmark making?",
+            "th": "ในห้องฝึกที่ 4 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับการทำที่คั่นหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการทำที่คั่นหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 4 names the Oak desk for bookmark making. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 4 กำหนดโต๊ะโอ๊กไว้สำหรับการทำที่คั่นหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c4q5",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 4, the practice map assigns story cards to the Birch desk. Which desk should a visitor use for story cards?",
+            "th": "ในห้องฝึกที่ 4 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับบัตรเรื่องเล่า ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับบัตรเรื่องเล่า"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "b",
+          "explanation": {
+            "en": "The practice map for room 4 names the Birch desk for story cards. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 4 กำหนดโต๊ะเบิร์ชไว้สำหรับบัตรเรื่องเล่า เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c4q6",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 4, the practice map assigns puzzle storage to the Willow desk. Which desk should a visitor use for puzzle storage?",
+            "th": "ในห้องฝึกที่ 4 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับการเก็บเกมปริศนา ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการเก็บเกมปริศนา"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 4 names the Willow desk for puzzle storage. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 4 กำหนดโต๊ะวิลโลว์ไว้สำหรับการเก็บเกมปริศนา เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c4q7",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 4, the practice map assigns paper sorting to the Sycamore desk. Which desk should a visitor use for paper sorting?",
+            "th": "ในห้องฝึกที่ 4 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับการแยกกระดาษ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการแยกกระดาษ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 4 names the Sycamore desk for paper sorting. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 4 กำหนดโต๊ะซิคามอร์ไว้สำหรับการแยกกระดาษ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c4q8",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 4, the practice map assigns drawing supplies to the Oak desk. Which desk should a visitor use for drawing supplies?",
+            "th": "ในห้องฝึกที่ 4 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับอุปกรณ์วาดรูป ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับอุปกรณ์วาดรูป"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 4 names the Oak desk for drawing supplies. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 4 กำหนดโต๊ะโอ๊กไว้สำหรับอุปกรณ์วาดรูป เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c4q9",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 4, the practice map assigns reading cushions to the Birch desk. Which desk should a visitor use for reading cushions?",
+            "th": "ในห้องฝึกที่ 4 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับเบาะนั่งอ่านหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับเบาะนั่งอ่านหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            }
+          ],
+          "answer": "b",
+          "explanation": {
+            "en": "The practice map for room 4 names the Birch desk for reading cushions. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 4 กำหนดโต๊ะเบิร์ชไว้สำหรับเบาะนั่งอ่านหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c4q10",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 4, the practice map assigns club notebooks to the Willow desk. Which desk should a visitor use for club notebooks?",
+            "th": "ในห้องฝึกที่ 4 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับสมุดของชมรม ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับสมุดของชมรม"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 4 names the Willow desk for club notebooks. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 4 กำหนดโต๊ะวิลโลว์ไว้สำหรับสมุดของชมรม เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c4q11",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 4, the practice map assigns visitor badges to the Sycamore desk. Which desk should a visitor use for visitor badges?",
+            "th": "ในห้องฝึกที่ 4 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับป้ายผู้เยี่ยมชม ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับป้ายผู้เยี่ยมชม"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 4 names the Sycamore desk for visitor badges. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 4 กำหนดโต๊ะซิคามอร์ไว้สำหรับป้ายผู้เยี่ยมชม เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c4q12",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 4, the practice map assigns suggestion cards to the Oak desk. Which desk should a visitor use for suggestion cards?",
+            "th": "ในห้องฝึกที่ 4 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับบัตรข้อเสนอแนะ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับบัตรข้อเสนอแนะ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 4 names the Oak desk for suggestion cards. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 4 กำหนดโต๊ะโอ๊กไว้สำหรับบัตรข้อเสนอแนะ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        }
+      ]
+    },
+    {
+      "chapter": 5,
+      "questions": [
+        {
+          "id": "sample-c5q1",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 5, the practice map assigns book returns to the Willow desk. Which desk should a visitor use for book returns?",
+            "th": "ในห้องฝึกที่ 5 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับการคืนหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการคืนหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 5 names the Willow desk for book returns. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 5 กำหนดโต๊ะวิลโลว์ไว้สำหรับการคืนหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c5q2",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 5, the practice map assigns map collection to the Sycamore desk. Which desk should a visitor use for map collection?",
+            "th": "ในห้องฝึกที่ 5 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับการรับแผนที่ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการรับแผนที่"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 5 names the Sycamore desk for map collection. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 5 กำหนดโต๊ะซิคามอร์ไว้สำหรับการรับแผนที่ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c5q3",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 5, the practice map assigns pencil borrowing to the Oak desk. Which desk should a visitor use for pencil borrowing?",
+            "th": "ในห้องฝึกที่ 5 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับการยืมดินสอ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการยืมดินสอ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "b",
+          "explanation": {
+            "en": "The practice map for room 5 names the Oak desk for pencil borrowing. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 5 กำหนดโต๊ะโอ๊กไว้สำหรับการยืมดินสอ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c5q4",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 5, the practice map assigns bookmark making to the Birch desk. Which desk should a visitor use for bookmark making?",
+            "th": "ในห้องฝึกที่ 5 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับการทำที่คั่นหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการทำที่คั่นหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 5 names the Birch desk for bookmark making. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 5 กำหนดโต๊ะเบิร์ชไว้สำหรับการทำที่คั่นหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c5q5",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 5, the practice map assigns story cards to the Willow desk. Which desk should a visitor use for story cards?",
+            "th": "ในห้องฝึกที่ 5 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับบัตรเรื่องเล่า ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับบัตรเรื่องเล่า"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 5 names the Willow desk for story cards. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 5 กำหนดโต๊ะวิลโลว์ไว้สำหรับบัตรเรื่องเล่า เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c5q6",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 5, the practice map assigns puzzle storage to the Sycamore desk. Which desk should a visitor use for puzzle storage?",
+            "th": "ในห้องฝึกที่ 5 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับการเก็บเกมปริศนา ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการเก็บเกมปริศนา"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 5 names the Sycamore desk for puzzle storage. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 5 กำหนดโต๊ะซิคามอร์ไว้สำหรับการเก็บเกมปริศนา เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c5q7",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 5, the practice map assigns paper sorting to the Oak desk. Which desk should a visitor use for paper sorting?",
+            "th": "ในห้องฝึกที่ 5 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับการแยกกระดาษ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการแยกกระดาษ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 5 names the Oak desk for paper sorting. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 5 กำหนดโต๊ะโอ๊กไว้สำหรับการแยกกระดาษ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c5q8",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 5, the practice map assigns drawing supplies to the Birch desk. Which desk should a visitor use for drawing supplies?",
+            "th": "ในห้องฝึกที่ 5 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับอุปกรณ์วาดรูป ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับอุปกรณ์วาดรูป"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 5 names the Birch desk for drawing supplies. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 5 กำหนดโต๊ะเบิร์ชไว้สำหรับอุปกรณ์วาดรูป เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c5q9",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 5, the practice map assigns reading cushions to the Willow desk. Which desk should a visitor use for reading cushions?",
+            "th": "ในห้องฝึกที่ 5 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับเบาะนั่งอ่านหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับเบาะนั่งอ่านหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 5 names the Willow desk for reading cushions. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 5 กำหนดโต๊ะวิลโลว์ไว้สำหรับเบาะนั่งอ่านหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c5q10",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 5, the practice map assigns club notebooks to the Sycamore desk. Which desk should a visitor use for club notebooks?",
+            "th": "ในห้องฝึกที่ 5 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับสมุดของชมรม ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับสมุดของชมรม"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 5 names the Sycamore desk for club notebooks. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 5 กำหนดโต๊ะซิคามอร์ไว้สำหรับสมุดของชมรม เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c5q11",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 5, the practice map assigns visitor badges to the Oak desk. Which desk should a visitor use for visitor badges?",
+            "th": "ในห้องฝึกที่ 5 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับป้ายผู้เยี่ยมชม ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับป้ายผู้เยี่ยมชม"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 5 names the Oak desk for visitor badges. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 5 กำหนดโต๊ะโอ๊กไว้สำหรับป้ายผู้เยี่ยมชม เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c5q12",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 5, the practice map assigns suggestion cards to the Birch desk. Which desk should a visitor use for suggestion cards?",
+            "th": "ในห้องฝึกที่ 5 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับบัตรข้อเสนอแนะ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับบัตรข้อเสนอแนะ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 5 names the Birch desk for suggestion cards. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 5 กำหนดโต๊ะเบิร์ชไว้สำหรับบัตรข้อเสนอแนะ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        }
+      ]
+    },
+    {
+      "chapter": 6,
+      "questions": [
+        {
+          "id": "sample-c6q1",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 6, the practice map assigns book returns to the Sycamore desk. Which desk should a visitor use for book returns?",
+            "th": "ในห้องฝึกที่ 6 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับการคืนหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการคืนหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 6 names the Sycamore desk for book returns. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 6 กำหนดโต๊ะซิคามอร์ไว้สำหรับการคืนหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c6q2",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 6, the practice map assigns map collection to the Oak desk. Which desk should a visitor use for map collection?",
+            "th": "ในห้องฝึกที่ 6 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับการรับแผนที่ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการรับแผนที่"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 6 names the Oak desk for map collection. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 6 กำหนดโต๊ะโอ๊กไว้สำหรับการรับแผนที่ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c6q3",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 6, the practice map assigns pencil borrowing to the Birch desk. Which desk should a visitor use for pencil borrowing?",
+            "th": "ในห้องฝึกที่ 6 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับการยืมดินสอ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการยืมดินสอ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 6 names the Birch desk for pencil borrowing. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 6 กำหนดโต๊ะเบิร์ชไว้สำหรับการยืมดินสอ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c6q4",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 6, the practice map assigns bookmark making to the Willow desk. Which desk should a visitor use for bookmark making?",
+            "th": "ในห้องฝึกที่ 6 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับการทำที่คั่นหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการทำที่คั่นหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "b",
+          "explanation": {
+            "en": "The practice map for room 6 names the Willow desk for bookmark making. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 6 กำหนดโต๊ะวิลโลว์ไว้สำหรับการทำที่คั่นหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c6q5",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 6, the practice map assigns story cards to the Sycamore desk. Which desk should a visitor use for story cards?",
+            "th": "ในห้องฝึกที่ 6 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับบัตรเรื่องเล่า ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับบัตรเรื่องเล่า"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 6 names the Sycamore desk for story cards. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 6 กำหนดโต๊ะซิคามอร์ไว้สำหรับบัตรเรื่องเล่า เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c6q6",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 6, the practice map assigns puzzle storage to the Oak desk. Which desk should a visitor use for puzzle storage?",
+            "th": "ในห้องฝึกที่ 6 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับการเก็บเกมปริศนา ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการเก็บเกมปริศนา"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 6 names the Oak desk for puzzle storage. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 6 กำหนดโต๊ะโอ๊กไว้สำหรับการเก็บเกมปริศนา เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c6q7",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 6, the practice map assigns paper sorting to the Birch desk. Which desk should a visitor use for paper sorting?",
+            "th": "ในห้องฝึกที่ 6 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับการแยกกระดาษ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการแยกกระดาษ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 6 names the Birch desk for paper sorting. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 6 กำหนดโต๊ะเบิร์ชไว้สำหรับการแยกกระดาษ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c6q8",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 6, the practice map assigns drawing supplies to the Willow desk. Which desk should a visitor use for drawing supplies?",
+            "th": "ในห้องฝึกที่ 6 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับอุปกรณ์วาดรูป ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับอุปกรณ์วาดรูป"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 6 names the Willow desk for drawing supplies. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 6 กำหนดโต๊ะวิลโลว์ไว้สำหรับอุปกรณ์วาดรูป เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c6q9",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 6, the practice map assigns reading cushions to the Sycamore desk. Which desk should a visitor use for reading cushions?",
+            "th": "ในห้องฝึกที่ 6 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับเบาะนั่งอ่านหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับเบาะนั่งอ่านหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 6 names the Sycamore desk for reading cushions. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 6 กำหนดโต๊ะซิคามอร์ไว้สำหรับเบาะนั่งอ่านหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c6q10",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 6, the practice map assigns club notebooks to the Oak desk. Which desk should a visitor use for club notebooks?",
+            "th": "ในห้องฝึกที่ 6 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับสมุดของชมรม ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับสมุดของชมรม"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 6 names the Oak desk for club notebooks. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 6 กำหนดโต๊ะโอ๊กไว้สำหรับสมุดของชมรม เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c6q11",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 6, the practice map assigns visitor badges to the Birch desk. Which desk should a visitor use for visitor badges?",
+            "th": "ในห้องฝึกที่ 6 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับป้ายผู้เยี่ยมชม ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับป้ายผู้เยี่ยมชม"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 6 names the Birch desk for visitor badges. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 6 กำหนดโต๊ะเบิร์ชไว้สำหรับป้ายผู้เยี่ยมชม เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c6q12",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 6, the practice map assigns suggestion cards to the Willow desk. Which desk should a visitor use for suggestion cards?",
+            "th": "ในห้องฝึกที่ 6 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับบัตรข้อเสนอแนะ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับบัตรข้อเสนอแนะ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 6 names the Willow desk for suggestion cards. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 6 กำหนดโต๊ะวิลโลว์ไว้สำหรับบัตรข้อเสนอแนะ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        }
+      ]
+    },
+    {
+      "chapter": 7,
+      "questions": [
+        {
+          "id": "sample-c7q1",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 7, the practice map assigns book returns to the Oak desk. Which desk should a visitor use for book returns?",
+            "th": "ในห้องฝึกที่ 7 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับการคืนหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการคืนหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 7 names the Oak desk for book returns. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 7 กำหนดโต๊ะโอ๊กไว้สำหรับการคืนหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c7q2",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 7, the practice map assigns map collection to the Birch desk. Which desk should a visitor use for map collection?",
+            "th": "ในห้องฝึกที่ 7 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับการรับแผนที่ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการรับแผนที่"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 7 names the Birch desk for map collection. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 7 กำหนดโต๊ะเบิร์ชไว้สำหรับการรับแผนที่ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c7q3",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 7, the practice map assigns pencil borrowing to the Willow desk. Which desk should a visitor use for pencil borrowing?",
+            "th": "ในห้องฝึกที่ 7 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับการยืมดินสอ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการยืมดินสอ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "b",
+          "explanation": {
+            "en": "The practice map for room 7 names the Willow desk for pencil borrowing. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 7 กำหนดโต๊ะวิลโลว์ไว้สำหรับการยืมดินสอ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c7q4",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 7, the practice map assigns bookmark making to the Sycamore desk. Which desk should a visitor use for bookmark making?",
+            "th": "ในห้องฝึกที่ 7 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับการทำที่คั่นหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการทำที่คั่นหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 7 names the Sycamore desk for bookmark making. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 7 กำหนดโต๊ะซิคามอร์ไว้สำหรับการทำที่คั่นหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c7q5",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 7, the practice map assigns story cards to the Oak desk. Which desk should a visitor use for story cards?",
+            "th": "ในห้องฝึกที่ 7 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับบัตรเรื่องเล่า ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับบัตรเรื่องเล่า"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 7 names the Oak desk for story cards. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 7 กำหนดโต๊ะโอ๊กไว้สำหรับบัตรเรื่องเล่า เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c7q6",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 7, the practice map assigns puzzle storage to the Birch desk. Which desk should a visitor use for puzzle storage?",
+            "th": "ในห้องฝึกที่ 7 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับการเก็บเกมปริศนา ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการเก็บเกมปริศนา"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "b",
+          "explanation": {
+            "en": "The practice map for room 7 names the Birch desk for puzzle storage. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 7 กำหนดโต๊ะเบิร์ชไว้สำหรับการเก็บเกมปริศนา เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c7q7",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 7, the practice map assigns paper sorting to the Willow desk. Which desk should a visitor use for paper sorting?",
+            "th": "ในห้องฝึกที่ 7 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับการแยกกระดาษ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการแยกกระดาษ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 7 names the Willow desk for paper sorting. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 7 กำหนดโต๊ะวิลโลว์ไว้สำหรับการแยกกระดาษ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c7q8",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 7, the practice map assigns drawing supplies to the Sycamore desk. Which desk should a visitor use for drawing supplies?",
+            "th": "ในห้องฝึกที่ 7 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับอุปกรณ์วาดรูป ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับอุปกรณ์วาดรูป"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 7 names the Sycamore desk for drawing supplies. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 7 กำหนดโต๊ะซิคามอร์ไว้สำหรับอุปกรณ์วาดรูป เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c7q9",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 7, the practice map assigns reading cushions to the Oak desk. Which desk should a visitor use for reading cushions?",
+            "th": "ในห้องฝึกที่ 7 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับเบาะนั่งอ่านหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับเบาะนั่งอ่านหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 7 names the Oak desk for reading cushions. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 7 กำหนดโต๊ะโอ๊กไว้สำหรับเบาะนั่งอ่านหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c7q10",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 7, the practice map assigns club notebooks to the Birch desk. Which desk should a visitor use for club notebooks?",
+            "th": "ในห้องฝึกที่ 7 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับสมุดของชมรม ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับสมุดของชมรม"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 7 names the Birch desk for club notebooks. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 7 กำหนดโต๊ะเบิร์ชไว้สำหรับสมุดของชมรม เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c7q11",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 7, the practice map assigns visitor badges to the Willow desk. Which desk should a visitor use for visitor badges?",
+            "th": "ในห้องฝึกที่ 7 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับป้ายผู้เยี่ยมชม ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับป้ายผู้เยี่ยมชม"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 7 names the Willow desk for visitor badges. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 7 กำหนดโต๊ะวิลโลว์ไว้สำหรับป้ายผู้เยี่ยมชม เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c7q12",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 7, the practice map assigns suggestion cards to the Sycamore desk. Which desk should a visitor use for suggestion cards?",
+            "th": "ในห้องฝึกที่ 7 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับบัตรข้อเสนอแนะ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับบัตรข้อเสนอแนะ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 7 names the Sycamore desk for suggestion cards. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 7 กำหนดโต๊ะซิคามอร์ไว้สำหรับบัตรข้อเสนอแนะ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        }
+      ]
+    },
+    {
+      "chapter": 8,
+      "questions": [
+        {
+          "id": "sample-c8q1",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 8, the practice map assigns book returns to the Birch desk. Which desk should a visitor use for book returns?",
+            "th": "ในห้องฝึกที่ 8 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับการคืนหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการคืนหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 8 names the Birch desk for book returns. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 8 กำหนดโต๊ะเบิร์ชไว้สำหรับการคืนหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c8q2",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 8, the practice map assigns map collection to the Willow desk. Which desk should a visitor use for map collection?",
+            "th": "ในห้องฝึกที่ 8 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับการรับแผนที่ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการรับแผนที่"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 8 names the Willow desk for map collection. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 8 กำหนดโต๊ะวิลโลว์ไว้สำหรับการรับแผนที่ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c8q3",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 8, the practice map assigns pencil borrowing to the Sycamore desk. Which desk should a visitor use for pencil borrowing?",
+            "th": "ในห้องฝึกที่ 8 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับการยืมดินสอ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการยืมดินสอ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "b",
+          "explanation": {
+            "en": "The practice map for room 8 names the Sycamore desk for pencil borrowing. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 8 กำหนดโต๊ะซิคามอร์ไว้สำหรับการยืมดินสอ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c8q4",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 8, the practice map assigns bookmark making to the Oak desk. Which desk should a visitor use for bookmark making?",
+            "th": "ในห้องฝึกที่ 8 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับการทำที่คั่นหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการทำที่คั่นหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "b",
+          "explanation": {
+            "en": "The practice map for room 8 names the Oak desk for bookmark making. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 8 กำหนดโต๊ะโอ๊กไว้สำหรับการทำที่คั่นหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c8q5",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 8, the practice map assigns story cards to the Birch desk. Which desk should a visitor use for story cards?",
+            "th": "ในห้องฝึกที่ 8 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับบัตรเรื่องเล่า ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับบัตรเรื่องเล่า"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            }
+          ],
+          "answer": "b",
+          "explanation": {
+            "en": "The practice map for room 8 names the Birch desk for story cards. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 8 กำหนดโต๊ะเบิร์ชไว้สำหรับบัตรเรื่องเล่า เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c8q6",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 8, the practice map assigns puzzle storage to the Willow desk. Which desk should a visitor use for puzzle storage?",
+            "th": "ในห้องฝึกที่ 8 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับการเก็บเกมปริศนา ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการเก็บเกมปริศนา"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 8 names the Willow desk for puzzle storage. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 8 กำหนดโต๊ะวิลโลว์ไว้สำหรับการเก็บเกมปริศนา เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c8q7",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 8, the practice map assigns paper sorting to the Sycamore desk. Which desk should a visitor use for paper sorting?",
+            "th": "ในห้องฝึกที่ 8 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับการแยกกระดาษ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการแยกกระดาษ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 8 names the Sycamore desk for paper sorting. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 8 กำหนดโต๊ะซิคามอร์ไว้สำหรับการแยกกระดาษ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c8q8",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 8, the practice map assigns drawing supplies to the Oak desk. Which desk should a visitor use for drawing supplies?",
+            "th": "ในห้องฝึกที่ 8 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับอุปกรณ์วาดรูป ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับอุปกรณ์วาดรูป"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 8 names the Oak desk for drawing supplies. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 8 กำหนดโต๊ะโอ๊กไว้สำหรับอุปกรณ์วาดรูป เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c8q9",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 8, the practice map assigns reading cushions to the Birch desk. Which desk should a visitor use for reading cushions?",
+            "th": "ในห้องฝึกที่ 8 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับเบาะนั่งอ่านหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับเบาะนั่งอ่านหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 8 names the Birch desk for reading cushions. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 8 กำหนดโต๊ะเบิร์ชไว้สำหรับเบาะนั่งอ่านหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c8q10",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 8, the practice map assigns club notebooks to the Willow desk. Which desk should a visitor use for club notebooks?",
+            "th": "ในห้องฝึกที่ 8 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับสมุดของชมรม ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับสมุดของชมรม"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "b",
+          "explanation": {
+            "en": "The practice map for room 8 names the Willow desk for club notebooks. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 8 กำหนดโต๊ะวิลโลว์ไว้สำหรับสมุดของชมรม เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c8q11",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 8, the practice map assigns visitor badges to the Sycamore desk. Which desk should a visitor use for visitor badges?",
+            "th": "ในห้องฝึกที่ 8 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับป้ายผู้เยี่ยมชม ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับป้ายผู้เยี่ยมชม"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 8 names the Sycamore desk for visitor badges. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 8 กำหนดโต๊ะซิคามอร์ไว้สำหรับป้ายผู้เยี่ยมชม เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c8q12",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 8, the practice map assigns suggestion cards to the Oak desk. Which desk should a visitor use for suggestion cards?",
+            "th": "ในห้องฝึกที่ 8 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับบัตรข้อเสนอแนะ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับบัตรข้อเสนอแนะ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 8 names the Oak desk for suggestion cards. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 8 กำหนดโต๊ะโอ๊กไว้สำหรับบัตรข้อเสนอแนะ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        }
+      ]
+    },
+    {
+      "chapter": 9,
+      "questions": [
+        {
+          "id": "sample-c9q1",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 9, the practice map assigns book returns to the Willow desk. Which desk should a visitor use for book returns?",
+            "th": "ในห้องฝึกที่ 9 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับการคืนหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการคืนหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 9 names the Willow desk for book returns. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 9 กำหนดโต๊ะวิลโลว์ไว้สำหรับการคืนหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c9q2",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 9, the practice map assigns map collection to the Sycamore desk. Which desk should a visitor use for map collection?",
+            "th": "ในห้องฝึกที่ 9 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับการรับแผนที่ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการรับแผนที่"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "b",
+          "explanation": {
+            "en": "The practice map for room 9 names the Sycamore desk for map collection. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 9 กำหนดโต๊ะซิคามอร์ไว้สำหรับการรับแผนที่ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c9q3",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 9, the practice map assigns pencil borrowing to the Oak desk. Which desk should a visitor use for pencil borrowing?",
+            "th": "ในห้องฝึกที่ 9 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับการยืมดินสอ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการยืมดินสอ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 9 names the Oak desk for pencil borrowing. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 9 กำหนดโต๊ะโอ๊กไว้สำหรับการยืมดินสอ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c9q4",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 9, the practice map assigns bookmark making to the Birch desk. Which desk should a visitor use for bookmark making?",
+            "th": "ในห้องฝึกที่ 9 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับการทำที่คั่นหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการทำที่คั่นหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "a",
+          "explanation": {
+            "en": "The practice map for room 9 names the Birch desk for bookmark making. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 9 กำหนดโต๊ะเบิร์ชไว้สำหรับการทำที่คั่นหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c9q5",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 9, the practice map assigns story cards to the Willow desk. Which desk should a visitor use for story cards?",
+            "th": "ในห้องฝึกที่ 9 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับบัตรเรื่องเล่า ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับบัตรเรื่องเล่า"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 9 names the Willow desk for story cards. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 9 กำหนดโต๊ะวิลโลว์ไว้สำหรับบัตรเรื่องเล่า เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c9q6",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 9, the practice map assigns puzzle storage to the Sycamore desk. Which desk should a visitor use for puzzle storage?",
+            "th": "ในห้องฝึกที่ 9 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับการเก็บเกมปริศนา ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการเก็บเกมปริศนา"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 9 names the Sycamore desk for puzzle storage. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 9 กำหนดโต๊ะซิคามอร์ไว้สำหรับการเก็บเกมปริศนา เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c9q7",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 9, the practice map assigns paper sorting to the Oak desk. Which desk should a visitor use for paper sorting?",
+            "th": "ในห้องฝึกที่ 9 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับการแยกกระดาษ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับการแยกกระดาษ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "b",
+          "explanation": {
+            "en": "The practice map for room 9 names the Oak desk for paper sorting. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 9 กำหนดโต๊ะโอ๊กไว้สำหรับการแยกกระดาษ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c9q8",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 9, the practice map assigns drawing supplies to the Birch desk. Which desk should a visitor use for drawing supplies?",
+            "th": "ในห้องฝึกที่ 9 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับอุปกรณ์วาดรูป ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับอุปกรณ์วาดรูป"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "b",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "c",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "d",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            }
+          ],
+          "answer": "b",
+          "explanation": {
+            "en": "The practice map for room 9 names the Birch desk for drawing supplies. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 9 กำหนดโต๊ะเบิร์ชไว้สำหรับอุปกรณ์วาดรูป เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c9q9",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 9, the practice map assigns reading cushions to the Willow desk. Which desk should a visitor use for reading cushions?",
+            "th": "ในห้องฝึกที่ 9 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะวิลโลว์เป็นจุดสำหรับเบาะนั่งอ่านหนังสือ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับเบาะนั่งอ่านหนังสือ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "b",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 9 names the Willow desk for reading cushions. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 9 กำหนดโต๊ะวิลโลว์ไว้สำหรับเบาะนั่งอ่านหนังสือ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c9q10",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 9, the practice map assigns club notebooks to the Sycamore desk. Which desk should a visitor use for club notebooks?",
+            "th": "ในห้องฝึกที่ 9 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะซิคามอร์เป็นจุดสำหรับสมุดของชมรม ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับสมุดของชมรม"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "c",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 9 names the Sycamore desk for club notebooks. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 9 กำหนดโต๊ะซิคามอร์ไว้สำหรับสมุดของชมรม เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c9q11",
+          "focus": "conduct",
+          "prompt": {
+            "en": "In fictional Cloud Library room 9, the practice map assigns visitor badges to the Oak desk. Which desk should a visitor use for visitor badges?",
+            "th": "ในห้องฝึกที่ 9 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะโอ๊กเป็นจุดสำหรับป้ายผู้เยี่ยมชม ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับป้ายผู้เยี่ยมชม"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "b",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            },
+            {
+              "id": "c",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "d",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            }
+          ],
+          "answer": "d",
+          "explanation": {
+            "en": "The practice map for room 9 names the Oak desk for visitor badges. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 9 กำหนดโต๊ะโอ๊กไว้สำหรับป้ายผู้เยี่ยมชม เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        },
+        {
+          "id": "sample-c9q12",
+          "focus": "mindset",
+          "prompt": {
+            "en": "In fictional Cloud Library room 9, the practice map assigns suggestion cards to the Birch desk. Which desk should a visitor use for suggestion cards?",
+            "th": "ในห้องฝึกที่ 9 ของห้องสมุดเมฆสมมติ แผนที่กำหนดให้โต๊ะเบิร์ชเป็นจุดสำหรับบัตรข้อเสนอแนะ ผู้เยี่ยมชมควรใช้โต๊ะใดสำหรับบัตรข้อเสนอแนะ"
+          },
+          "options": [
+            {
+              "id": "a",
+              "en": "Oak",
+              "th": "โอ๊ก"
+            },
+            {
+              "id": "b",
+              "en": "Willow",
+              "th": "วิลโลว์"
+            },
+            {
+              "id": "c",
+              "en": "Birch",
+              "th": "เบิร์ช"
+            },
+            {
+              "id": "d",
+              "en": "Sycamore",
+              "th": "ซิคามอร์"
+            }
+          ],
+          "answer": "c",
+          "explanation": {
+            "en": "The practice map for room 9 names the Birch desk for suggestion cards. This is fictional demonstration content.",
+            "th": "แผนที่ฝึกของห้องที่ 9 กำหนดโต๊ะเบิร์ชไว้สำหรับบัตรข้อเสนอแนะ เนื้อหานี้เป็นตัวอย่างสมมติ"
+          }
+        }
+      ]
+    }
+  ]
+}

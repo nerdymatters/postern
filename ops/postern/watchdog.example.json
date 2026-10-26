@@ -1,0 +1,8 @@
+{
+  "host": "smtp.gmail.com",
+  "port": 587,
+  "user": "postern-host@example.invalid",
+  "password": "PUT_THE_16_CHARACTER_GOOGLE_APP_PASSWORD_HERE",
+  "sender": "postern-host@example.invalid",
+  "to": "owner@example.invalid"
+}

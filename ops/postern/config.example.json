@@ -1,0 +1,13 @@
+{
+  "mode": "google",
+  "data_dir": "~/Library/Application Support/Postern",
+  "origins": ["https://postern.example.vercel.app"],
+  "google_client_id": "0000000000-example.apps.googleusercontent.com",
+  "host_credentials": "~/.config/postern/host-credentials.json",
+  "allowlist_credentials": "~/.config/postern/allowlist-service-account.json",
+  "allowlist_sheet_id": "YOUR_ROSTER_SHEET_ID",
+  "drive_folder_id": "WRITTEN_BY_POSTERN_BOOTSTRAP",
+  "database_sheet_id": "WRITTEN_BY_POSTERN_BOOTSTRAP",
+  "port": 8790,
+  "notice_version": "2"
+}

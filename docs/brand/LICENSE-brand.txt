@@ -1,0 +1,81 @@
+Postern brand use policy
+Version 1.0 — 2026-10-26
+
+The Postern name, wordmark and door-shaped mark identify the Postern project
+maintained by Chirayu (Kong) Wongchokprasitti through nerdymatters.
+
+1. Scope
+
+This policy concerns the Postern name and the distinctive Postern artwork in:
+
+  - docs/brand/logo/wordmark/;
+  - docs/brand/logo/icon/;
+  - docs/brand/logo/favicon/ and their deployed favicon/app-icon copies;
+  - the Postern wordmark outlines in dashboard/web/src/PosternWordmark.tsx.
+
+It does not cover functional UI icons in docs/brand/logo/icons/ or
+dashboard/web/src/PosternIcons.tsx, third-party icons or fonts, or source-code
+identifiers. Their applicable software and third-party licenses remain intact.
+
+The Postern artwork listed above is not offered under the project's MIT or
+Apache-2.0 license. Permission to reproduce it is granted only as stated in
+this policy or in separate written permission. This policy states the rights
+the project grants to the extent it holds them; it does not claim trademark
+registration or rights over unrelated uses of the word "postern."
+
+2. Uses allowed without asking
+
+You may:
+
+  - refer accurately to Postern in documentation, reviews, tutorials and
+    comparisons, using the name in ordinary text;
+  - use an unaltered official logo to identify and link to the Postern project;
+  - retain the supplied name and artwork when redistributing an unmodified
+    official release or running it for your own organization;
+  - describe an independent service as "Hosting for Postern," "Works with
+    Postern," or "Powered by Postern," if the description is accurate and
+    your own distinct service name is prominent;
+  - reproduce screenshots of Postern in factual documentation and reporting.
+
+An independent service must clearly identify its operator and must not imply
+that it is operated, sponsored, certified or endorsed by Postern or nerdymatters.
+An organization may configure its own training, notices, identity settings,
+origins and operational settings without losing permission to retain the
+supplied artwork in an otherwise unmodified release.
+
+3. Uses requiring written permission
+
+Do not use "Postern" or a confusingly similar name as the name of your own
+product or hosted service, or use the Postern logo as your service's logo.
+For example, "Postern Cloud," "Official Postern Hosting" and "Postern Pro"
+require written permission. A descriptive phrase such as "Example Hosting
+for Postern" is allowed under section 2.
+
+Modified distributions must use a distinct product name and replace the
+Postern wordmark, app icon and favicons. They may retain accurate statements
+that they are based on Postern, along with required attribution notices.
+Private modifications used only within your organization may retain the
+supplied artwork if users are not misled about who operates the installation.
+
+Do not alter the Postern logo, combine it into another mark, or register
+confusing names, domains or social accounts without written permission.
+Proportional resizing and the supplied light, dark and monochrome variants
+are allowed. Do not imply endorsement or partnership that has not been granted.
+
+4. Software rights and third-party rights
+
+This policy adds no restriction to the MIT or Apache-2.0 license. You may use,
+modify, distribute, sell and host the software, including a competing service,
+under those licenses with your own branding. Preserve required copyright,
+license and attribution notices when rebranding.
+
+This policy does not restrict lawful nominative, descriptive or other uses
+that do not require permission. It grants no rights in third-party marks,
+including Google, NASA, Lucide, Feather or Outfit. The source-font license for
+Outfit remains the SIL Open Font License; the Postern wordmark is resulting
+artwork, not a font distribution.
+
+For permission beyond this policy, contact the maintainer through
+https://github.com/nerdymatters/postern. A public issue may be used for a
+non-confidential brand-permission request. Permission must be in writing;
+silence does not grant permission.

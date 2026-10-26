@@ -1,0 +1,5 @@
+# Synthetic URL rejection fixtures; these are not working credentials.
+# Exact scanner spans include trailing source punctuation.
+https://user:password@example.com',
+https://user:secret@example.invalid'])
+https://user:secret@status.example.invalid',

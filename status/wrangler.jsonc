@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "postern-status",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-08",
+  "workers_dev": false,
+  "routes": [],
+  "vars": {
+    "WEBSITE_URL": "",
+    "API_HEALTH_URL": "",
+    "SECONDARY_HEALTH_URL": ""
+  },
+  "triggers": { "crons": ["* * * * *"] },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "postern-status",
+    "database_id": "00000000-0000-0000-0000-000000000000",
+    "migrations_dir": "migrations"
+  }]
+}

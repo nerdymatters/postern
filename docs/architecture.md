@@ -1,0 +1,17 @@
+# Architecture
+
+The React web app calls a FastAPI service on one macOS host. The API binds to loopback; an operator-managed HTTPS ingress and local Caddy proxy expose it. Exact browser origins are configured explicitly. The server's trust in proxy-derived addresses must match the documented local proxy boundary.
+
+Google Identity supplies sign-in tokens. A separately shared read-only roster Sheet supplies membership and roles. Google Drive holds app-owned originals, portraits and sealed audit batches; an app-owned Google Sheet holds the confirmed catalog. OAuth access and roster credentials belong only on the API host.
+
+SQLite owns local state and the durable audit queue. A single application process owns background jobs, in-memory admission controls and the writer. Running additional Uvicorn workers is not a supported scaling shortcut.
+
+Documents and images are converted by a separate child process under the checked-in macOS sandbox profile and resource limits. Video preparation uses supported H.264/AAC inputs; it is not a general transcoding service. The selfie detector runs locally inside that same boundary.
+
+Reader responses require a current authorized session, applicable agreements, optional enrollment and durable audit admission. Publication is visible only after cloud confirmation. Recovery hides content until an operator verifies the restored catalog. A failed cloud or permission refresh never enables demo mode.
+
+`<data_dir>/training/` contains the installation's banks and captions; `<data_dir>/branding.json` contains its public operator/certificate settings. Neither is reconstructed from audit events. Configuration, credential files, databases, training and private backups never belong in a public checkout.
+
+## Limits
+
+Watermarks cannot prevent screenshots. Playback events cannot prove attention. A selfie face check cannot prove identity or liveness. Cloud exports have a loss window for unexported activity. Certificates depend on the first passing exam event retained by those exports. The [backlog](../TODOS.md) and [capacity guide](runbooks/capacity.md) record known limits; no simultaneous-viewer capacity is guaranteed.

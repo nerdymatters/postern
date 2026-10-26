@@ -1,0 +1,14 @@
+.claude/skills/gstack/
+.context/
+__pycache__/
+.pytest_cache/
+.venv/
+reports/day1/
+*.egg-info/
+
+# Machine-local tooling and deployment configuration
+.claude/
+.vercel/
+.env
+.env.*
+!.env.example

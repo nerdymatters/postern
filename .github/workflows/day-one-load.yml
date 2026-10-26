@@ -1,0 +1,33 @@
+name: Day-one external load
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: postern-isolated-load
+  cancel-in-progress: false
+
+jobs:
+  external-load:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run synthetic page and audit workloads
+        env:
+          POSTERN_PROBE_URL: ${{ vars.POSTERN_PROBE_URL }}
+          POSTERN_PROBE_CREDENTIALS: ${{ secrets.POSTERN_PROBE_CREDENTIALS }}
+        run: python3 -m scripts.day1.remote
+      - name: Preserve measurement reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: day-one-external-${{ github.run_id }}
+          path: reports/day1/*.json
+          if-no-files-found: warn
+          retention-days: 7

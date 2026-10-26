@@ -1,0 +1,23 @@
+# Dedicated loopback listener reached only by this Mac's Cloudflare connector.
+# CF-Connecting-IP is trusted here because the public edge overwrites it.
+{
+	admin off
+	auto_https off
+}
+
+http://:18790 {
+	bind 127.0.0.1
+	@missing_ip not header CF-Connecting-IP *
+	respond @missing_ip "Tunnel client IP required" 400
+	header {
+		Cache-Control "no-store"
+		Cloudflare-CDN-Cache-Control "no-store"
+		defer
+	}
+	reverse_proxy 127.0.0.1:8788 {
+		header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+		header_up -X-Real-IP
+		header_up -Forwarded
+		header_up -CF-Connecting-IP
+	}
+}

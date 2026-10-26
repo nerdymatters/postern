@@ -1,0 +1,24 @@
+# Standalone day-one listener. Does not use the CRM's Caddy admin endpoint or ports.
+{
+	admin off
+	auto_https off
+	servers 127.0.0.1:18789 {
+		listener_wrappers {
+			proxy_protocol {
+				timeout 2s
+				# Loopback binding restricts peers; require metadata from every peer.
+				# An allow entry would select USE and permit missing metadata.
+				fallback_policy require
+			}
+		}
+	}
+}
+
+http://:18789 {
+	bind 127.0.0.1
+	reverse_proxy 127.0.0.1:8788 {
+		header_up X-Forwarded-For {remote_host}
+		header_up -X-Real-IP
+		header_up -Forwarded
+	}
+}

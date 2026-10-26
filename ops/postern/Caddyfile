@@ -1,0 +1,46 @@
+# Postern's front proxy. The Funnel hands over each connection with PROXY protocol v2, and this is the only
+# place a client address is ever trusted from: it overwrites whatever the client sent. Same listener as the
+# day-one probe (ops/probes/Caddyfile), so the Funnel configuration does not change — only one of the two
+# may run at a time.
+{
+	admin off
+	auto_https off
+	servers 127.0.0.1:18789 {
+		listener_wrappers {
+			proxy_protocol {
+				timeout 2s
+				# Loopback binding restricts peers; require metadata from every peer.
+				# An allow entry would select USE and permit missing metadata.
+				fallback_policy require
+			}
+		}
+	}
+}
+
+http://:18789 {
+	bind 127.0.0.1
+	# Aggregate traffic only. Never retain media-ticket URLs or identity headers.
+	log {
+		output file "{$HOME}/Library/Logs/postern/traffic/access-daily.log" {
+			mode 0600
+			roll_size 10MiB
+			roll_interval 24h
+			roll_keep 30
+			roll_keep_for 720h
+		}
+		format filter {
+			wrap json
+			fields {
+				request delete
+				resp_headers delete
+				user_id delete
+			}
+		}
+	}
+	log_skip /health
+	reverse_proxy 127.0.0.1:8790 {
+		header_up X-Forwarded-For {remote_host}
+		header_up -X-Real-IP
+		header_up -Forwarded
+	}
+}

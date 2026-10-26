@@ -1,0 +1,10 @@
+{
+  "url": "https://status.example.invalid/api/heartbeat",
+  "token": "REPLACE_WITH_A_NEW_RANDOM_SECRET_AT_LEAST_32_CHARACTERS_LONG",
+  "agents": {
+    "api-process": "system/org.nerdymatters.postern",
+    "proxy": "system/org.nerdymatters.postern.proxy",
+    "watchdog": "system/org.nerdymatters.postern.watchdog",
+    "tunnel": "gui/501/org.nerdymatters.postern.tailscaled"
+  }
+}

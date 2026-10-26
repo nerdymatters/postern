@@ -1,0 +1,21 @@
+Postern
+Copyright (c) 2026 Chirayu (Kong) Wongchokprasitti
+
+Except for the separately identified material below, Postern's source code,
+documentation, and fictional sample training are available under either of:
+
+  * the MIT License, in LICENSE-MIT; or
+  * the Apache License, Version 2.0, in LICENSE-APACHE.
+
+You may choose either license. SPDX-License-Identifier: MIT OR Apache-2.0
+
+Third-party code, icons, the face-detection model, and test images retain their
+respective notices and licenses; see NOTICE and the files it identifies.
+
+The Postern name and brand artwork are governed separately by
+docs/brand/LICENSE-brand.txt. That policy does not restrict the rights granted
+by the software licenses or relicense third-party material.
+
+An installation's uploaded documents, videos, portraits, quiz banks, captions,
+and other private data are not licensed by this project. The bundled fictional
+sample training is first-party material covered by the dual license above.

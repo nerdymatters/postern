@@ -1,0 +1,44 @@
+;; Seatbelt profile for one Postern conversion job (ENG-D6).
+;; Applied with: sandbox-exec -f derive.sb -D SOURCE=... -D OUTPUT=... ... python3 -I derive_child.py
+;; Every (param "NAME") below must be supplied with -D NAME=value or the profile refuses to compile.
+;; See README.md in this directory for why each rule exists. Do not relax a rule without reading it.
+
+(version 1)
+(deny default)
+
+;; The job forks pdftoppm/pdfinfo; children inherit this profile.
+(allow process*)
+(allow sysctl-read)
+(allow mach-lookup (global-name "com.apple.system.logger") (global-name "com.apple.cfprefsd.daemon"))
+
+;; stat() of a path is not a read of its contents; Python's import machinery needs it everywhere it looks.
+(allow file-read-metadata)
+
+;; dyld aborts before Python starts unless the root directory itself is readable.
+(allow file-read* (literal "/"))
+
+;; The staged input, converter script, pinned face model, interpreter and venv marker.
+(allow file-read*
+    (literal (param "SOURCE"))
+    (literal (param "CHILD"))
+    (literal (param "FACE_MODEL"))
+    (literal (param "PYTHON"))
+    (literal (param "PYVENV")))
+
+;; The Python runtime and the Homebrew trees poppler and libheif load from.
+(allow file-read*
+    (subpath (param "STDLIB"))
+    (subpath (param "PURELIB"))
+    (subpath (param "PLATLIB"))
+    (subpath (param "BASE_PREFIX"))
+    (subpath "/System/Library")
+    (subpath "/usr/lib")
+    (subpath "/usr/share")
+    (subpath "/opt/homebrew/Cellar")
+    (subpath "/opt/homebrew/opt"))
+
+;; The per-job temporary directory: the only place this job may write.
+(allow file-read* file-write* (subpath (param "OUTPUT")))
+
+(allow file-read* file-write* (literal "/dev/null"))
+(allow file-read* (literal "/dev/urandom") (literal "/dev/random"))
