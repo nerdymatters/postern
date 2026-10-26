@@ -60,8 +60,13 @@ def demo_sign_in(client, headers=None):
     ({**CLAIMS, 'iss': 'https://evil.example'}, 401, 'sign_in_required'),
     ({**CLAIMS, 'aud': 'another-app.apps.googleusercontent.com'}, 401, 'sign_in_required'),
     ({**CLAIMS, 'email_verified': False}, 403, 'access_denied'),
+    ({**CLAIMS, 'email_verified': 'false'}, 403, 'access_denied'),
     ({k: v for k, v in CLAIMS.items() if k != 'email'}, 403, 'access_denied'),
-], ids=['rejected by google', 'wrong issuer', 'wrong audience', 'unverified email', 'no email'])
+    ({k: v for k, v in CLAIMS.items() if k != 'sub'}, 401, 'sign_in_required'),
+    ({**CLAIMS, 'sub': ''}, 401, 'sign_in_required'),
+    ({**CLAIMS, 'sub': 123}, 401, 'sign_in_required'),
+], ids=['rejected by google', 'wrong issuer', 'wrong audience', 'unverified email',
+        'string false email verification', 'no email', 'missing subject', 'empty subject', 'non-string subject'])
 def test_a_google_credential_is_refused_unless_it_names_a_verified_account_for_this_app(monkeypatch, outcome, status, code):
     verifier(monkeypatch, outcome)
     with pytest.raises(Refusal) as refused:
@@ -108,12 +113,36 @@ def test_google_mode_signs_in_through_the_verified_credential_and_has_no_demo_ro
         assert seen == [('id-token', [CLIENT_ID])]
         body = entered.json()
         assert body['email'] == READER and body['role'] == 'reader' and body['consent_required'] is True and body['token']
+        expected_identity = {'issuer': 'https://accounts.google.com', 'subject': '1234567890'}
+        assert body['identity'] == expected_identity
         headers = {'Authorization': 'Bearer ' + body['token']}
-        assert client.get('/api/session', headers=headers).json()['email'] == READER
+        current = client.get('/api/session', headers=headers).json()
+        assert current['email'] == READER
+        assert current['identity'] == expected_identity
         # The client kind is recorded from the known set only; anything else is the web client.
         other = client.post('/api/auth/google', json={'credential': 'id-token'}, headers={'X-Postern-Client': 'kiosk'})
         assert other.status_code == 200
         assert [json.loads(e['payload'])['client'] for e in events(service, 'signin_ok')] == ['desktop', 'web']
+
+
+def test_demo_identity_cannot_be_mistaken_for_a_google_account(client):
+    entered = demo_sign_in(client).json()
+    identity = {'issuer': 'postern:demo', 'subject': 'demo-' + READER}
+    assert entered['identity'] == identity
+    assert client.get('/api/session', headers={'Authorization': 'Bearer ' + entered['token']}).json()['identity'] == identity
+
+
+def test_verified_google_identity_without_roster_membership_gets_no_space_session(tmp_path, store, clock, monkeypatch):
+    config = google_mode(tmp_path)
+    monkeypatch.setattr(postern.app, 'verify_google_identity', lambda *_: {
+        'sub': 'outside-google-account', 'email': 'outside@example.invalid', 'name': 'Outside account'})
+    service = Service(config, store=store, clock=clock)
+    with TestClient(create_app(config, service=service)) as client:
+        response = client.post('/api/auth/google', json={'credential': 'verified-outside-token'})
+        assert response.status_code == 403
+        assert response.json()['error'] == 'access_denied'
+        assert 'identity' not in response.json() and 'token' not in response.json()
+        assert service.db.read(lambda db: db.execute('SELECT count(*) FROM sessions').fetchone()[0]) == 0
 
 
 def test_slow_google_verification_does_not_block_other_requests(tmp_path, store, clock, monkeypatch):

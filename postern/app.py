@@ -20,7 +20,7 @@ from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 from starlette.formparsers import MultiPartException
 
-from .auth import Refusal, verify_google_identity
+from .auth import Refusal, session_identity, verify_google_identity
 from .service import Service
 from . import quiz, video, selfie
 
@@ -222,6 +222,7 @@ def create_app(config, store=None, service=None):
             if config.selfie_enabled and not selfie.browser(db, context):
                 raise Refusal(401, 'sign_in_required', 'Please sign in again to set up selfie enrollment in this browser.')
             return {'email': context['email'], 'name': context['name'], 'role': context['role'],
+                    'identity': session_identity(context['subject'], config.mode),
                     'consent_required': not current(request).permissions.consent_current(db, context),
                     'notice': config.notice, 'notice_version': config.notice_version,
                     'selfie': selfie.status(db, context, config)}

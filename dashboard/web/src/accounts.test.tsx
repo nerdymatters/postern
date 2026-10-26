@@ -1,0 +1,301 @@
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { AccountsApp } from './accounts'
+import { accountToken, setAccountToken, type Account } from './accounts-api'
+import { currentToken, setToken } from './api'
+import { calls, installApi, world, type World } from './testing'
+import { hold, liveUrls } from './blobs'
+import { navigate, parse } from './routes'
+
+const google = vi.hoisted(() => ({ callback: null as null | ((response: { credential: string }) => void), credential: 'google-a' }))
+vi.mock('./google', () => ({ loadIdentity: async () => ({ accounts: { id: {
+  initialize: (options: { callback: (response: { credential: string }) => void }) => { google.callback = options.callback },
+  renderButton: (element: HTMLElement) => { const button = document.createElement('button'); button.textContent = 'Google test sign-in'; button.onclick = () => google.callback?.({ credential: google.credential }); element.append(button) },
+} } }) }))
+
+const first = (): Account => ({ id: 'a', email: 'private-a@example.invalid', identity: { issuer: 'https://accounts.google.com', subject: 'google-a' }, profile: { handle: null, display_name: 'Account Alice', avatar_url: null, bio: '', website: '', published: false } })
+const second = (): Account => ({ ...first(), id: 'b', email: 'private-b@example.invalid', identity: { issuer: 'https://accounts.google.com', subject: 'google-b' }, profile: { ...first().profile, display_name: 'Account Bob' } })
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+
+interface AccountWorld {
+  a: Account
+  b: Account
+  private: World
+  accountCalls: { path: string; method: string; authorization: string | null; body: unknown }[]
+  spaceSubject: string
+  spaceDenied: boolean
+  saveError: boolean
+}
+
+function fake(): AccountWorld {
+  const state: AccountWorld = { a: first(), b: second(), private: world(), accountCalls: [], spaceSubject: 'google-a', spaceDenied: false, saveError: false }
+  state.private.config.mode = 'google'; state.private.config.google_client_id = 'space-client'
+  state.private.session.identity = state.a.identity
+  installApi(state.private)
+  const legacy = globalThis.fetch
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    if (path === '/api/auth/google') {
+      calls.push({ url: path, method: 'POST', body: String(init?.body ?? '') })
+      if (state.spaceDenied) return json({ error: 'access_denied', message: 'You have not been invited to this space.' }, 403)
+      return json({ token: 'private-new', identity: { issuer: 'https://accounts.google.com', subject: state.spaceSubject }, email: 'private@example.invalid', role: 'reader', name: 'Private user' })
+    }
+    if (!path.startsWith('/accounts/')) return legacy(input, init)
+    const authorization = new Headers(init?.headers).get('Authorization')
+    const body = typeof init?.body === 'string' ? JSON.parse(init.body) : null
+    state.accountCalls.push({ path, authorization, method: init?.method ?? 'GET', body })
+    const account = authorization === 'Bearer account-b' ? state.b : state.a
+    if (path.endsWith('/v1/config')) return json({ google_client_id: 'account-client', registration_open: true })
+    if (path.endsWith('/v1/session')) return json({ account })
+    if (path.endsWith('/v1/auth/google')) return json({ account: body.credential === 'google-b' ? state.b : state.a, token: body.credential === 'google-b' ? 'account-b' : 'account-a' })
+    if (path.endsWith('/v1/auth/signout')) return json({ signed_out: true })
+    if (path.endsWith('/v1/profile')) {
+      if (state.saveError) return json({ error: 'handle_taken', message: 'That handle is already taken.' }, 409)
+      account.profile = { ...account.profile, ...body }
+      return json({ account })
+    }
+    if (path.endsWith('/v1/account')) return json({ deleted: true })
+    if (path.includes('/v1/profiles/')) return json({ profile: { ...state.a.profile, handle: 'alice', email: state.a.email, spaces: ['Secret space'], certificate: 'PRIVATE-CERTIFICATE' } })
+    return json({ error: 'not_found', message: 'Not found' }, 404)
+  }) as typeof fetch
+  return state
+}
+
+beforeEach(() => { vi.stubEnv('VITE_POSTERN_ACCOUNTS_API', '/accounts'); google.credential = 'google-a'; google.callback = null })
+afterEach(() => { vi.unstubAllEnvs() })
+
+test('a memberless Google user gets an account home without private config/content requests', async () => {
+  const state = fake()
+  render(<AccountsApp />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Google test sign-in' }))
+  expect(await screen.findByRole('heading', { name: 'No spaces yet' })).toBeTruthy()
+  expect(accountToken()).toBe('account-a')
+  expect(currentToken()).toBeNull()
+  expect(calls).toEqual([])
+  expect(state.accountCalls.find(call => call.path.endsWith('/v1/auth/google'))?.authorization).toBeNull()
+})
+
+test('an anonymous public profile projects only allowed fields and sends no account credential', async () => {
+  const state = fake(); state.a.profile.bio = '<img src=x onerror=alert(1)>'; state.a.profile.website = 'javascript:alert(1)'
+  setAccountToken('account-a'); setToken('private-old')
+  window.history.replaceState(null, '', '/@alice')
+  render(<AccountsApp />)
+  expect(await screen.findByRole('heading', { name: 'Account Alice' })).toBeTruthy()
+  expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeTruthy()
+  expect(document.querySelector('img')).toBeNull()
+  expect(document.body.textContent).not.toContain('private-a@example.invalid')
+  expect(document.body.textContent).not.toContain('Secret space')
+  expect(document.body.textContent).not.toContain('PRIVATE-CERTIFICATE')
+  expect(document.querySelector('a[href^="javascript:"]')).toBeNull()
+  expect(calls).toEqual([])
+  expect(state.accountCalls).toHaveLength(1)
+  expect(state.accountCalls[0].authorization).toBeNull()
+})
+
+test('profile editing requires an explicit publication choice and preserves the account context', async () => {
+  const state = fake(); setAccountToken('account-a'); window.history.replaceState(null, '', '/settings/profile')
+  render(<AccountsApp />)
+  const handle = await screen.findByLabelText('Handle')
+  expect((screen.getByLabelText(/Publish my profile/) as HTMLInputElement).checked).toBe(false)
+  fireEvent.change(handle, { target: { value: 'alice' } })
+  fireEvent.change(screen.getByLabelText('Bio'), { target: { value: 'Hello from Alice' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Preview public profile' }))
+  expect(screen.getByRole('region', { name: 'Public profile preview' }).textContent).not.toContain(state.a.email)
+  fireEvent.click(screen.getByLabelText(/Publish my profile/))
+  fireEvent.click(screen.getByRole('button', { name: 'Save profile' }))
+  expect(await screen.findByText('Profile saved.')).toBeTruthy()
+  const saved = state.accountCalls.find(call => call.path.endsWith('/v1/profile'))
+  expect(saved?.method).toBe('PATCH')
+  expect(saved?.body).toMatchObject({ handle: 'alice', published: true, bio: 'Hello from Alice' })
+  expect(Object.keys(saved?.body as object).sort()).toEqual(['bio', 'display_name', 'handle', 'published', 'website'])
+  expect(saved?.authorization).toBe('Bearer account-a')
+  expect(calls).toEqual([])
+})
+
+test('a taken handle stays an inline error without logging out the account', async () => {
+  const state = fake(); state.saveError = true; setAccountToken('account-a'); window.history.replaceState(null, '', '/settings/profile')
+  render(<AccountsApp />)
+  fireEvent.change(await screen.findByLabelText('Handle'), { target: { value: 'taken' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save profile' }))
+  expect(await screen.findByText('That handle is already taken.')).toBeTruthy()
+  expect(accountToken()).toBe('account-a')
+  expect((screen.getByLabelText('Handle') as HTMLInputElement).value).toBe('taken')
+})
+
+test('a private-space refusal keeps the public account signed in and never opens content', async () => {
+  const state = fake(); state.spaceDenied = true; setAccountToken('account-a'); window.history.replaceState(null, '', '/s/pilot')
+  render(<AccountsApp />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Google test sign-in' }))
+  expect(await screen.findByText('You have not been invited to this space.')).toBeTruthy()
+  expect(accountToken()).toBe('account-a')
+  expect(currentToken()).toBeNull()
+  expect(calls.some(call => call.url === '/api/posts')).toBe(false)
+  fireEvent.click(screen.getByRole('link', { name: 'Back to My spaces' }))
+  expect(await screen.findByRole('heading', { name: 'No spaces yet' })).toBeTruthy()
+})
+
+test('a Google account mismatch cannot attach a private-space session', async () => {
+  const state = fake(); state.spaceSubject = 'google-b'; setAccountToken('account-a'); window.history.replaceState(null, '', '/s/pilot')
+  render(<AccountsApp />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Google test sign-in' }))
+  expect(await screen.findByText(/Choose the same Google account/)).toBeTruthy()
+  expect(currentToken()).toBeNull()
+  expect(accountToken()).toBe('account-a')
+  expect(calls.some(call => call.url === '/api/posts')).toBe(false)
+  expect(calls.some(call => call.url === '/api/auth/signout')).toBe(true)
+})
+
+test('reload rejects a mismatched stored private session before fetching private config or content', async () => {
+  const state = fake(); state.private.session.identity = state.b.identity
+  setAccountToken('account-a'); setToken('private-old'); window.history.replaceState(null, '', '/home')
+  render(<AccountsApp />)
+  expect(await screen.findByText(/Sign in to the private space with the same Google account/)).toBeTruthy()
+  expect(currentToken()).toBeNull()
+  expect(accountToken()).toBe('account-a')
+  expect(calls.map(call => call.url)).toEqual(['/api/session'])
+})
+
+test('a matching space session opens the existing protected app and namespaces navigation', async () => {
+  fake(); setAccountToken('account-a'); setToken('private-old'); window.history.replaceState(null, '', '/s/pilot')
+  render(<AccountsApp />)
+  expect(await screen.findByText('Tip pooling policy')).toBeTruthy()
+  expect(calls.some(call => call.url === '/api/posts')).toBe(true)
+  act(() => navigate('/certificate'))
+  expect(window.location.pathname).toBe('/s/pilot/certificate')
+  expect(parse(window.location.pathname)).toEqual({ name: 'certificate' })
+})
+
+test('a revoked private session affects only that space and clears private media', async () => {
+  const state = fake(); state.private.refuse = { status: 403, error: 'access_denied', message: 'Membership removed', path: /\/api\/session$/ }
+  setAccountToken('account-a'); setToken('private-old'); hold(new Blob(['private']))
+  render(<AccountsApp />)
+  expect(await screen.findByText(/Private access needs to be checked again/)).toBeTruthy()
+  expect(accountToken()).toBe('account-a')
+  expect(currentToken()).toBeNull()
+  expect(liveUrls()).toBe(0)
+})
+
+test('a stale account request cannot overwrite a newer Google account', async () => {
+  fake(); setAccountToken('account-a')
+  const normal = fetch
+  let resolve!: (response: Response) => void
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => String(input).endsWith('/v1/session') && new Headers(init?.headers).get('Authorization') === 'Bearer account-a' ? new Promise<Response>(done => { resolve = done }) : normal(input, init)) as typeof fetch
+  render(<AccountsApp />)
+  await waitFor(() => expect(resolve).toBeTypeOf('function'))
+  act(() => setAccountToken('account-b'))
+  expect(await screen.findByText('Account Bob')).toBeTruthy()
+  await act(async () => { resolve(json({ account: first() })) })
+  expect(screen.queryByText('Account Alice')).toBeNull()
+  expect(screen.getByText('Account Bob')).toBeTruthy()
+})
+
+test('cross-tab account changes clear private media and the previous space session', async () => {
+  fake(); setAccountToken('account-a'); setToken('private-old'); hold(new Blob(['private']))
+  render(<AccountsApp />)
+  expect(await screen.findByText('Account Alice')).toBeTruthy()
+  act(() => { localStorage.setItem('postern.account.token', 'account-b'); window.dispatchEvent(new StorageEvent('storage', { key: 'postern.account.token', newValue: 'account-b' })) })
+  expect(await screen.findByText('Account Bob')).toBeTruthy()
+  expect(screen.queryByText('Account Alice')).toBeNull()
+  expect(currentToken()).toBeNull()
+  expect(liveUrls()).toBe(0)
+})
+
+test('a late private sign-in after leaving the page is revoked without storing its token', async () => {
+  fake(); setAccountToken('account-a'); window.history.replaceState(null, '', '/s/pilot')
+  const normal = fetch
+  let resolve!: (response: Response) => void
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => String(input) === '/api/auth/google' ? new Promise<Response>(done => { resolve = done }) : normal(input, init)) as typeof fetch
+  render(<AccountsApp />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Google test sign-in' }))
+  act(() => navigate('/home'))
+  await act(async () => { resolve(json({ token: 'late-private', identity: first().identity, email: first().email, role: 'reader', name: 'Alice' })) })
+  expect(currentToken()).toBeNull()
+  expect(await screen.findByRole('heading', { name: 'No spaces yet' })).toBeTruthy()
+  expect(calls.some(call => call.url === '/api/posts')).toBe(false)
+})
+
+test('deletion requires typed confirmation and clears both browser sessions', async () => {
+  const state = fake(); setAccountToken('account-a'); setToken('private-old'); window.history.replaceState(null, '', '/settings/profile')
+  render(<AccountsApp />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete account' }))
+  expect((screen.getByRole('button', { name: 'Permanently delete account' }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.change(screen.getByLabelText('Type DELETE to confirm'), { target: { value: 'DELETE' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Permanently delete account' }))
+  expect(await screen.findByRole('heading', { name: 'Your place on Postern' })).toBeTruthy()
+  expect(accountToken()).toBeNull(); expect(currentToken()).toBeNull()
+  expect(state.accountCalls.find(call => call.path.endsWith('/v1/account'))?.body).toEqual({ confirm: true })
+})
+
+test('navigation away and back cannot revive an abandoned private sign-in', async () => {
+  fake(); setAccountToken('account-a'); window.history.replaceState(null, '', '/s/pilot')
+  const normal = fetch
+  let resolve!: (response: Response) => void
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => String(input) === '/api/auth/google' ? new Promise<Response>(done => { resolve = done }) : normal(input, init)) as typeof fetch
+  render(<AccountsApp />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Google test sign-in' }))
+  act(() => { navigate('/home'); navigate('/s/pilot') })
+  await act(async () => { resolve(json({ token: 'abandoned-private', identity: first().identity, email: first().email, role: 'reader', name: 'Alice' })) })
+  expect(currentToken()).toBeNull()
+  expect(calls.some(call => call.url === '/api/posts')).toBe(false)
+  expect(calls.some(call => call.url === '/api/auth/signout')).toBe(true)
+})
+
+test('a new sign-in after navigation wins over the abandoned Google account request', async () => {
+  const state = fake()
+  const normal = fetch
+  let resolve!: (response: Response) => void
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => String(input).endsWith('/v1/auth/google') && JSON.parse(String(init?.body)).credential === 'google-a' ? new Promise<Response>(done => { resolve = done }) : normal(input, init)) as typeof fetch
+  render(<AccountsApp />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Google test sign-in' }))
+  act(() => navigate('/account/privacy'))
+  expect(await screen.findByRole('heading', { name: 'Account privacy' })).toBeTruthy()
+  google.credential = 'google-b'
+  act(() => navigate('/'))
+  fireEvent.click(await screen.findByRole('button', { name: 'Google test sign-in' }))
+  expect(await screen.findByText('Account Bob')).toBeTruthy()
+  await act(async () => { resolve(json({ token: 'abandoned-account', account: first() })) })
+  expect(accountToken()).toBe('account-b')
+  expect(screen.queryByText('Account Alice')).toBeNull()
+  expect(state.accountCalls.some(call => call.path.endsWith('/v1/auth/signout') && call.authorization === 'Bearer abandoned-account')).toBe(true)
+})
+
+test('a profile save finishing after an account switch cannot restore the old profile', async () => {
+  fake(); setAccountToken('account-a'); window.history.replaceState(null, '', '/settings/profile')
+  const normal = fetch
+  let resolve!: (response: Response) => void
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => String(input).endsWith('/v1/profile') ? new Promise<Response>(done => { resolve = done }) : normal(input, init)) as typeof fetch
+  render(<AccountsApp />)
+  fireEvent.change(await screen.findByLabelText('Handle'), { target: { value: 'alice' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save profile' }))
+  act(() => setAccountToken('account-b'))
+  await waitFor(() => expect((screen.getByLabelText('Display name') as HTMLInputElement).value).toBe('Account Bob'))
+  await act(async () => { resolve(json({ account: first() })) })
+  expect((screen.getByLabelText('Display name') as HTMLInputElement).value).toBe('Account Bob')
+  expect(accountToken()).toBe('account-b')
+})
+
+test('leaving a bound private space returns to account home without losing the account', async () => {
+  fake(); setAccountToken('account-a'); setToken('private-old'); window.history.replaceState(null, '', '/s/pilot')
+  render(<AccountsApp />)
+  await screen.findByText('Tip pooling policy')
+  fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
+  expect(await screen.findByRole('heading', { name: 'No spaces yet' })).toBeTruthy()
+  expect(window.location.pathname).toBe('/home')
+  expect(accountToken()).toBe('account-a'); expect(currentToken()).toBeNull()
+})
+
+test('a private bootstrap network failure offers retry after the wrapper admitted the session', async () => {
+  fake(); setAccountToken('account-a'); setToken('private-old'); window.history.replaceState(null, '', '/s/pilot')
+  const normal = fetch
+  let sessions = 0
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === '/api/session' && ++sessions === 2) return Promise.reject(new TypeError('Network offline'))
+    return normal(input, init)
+  }) as typeof fetch
+  render(<AccountsApp />)
+  expect(await screen.findByRole('heading', { name: 'Private space is unavailable' })).toBeTruthy()
+  expect(calls.some(call => call.url === '/api/posts')).toBe(false)
+  expect(accountToken()).toBe('account-a')
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+  expect(await screen.findByText('Tip pooling policy')).toBeTruthy()
+})

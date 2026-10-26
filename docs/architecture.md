@@ -12,6 +12,27 @@ Reader responses require a current authorized session, applicable agreements, op
 
 `<data_dir>/training/` contains the installation's banks and captions; `<data_dir>/branding.json` contains its public operator/certificate settings. Neither is reconstructed from audit events. Configuration, credential files, databases, training and private backups never belong in a public checkout.
 
+## Optional account service
+
+An account-enabled frontend connects to a separate account/profile API as well
+as the private resource API. The account API owns durable identities, profiles
+and account sessions; the resource API retains its roster, protected sessions,
+agreements, enrollment and training records. Account membership does not grant
+private-resource access. Public profiles contain only explicitly published
+presentation fields.
+
+The browser matches the verified provider/subject of both sessions before
+entering the private space. The resource API returns that identity only to its
+authenticated session holder; it remains an identity description, not an access
+grant. Demo sessions use a distinct issuer. Existing email-keyed activity and
+certificate attribution are preserved. A missing identity on an older resource
+API prevents account-enabled entry until the API is upgraded.
+
+The hosted account implementation and database are maintained separately from
+this open-source repository. Leaving the account API setting unset retains the
+standalone reading-room flow. See [Accounts and profiles](accounts.md) for the
+interface, configuration and rollout checks.
+
 ## Limits
 
 Watermarks cannot prevent screenshots. Playback events cannot prove attention. A selfie face check cannot prove identity or liveness. Cloud exports have a loss window for unexported activity. Certificates depend on the first passing exam event retained by those exports. The [backlog](../TODOS.md) and [capacity guide](runbooks/capacity.md) record known limits; no simultaneous-viewer capacity is guaranteed.

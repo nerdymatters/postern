@@ -118,9 +118,22 @@ def verify_google_identity(credential, client_ids):
         raise Refusal(401, 'sign_in_required', 'Google could not confirm that sign-in. Please try again.')
     if claims.get('iss') not in ('accounts.google.com', 'https://accounts.google.com') or claims.get('aud') not in client_ids:
         raise Refusal(401, 'sign_in_required', 'That sign-in was issued for a different application.')
-    if not claims.get('email') or not claims.get('email_verified'):
+    subject = claims.get('sub')
+    if not isinstance(subject, str) or not 1 <= len(subject) <= 255 or not subject.isascii() or not subject.isprintable():
+        raise Refusal(401, 'sign_in_required', 'Google could not confirm that account identity. Please try again.')
+    if not isinstance(claims.get('email'), str) or not claims['email'] or claims.get('email_verified') is not True:
         raise Refusal(403, 'access_denied', 'Your Google account has no verified email address.')
-    return {'sub': claims['sub'], 'email': claims['email'], 'name': claims.get('name', '')}
+    return {'sub': subject, 'email': claims['email'], 'name': claims.get('name', '')}
+
+
+def session_identity(subject, mode):
+    """Describe an authenticated session for account/space matching, never authorization.
+
+    This is returned only to the session's holder. Local demo identities must not
+    be mistaken for a verified Google account by an account-enabled frontend.
+    """
+    return {'issuer': 'https://accounts.google.com' if mode == 'google' else 'postern:demo',
+            'subject': subject}
 
 
 def token_hash(token):

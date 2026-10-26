@@ -9,6 +9,34 @@ the API's address is compiled in twice:
 - by Vercel (`/vercel.json` at the repo root) — set `VITE_POSTERN_API` in the Vercel project to
   the API's HTTPS origin.
 
+## Accounts and profiles
+
+Set `VITE_POSTERN_ACCOUNTS_API` to a separately hosted account API to enable the
+account home (`/home`), profile editor (`/settings/profile`) and public profiles
+(`/@handle`). With this variable absent, the existing standalone reading room
+continues to be the application entry point. For local development, set it to
+`/account-api`; Vite forwards that prefix to `http://127.0.0.1:8787`.
+
+The account API uses `/v1/config`, `/v1/auth/google`, `/v1/session`, `/v1/profile`,
+`/v1/profiles/:handle`, `/v1/auth/signout` and `/v1/account`. Account sessions are
+stored separately from reading-room sessions. Public profile reads send no
+account credential and render only handle, chosen name, Google avatar, bio and
+HTTPS website. Profiles are private until their owner explicitly publishes them.
+
+The existing reading room is available through `/s/pilot`; old training deep
+links also pass through the account/space gate. Space entry independently
+verifies Google sign-in and membership. Before loading private content, the
+client binds the space session's verified issuer and subject to the account's
+identity. An older API without identity fields fails closed in account mode.
+Deploy the compatible space API before enabling the account frontend. A space
+refusal never signs out the Postern account. Account sign-out and account
+switching clear both browser sessions and protected media.
+
+Account pages do not require a space's agreements or selfie enrollment. Email,
+private membership, training results and enrollment photographs are not public
+profile fields. Profile names do not change certificate names. The account
+privacy page explains publication, deletion and separately retained space data.
+
 ## Commands
 
 ```bash

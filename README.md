@@ -56,6 +56,8 @@ For separate web hosting, set `VITE_POSTERN_API` to your HTTPS API origin in you
 - [Capacity rehearsal and known limits](docs/runbooks/capacity.md)
 - [Optional independent status service](docs/runbooks/status.md)
 - [Account isolation](docs/runbooks/account-isolation.md)
+- [Optional accounts and profiles](docs/accounts.md)
+- [Product roadmap](ROADMAP.md)
 - [Known follow-up work](TODOS.md)
 - [Release notes](CHANGELOG.md)
 

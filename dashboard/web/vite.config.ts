@@ -8,7 +8,7 @@ export default defineConfig({
   server: {
     port: 5173,
     // `.venv/bin/python -m postern.serve --port 8790` during development.
-    proxy: { '/api': 'http://127.0.0.1:8790', '/health': 'http://127.0.0.1:8790' },
+    proxy: { '/account-api': { target: 'http://127.0.0.1:8787', rewrite: path => path.replace(/^\/account-api/, '') }, '/api': 'http://127.0.0.1:8790', '/health': 'http://127.0.0.1:8790' },
   },
   build: { outDir: 'dist', sourcemap: false },
   test: {

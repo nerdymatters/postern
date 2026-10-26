@@ -9,8 +9,9 @@ export interface SelfieState { enabled: boolean; required: boolean; id?: string;
 export interface SelfieRecord { id: string; email: string; captured_at: number; expires_at: number; retired_at: number | null; status: string }
 /** Managers and C-suite read like staff and may skip chapter quizzes; only admins manage content. */
 export type Role = 'reader' | 'admin' | 'manager' | 'c-suite'
-export interface Session { email: string; name: string; role: Role; consent_required: boolean; notice: string; notice_version: string; selfie?: SelfieState }
-export interface SignIn { token: string; email: string; name: string; role: Role }
+export interface Identity { issuer: string; subject: string }
+export interface Session { identity?: Identity; email: string; name: string; role: Role; consent_required: boolean; notice: string; notice_version: string; selfie?: SelfieState }
+export interface SignIn { identity?: Identity; token: string; email: string; name: string; role: Role }
 export interface Item {
   id: string; post_id: string; filename: string; kind: 'pdf' | 'photo' | 'video'; pages: number; duration_seconds?: number
   derive_status: 'queued' | 'converting' | 'ready' | 'failed'; derive_error: string | null; sort: number
@@ -145,7 +146,10 @@ export function setToken(value: string | null) {
 }
 
 let announce: (refusal: Refusal) => void = () => {}
-export function onRefusal(handler: (refusal: Refusal) => void) { announce = handler }
+export function onRefusal(handler: (refusal: Refusal) => void) {
+  announce = handler
+  return () => { if (announce === handler) announce = () => {} }
+}
 
 function refusalCode(status: number, code: string): RefusalCode | null {
   if (status === 401) return 'sign_in_required'
@@ -154,11 +158,11 @@ function refusalCode(status: number, code: string): RefusalCode | null {
   return null
 }
 
-function failure(status: number, code: string, message: string): Refusal | ApiError {
+function failure(status: number, code: string, message: string, notify = true): Refusal | ApiError {
   const refused = refusalCode(status, code)
   if (!refused) return new ApiError(status, code, message)
   const refusal = new Refusal(refused, status, message)
-  announce(refusal)
+  if (notify) announce(refusal)
   return refusal
 }
 
@@ -168,7 +172,8 @@ function described(body: unknown, status: number) {
 }
 
 // inlineSelfieOutage: a private-storage outage on this call is the caller's to show in place, not a whole-screen refusal.
-async function send(path: string, init?: RequestInit, inlineSelfieOutage = false): Promise<Response> {
+async function send(path: string, init?: RequestInit, inlineSelfieOutage = false, quietRefusal = false): Promise<Response> {
+  const identity = token
   const headers = new Headers(init?.headers)
   headers.set('X-Postern-Client', 'web')
   if (path.startsWith('/api/auth/')) headers.set('X-Postern-Device', browserId())
@@ -182,7 +187,7 @@ async function send(path: string, init?: RequestInit, inlineSelfieOutage = false
   if (!response.ok) {
     const { code, message } = described(await response.json().catch(() => null), response.status)
     if (inlineSelfieOutage && response.status === 503 && code === 'selfie_unavailable') throw new ApiError(response.status, code, message)
-    throw failure(response.status, code, message)
+    throw failure(response.status, code, message, !quietRefusal && identity === token)
   }
   return response
 }
@@ -225,6 +230,7 @@ export function browserId(): string {
 /** Uploads report progress, so they go through XHR rather than fetch. */
 function attach(postId: string, file: File, progress: (fraction: number) => void): Promise<Item> {
   return new Promise((resolve, reject) => {
+    const identity = token
     const request = new XMLHttpRequest()
     request.open('POST', `${BASE}/api/admin/posts/${postId}/${file.name.toLowerCase().endsWith('.mp4') ? 'videos' : 'items'}`)
     request.setRequestHeader('X-Postern-Client', 'web')
@@ -237,7 +243,7 @@ function attach(postId: string, file: File, progress: (fraction: number) => void
       if (request.status >= 200 && request.status < 300) resolve(body as Item)
       else {
         const { code, message } = described(body, request.status)
-        reject(failure(request.status, code, message))
+        reject(failure(request.status, code, message, identity === token))
       }
     }
     const form = new FormData()
@@ -259,6 +265,11 @@ export const api = {
   },
   config: () => read<Config>('/api/config'),
   session: () => read<Session>('/api/session'),
+  revokeForAccount: async (credential: string) => {
+    await fetch(BASE + '/api/auth/signout', { method: 'POST', headers: { Authorization: `Bearer ${credential}` }, cache: 'no-store', signal: AbortSignal.timeout(10000) })
+  },
+  sessionForAccount: async () => await (await send('/api/session', undefined, false, true)).json() as Session,
+  signInGoogleForAccount: async (credential: string) => await (await send('/api/auth/google', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential }) }, false, true)).json() as SignIn,
   signInDemo: (email: string) => write<SignIn>('/api/auth/demo', { email, name: '' }),
   signInGoogle: (credential: string) => write<SignIn>('/api/auth/google', { credential }),
   consent: (version: string, ipVersion: string, monitoringAccepted: boolean, ipAccepted: boolean) => write<{ accepted: boolean }>('/api/consent', { version, ip_version: ipVersion, monitoring_accepted: monitoringAccepted, ip_accepted: ipAccepted }),

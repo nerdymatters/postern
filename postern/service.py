@@ -13,7 +13,7 @@ import sqlite3
 import sys
 import time
 import uuid
-from .auth import Permissions, Refusal, canonical_email, parse_allowlist, token_hash
+from .auth import Permissions, Refusal, canonical_email, parse_allowlist, session_identity, token_hash
 from .cache import CompositeCache
 from .db import AuditUnavailable, Database, event, meta, rows, set_meta
 from .cache import SessionInvalidated
@@ -192,7 +192,8 @@ class Service:
             if device:
                 db.execute('INSERT INTO session_devices VALUES (?,?)', (public, device))
             event(db,'signin_ok',context)
-            return {**context,'role':member['role'],'consent_required':True,'token':token}
+            return {**context,'role':member['role'],'consent_required':True,'token':token,
+                    'identity':session_identity(identity['sub'],self.config.mode)}
         result=await self.write(create)
         if result is None:raise Refusal(403,'access_denied','Your Google account is not on the staff list.')
         return result
