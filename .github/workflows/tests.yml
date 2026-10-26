@@ -16,8 +16,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
-      - name: Install media tools
-        run: brew install poppler ffmpeg
+      - name: Install native tools
+        run: brew install poppler ffmpeg caddy
       - name: Install Postern
         run: |
           python -m pip install --upgrade pip

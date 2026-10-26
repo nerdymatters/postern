@@ -1,5 +1,6 @@
 """Media serving, per-reader stamping and composite isolation (ENG-D1, ENG-D15; tasks T1, T15)."""
 from __future__ import annotations
+from concurrent.futures import Future
 import hashlib
 import threading
 import time
@@ -294,40 +295,50 @@ def test_revoking_a_reader_drops_their_composites(client, clock, store, allowlis
 
 def test_compositing_does_not_block_the_event_loop(client, monkeypatch):
     admin, post, item_id = published(client, pages=1)
-    # A thirty-megapixel page costs a few hundred milliseconds of Pillow work per request.
+    # Keep the real thirty-megapixel render after proving that its worker is off the event loop.
     source = client.service.config.data_dir / 'derived' / item_id / 'page-0.jpg'
     with Image.open(source) as page:
         page.convert('RGB').resize((4800, 6200)).save(source, quality=80)
     reader = sign_in(client)
     view = open_view(client, reader, item_id)
-    outcome = {}
-    # Bound the observation window independently of Pillow speed. A simpler stamp
-    # can finish in <200ms on a fast Mac; that is not an event-loop regression.
+    entered, release = threading.Event(), threading.Event()
     composite = client.service.composite
-    def slow_composite(*args, **kwargs):
-        time.sleep(0.25)
+
+    def held_composite(*args, **kwargs):
+        entered.set()
+        assert release.wait(10), 'the test did not release the composite worker'
         return composite(*args, **kwargs)
-    monkeypatch.setattr(client.service, 'composite', slow_composite)
+    monkeypatch.setattr(client.service, 'composite', held_composite)
 
-    def fetch():
-        started = time.perf_counter()
-        response = client.get(f"/api/views/{view['id']}/page/0.jpg", headers=reader)
-        outcome.update(status=response.status_code, bytes=len(response.content), elapsed=time.perf_counter() - started)
+    def fetch(result, path):
+        try:
+            result.set_result(client.get(path, headers=reader))
+        except BaseException as error:
+            result.set_exception(error)
 
-    worker = threading.Thread(target=fetch)
+    media, session = Future(), Future()
+    worker = threading.Thread(target=fetch, args=(media, f"/api/views/{view['id']}/page/0.jpg"), daemon=True)
+    probe = threading.Thread(target=fetch, args=(session, '/api/session'), daemon=True)
     worker.start()
-    latencies = []
-    while worker.is_alive():
-        started = time.perf_counter()
-        probe = client.get('/api/session', headers=reader)
-        latencies.append(time.perf_counter() - started)
-        assert probe.status_code == 200
-    worker.join()
+    try:
+        # These timeouts bound deadlocks; responsiveness is the ordering, not a latency ratio.
+        assert entered.wait(10), 'the media request did not enter the composite worker'
+        probe.start()
+        try:
+            response = session.result(timeout=5)
+        except TimeoutError as error:
+            raise AssertionError('authenticated session did not finish while the composite was held') from error
+        assert response.status_code == 200
+        assert not media.done(), 'the media request finished before the composite was released'
+    finally:
+        release.set()
+        for thread in (worker, probe):
+            if thread.ident is not None:
+                thread.join(timeout=10)
+        assert not any(thread.is_alive() for thread in (worker, probe)), 'request thread did not finish after releasing the composite'
 
-    assert outcome['status'] == 200 and outcome['bytes'] > 100_000
-    assert outcome['elapsed'] > 0.2, outcome  # a composite this cheap would prove nothing
-    assert len(latencies) >= 5, latencies
-    assert max(latencies) < outcome['elapsed'] / 2, (max(latencies), outcome)
+    response = media.result(timeout=0)
+    assert response.status_code == 200 and len(response.content) > 100_000
 
 
 def test_a_reader_never_receives_a_stored_original(client, tmp_path):
