@@ -18,7 +18,8 @@ described in [Architecture](docs/architecture.md).
   billing remain private and separate from the existing resource host. Define
   the reusable open-source interfaces and package boundaries before coding.
 - **Current milestone:** M1, accounts and profiles. Implementation is prepared;
-  the live pilot and rollout remain pending. M0 launch preparation runs alongside it.
+  a controlled Google pilot passed; production compatibility and rollout remain
+  pending. M0 launch preparation runs alongside it.
 - **Later milestones:** ordered proposals, with implementation details to settle
   at each milestone. Their order is not a release-date commitment.
 - **Tracking:** task IDs remain stable. Check a task only after its outcome is
@@ -29,7 +30,7 @@ described in [Architecture](docs/architecture.md).
 | Milestone | Status | Dependency |
 |---|---|---|
 | M0 Launch preparation | Planned; parallel with M1 | Current deployment baseline |
-| M1 Accounts and profiles | Implementation prepared; live pilot pending | M0 launch checks before release |
+| M1 Accounts and profiles | Controlled Google pilot passed; production pending | M0 launch checks before release |
 | M2 Private spaces and resource catalog | Planned | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
 | M4 Rust folder client | Later | M2 resource API and permissions |

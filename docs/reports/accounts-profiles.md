@@ -1,7 +1,7 @@
 # Accounts and profiles implementation validation
 
-Date: 2026-10-26. M1 implementation is prepared; the live Google/member pilot and
-production rollout remain pending. The account feature is opt-in through
+Date: 2026-10-26. M1 implementation is prepared; a controlled real-Google pilot has passed, while production-member compatibility
+and production rollout remain pending. The account feature is opt-in through
 `VITE_POSTERN_ACCOUNTS_API`, so a default deployment retains the standalone
 reading room.
 
@@ -29,7 +29,8 @@ reading room.
 | Frontend | 270 tests passed, including 21 new account/session/profile cases; TypeScript and production build passed. |
 | Private account service | 28 tests passed using real SQLite transactions and locally signed JWTs; typecheck and Worker dry run passed. |
 | Local Worker/D1 | Actual HTTP checks covered schema health, invalid Google credentials, synthetic stored sessions, unpublished/published profile behavior, update, deletion/cascade and origin refusal. Synthetic fixtures were removed. |
-| Hosted preview | An isolated frontend and account Worker/D1 deployment passed HTML/bundle configuration, health, closed-registration, unauthorized-session and missing-profile checks. Real Google sign-in remains pending. |
+| Hosted preview | An isolated frontend and account Worker/D1 deployment passed HTML/bundle configuration, health, closed-registration, unauthorized-session and missing-profile checks. Real Google sign-in subsequently passed in the isolated local frontend; hosted frontend sign-in remains a separate check. |
+| Real Google pilot | The existing web OAuth client was configured and re-opened to verify both test origins. One real identity signed into the preview account service, was denied by an empty local space roster, passed admission after a synthetic invitation, then lost space access after revocation while retaining an editable unpublished profile. The agreement gate remained intact and was not accepted. This does not verify production training history or two-account switching. |
 | Hosted recovery | A separate, unexposed D1 database containing only synthetic records passed export, bookmark restore, session purge, profile unpublication/suspension and reconciliation preserving a post-snapshot account deletion. The disposable database was deleted. Preview and production data were untouched. |
 | Browser | Chromium exercised My spaces, editing, visitor preview, publishing and anonymous profiles at desktop and mobile sizes. A separate keyboard-only flow verified Tab/Enter/Space navigation, editing, publishing, saving and visible focus indicators. No private API requests occurred during the account/profile flow. These checks used synthetic API fixtures. |
 | Targeted dependency checks | Current OSV results contained no findings for the private account lockfile or certifi 2026.10.23. This does not close the other dependency/workflow findings in issue #1. |
@@ -43,9 +44,10 @@ and operational runbook.
 
 ## Remaining release evidence
 
-- Configure the exact pilot frontend origin on the real Google web OAuth client.
-- Run the admitted-user, outside-account and controlled-revoked-member pilot
-  with real Google identities and the updated private-space API.
+- Complete the production-member training/history compatibility pilot, hosted
+  frontend Google sign-in, and two-identity account-switching checks. The
+  controlled local outsider/admitted/revoked sequence used one real identity
+  and synthetic resource data.
 - Record the actual account plan, operating/backup limits and responsible
   operator before production registration. The isolated recovery rehearsal
   validates the procedure, but does not establish production retention limits.
