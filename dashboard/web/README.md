@@ -12,9 +12,10 @@ the API's address is compiled in twice:
 ## Accounts and profiles
 
 Set `VITE_POSTERN_ACCOUNTS_API` to a separately hosted account API to enable the
-account home (`/home`), profile editor (`/settings/profile`) and public profiles
+**My Posterns** account home (`/home`), profile editor (`/settings/profile`) and public profiles
 (`/@handle`). With this variable absent, the existing standalone reading room
-continues to be the application entry point. For local development, set it to
+continues to be the application entry point. Navigation calls the account home
+**Posterns**; **Profile** remains separate. For local development, set it to
 `/account-api`; Vite forwards that prefix to `http://127.0.0.1:8787`.
 
 The account API uses `/v1/config`, `/v1/auth/google`, `/v1/session`, `/v1/profile`,
@@ -54,7 +55,9 @@ then shows an email box instead of the Google button, which is what the Playwrig
 
 | file | what it holds |
 | --- | --- |
-| `src/api.ts` | every route, the session bearer token, and the mapping of the server's refusal states |
+| `src/api.ts` | private resource routes, the space session bearer token, and the mapping of the server's refusal states |
+| `src/accounts-api.ts` | account/profile API requests, account token storage and change notifications, and verified identity matching |
+| `src/accounts.tsx` | My Posterns, profile editing/publication, public profiles, account privacy/deletion, and the account-to-space entry gate |
 | `src/app.tsx` | config/session gate, the refusal states, the shell and the routes |
 | `src/theme.tsx`, `index.html` | day/night preference, system-theme updates, header toggle, and early theme application before React renders |
 | `src/PosternWordmark.tsx`, `src/PosternIcons.tsx` | outlined logo and 22 decorative action/format icons; see the [logo kit](../../docs/brand/logo/README.md) |

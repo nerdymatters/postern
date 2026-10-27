@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { AccountsApp } from './accounts'
+import { App } from './app'
 import { accountToken, setAccountToken, type Account } from './accounts-api'
 import { currentToken, setToken } from './api'
 import { calls, installApi, world, type World } from './testing'
@@ -68,7 +69,7 @@ test('a memberless Google user gets an account home without private config/conte
   const state = fake()
   render(<AccountsApp />)
   fireEvent.click(await screen.findByRole('button', { name: 'Google test sign-in' }))
-  expect(await screen.findByRole('heading', { name: 'No spaces yet' })).toBeTruthy()
+  expect(await screen.findByRole('heading', { name: 'No Posterns yet' })).toBeTruthy()
   expect(accountToken()).toBe('account-a')
   expect(currentToken()).toBeNull()
   expect(calls).toEqual([])
@@ -130,8 +131,8 @@ test('a private-space refusal keeps the public account signed in and never opens
   expect(accountToken()).toBe('account-a')
   expect(currentToken()).toBeNull()
   expect(calls.some(call => call.url === '/api/posts')).toBe(false)
-  fireEvent.click(screen.getByRole('link', { name: 'Back to My spaces' }))
-  expect(await screen.findByRole('heading', { name: 'No spaces yet' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('link', { name: 'Back to My Posterns' }))
+  expect(await screen.findByRole('heading', { name: 'No Posterns yet' })).toBeTruthy()
 })
 
 test('a Google account mismatch cannot attach a private-space session', async () => {
@@ -163,6 +164,32 @@ test('a matching space session opens the existing protected app and namespaces n
   act(() => navigate('/certificate'))
   expect(window.location.pathname).toBe('/s/pilot/certificate')
   expect(parse(window.location.pathname)).toEqual({ name: 'certificate' })
+})
+
+test.each(['/post/p1/item/item-p1', '/quiz/1', '/final-exam'])('returning from legacy link %s stays in private training', async path => {
+  fake(); setAccountToken('account-a'); setToken('private-old')
+  window.history.replaceState(null, '', `${path}?from=legacy#section`)
+  const historyLength = window.history.length
+  render(<AccountsApp />)
+  const back = await screen.findByRole('button', { name: 'Back' })
+  const destination = window.location.pathname + window.location.search + window.location.hash
+  expect(window.history.length).toBe(historyLength)
+  fireEvent.click(back)
+  expect(window.location.pathname).toBe('/s/pilot')
+  expect(await screen.findByText('Tip pooling policy')).toBeTruthy()
+  expect(screen.queryByRole('heading', { name: 'My Posterns' })).toBeNull()
+  expect(destination).toBe(`/s/pilot${path}?from=legacy#section`)
+  expect(accountToken()).toBe('account-a'); expect(currentToken()).toBe('private-old')
+})
+
+test.each(['/post/p1', '/quiz/1'])('standalone navigation from %s keeps ordinary training routes', async path => {
+  const state = fake(); vi.stubEnv('VITE_POSTERN_ACCOUNTS_API', '')
+  setToken('private-old'); window.history.replaceState(null, '', path)
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Back' }))
+  expect(window.location.pathname).toBe('/')
+  expect(await screen.findByText('Tip pooling policy')).toBeTruthy()
+  expect(state.accountCalls).toEqual([])
 })
 
 test('a revoked private session affects only that space and clears private media', async () => {
@@ -200,6 +227,34 @@ test('cross-tab account changes clear private media and the previous space sessi
   expect(liveUrls()).toBe(0)
 })
 
+test.each([
+  { cached: null, shared: 'private-other-tab', expected: ['Bearer private-other-tab'] },
+  { cached: 'private-old', shared: 'private-other-tab', expected: ['Bearer private-old', 'Bearer private-other-tab'] },
+  { cached: 'private-old', shared: 'private-old', expected: ['Bearer private-old'] },
+])('account sign-out revokes cached $cached and shared $shared sessions once', async ({ cached, shared, expected }) => {
+  fake(); setAccountToken('account-a'); setToken(cached)
+  const normal = fetch
+  const revoked: (string | null)[] = []
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === '/api/auth/signout') revoked.push(new Headers(init?.headers).get('Authorization'))
+    return normal(input, init)
+  }) as typeof fetch
+  render(<AccountsApp />)
+  await screen.findByRole('heading', { name: cached ? 'Private Postern' : 'No Posterns yet' })
+  // Another tab signs into the space after this tab loaded. Browser storage is
+  // shared, but this tab must not adopt that bearer for private API requests.
+  act(() => {
+    localStorage.setItem('postern.token', shared)
+    window.dispatchEvent(new StorageEvent('storage', { key: 'postern.token', newValue: shared }))
+  })
+  expect(currentToken()).toBe(cached)
+  fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
+  await screen.findByRole('heading', { name: 'Your place on Postern' })
+  await waitFor(() => expect(revoked.sort()).toEqual(expected.sort()))
+  expect(accountToken()).toBeNull(); expect(currentToken()).toBeNull()
+  expect(localStorage.getItem('postern.token')).toBeNull()
+})
+
 test('a late private sign-in after leaving the page is revoked without storing its token', async () => {
   fake(); setAccountToken('account-a'); window.history.replaceState(null, '', '/s/pilot')
   const normal = fetch
@@ -210,7 +265,7 @@ test('a late private sign-in after leaving the page is revoked without storing i
   act(() => navigate('/home'))
   await act(async () => { resolve(json({ token: 'late-private', identity: first().identity, email: first().email, role: 'reader', name: 'Alice' })) })
   expect(currentToken()).toBeNull()
-  expect(await screen.findByRole('heading', { name: 'No spaces yet' })).toBeTruthy()
+  expect(await screen.findByRole('heading', { name: 'No Posterns yet' })).toBeTruthy()
   expect(calls.some(call => call.url === '/api/posts')).toBe(false)
 })
 
@@ -274,14 +329,16 @@ test('a profile save finishing after an account switch cannot restore the old pr
   expect(accountToken()).toBe('account-b')
 })
 
-test('leaving a bound private space returns to account home without losing the account', async () => {
-  fake(); setAccountToken('account-a'); setToken('private-old'); window.history.replaceState(null, '', '/s/pilot')
+test('Sign out in a bound private space ends both account and space sessions', async () => {
+  const state = fake(); setAccountToken('account-a'); setToken('private-old'); window.history.replaceState(null, '', '/s/pilot')
   render(<AccountsApp />)
   await screen.findByText('Tip pooling policy')
   fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
-  expect(await screen.findByRole('heading', { name: 'No spaces yet' })).toBeTruthy()
+  expect(await screen.findByRole('heading', { name: 'Your place on Postern' })).toBeTruthy()
   expect(window.location.pathname).toBe('/home')
-  expect(accountToken()).toBe('account-a'); expect(currentToken()).toBeNull()
+  expect(accountToken()).toBeNull(); expect(currentToken()).toBeNull()
+  expect(state.accountCalls.some(call => call.path.endsWith('/v1/auth/signout') && call.authorization === 'Bearer account-a')).toBe(true)
+  expect(calls.some(call => call.url === '/api/auth/signout')).toBe(true)
 })
 
 test('a private bootstrap network failure offers retry after the wrapper admitted the session', async () => {
@@ -298,4 +355,85 @@ test('a private bootstrap network failure offers retry after the wrapper admitte
   expect(accountToken()).toBe('account-a')
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
   expect(await screen.findByText('Tip pooling policy')).toBeTruthy()
+})
+
+
+test.each([null, 'account-b'])('a receiving tab revokes its own bearer on account change to %s', async replacement => {
+  fake(); setAccountToken('account-a'); setToken('private-middle-tab')
+  const normal = fetch
+  const revoked: (string | null)[] = []
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === '/api/auth/signout') revoked.push(new Headers(init?.headers).get('Authorization'))
+    return normal(input, init)
+  }) as typeof fetch
+  render(<AccountsApp />)
+  await screen.findByRole('heading', { name: 'Private Postern' })
+  // A third tab has overwritten shared storage. This tab alone still knows its bearer.
+  localStorage.setItem('postern.token', 'private-newest-tab')
+  act(() => {
+    if (replacement) localStorage.setItem('postern.account.token', replacement)
+    else localStorage.removeItem('postern.account.token')
+    window.dispatchEvent(new StorageEvent('storage', { key: 'postern.account.token', newValue: replacement }))
+  })
+  await waitFor(() => expect(revoked).toEqual(['Bearer private-middle-tab']))
+  expect(currentToken()).toBeNull()
+  expect(accountToken()).toBe(replacement)
+})
+
+test.each(['network', 'roster outage'])('a %s during private binding preserves the bearer for a successful retry', async kind => {
+  fake(); setAccountToken('account-a'); setToken('private-old'); window.history.replaceState(null, '', '/s/pilot')
+  const normal = fetch
+  let unavailable = true
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === '/api/session' && unavailable) {
+      return kind === 'network' ? Promise.reject(new TypeError('Offline')) : Promise.resolve(json({ error: 'authorization_source_unavailable', message: 'Permissions temporarily unavailable.' }, 503))
+    }
+    return normal(input, init)
+  }) as typeof fetch
+  render(<AccountsApp />)
+  await screen.findByRole('heading', { name: 'Private space is unavailable' })
+  expect(accountToken()).toBe('account-a'); expect(currentToken()).toBe('private-old')
+  expect(calls.some(call => call.url === '/api/posts')).toBe(false)
+  expect(screen.queryByRole('button', { name: 'Google test sign-in' })).toBeNull()
+  unavailable = false
+  fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+  expect(await screen.findByText('Tip pooling policy')).toBeTruthy()
+  expect(currentToken()).toBe('private-old')
+})
+
+test('a resource-level 403 keeps the bound private session and retries without Google sign-in', async () => {
+  const state = fake(); state.private.refuse = { status: 403, error: 'access_denied', message: 'This post is not available.', path: /\/api\/posts$/ }
+  setAccountToken('account-a'); setToken('private-old'); window.history.replaceState(null, '', '/s/pilot')
+  render(<AccountsApp />)
+  await screen.findByText('This post is not available.')
+  expect(currentToken()).toBe('private-old'); expect(accountToken()).toBe('account-a')
+  state.private.refuse = null
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+  expect(await screen.findByText('Tip pooling policy')).toBeTruthy()
+})
+
+test('an already loaded owner keeps account navigation on a public profile without authenticated public reads', async () => {
+  const state = fake(); setAccountToken('account-a')
+  render(<AccountsApp />)
+  await screen.findByText('Account Alice')
+  const reads = state.accountCalls.length
+  act(() => navigate('/@alice'))
+  await screen.findByRole('heading', { name: 'Account Alice' })
+  expect(screen.getByRole('button', { name: 'Sign out' })).toBeTruthy()
+  expect(screen.getByRole('link', { name: 'Posterns' })).toBeTruthy()
+  expect(state.accountCalls.slice(reads).map(call => [call.path, call.authorization])).toEqual([['/accounts/v1/profiles/alice', null]])
+})
+
+test('bio validation counts Unicode characters rather than UTF16 units', async () => {
+  const state = fake(); setAccountToken('account-a'); window.history.replaceState(null, '', '/settings/profile')
+  render(<AccountsApp />)
+  fireEvent.change(await screen.findByLabelText('Handle'), { target: { value: 'alice' } })
+  fireEvent.change(screen.getByLabelText('Bio'), { target: { value: 'a'.repeat(281) } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save profile' }))
+  await screen.findByText('Use no more than 280 characters for your bio.')
+  expect(state.accountCalls.some(call => call.path.endsWith('/v1/profile'))).toBe(false)
+  fireEvent.change(screen.getByLabelText('Bio'), { target: { value: '😀'.repeat(280) } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save profile' }))
+  await screen.findByText('Profile saved.')
+  expect(state.a.profile.bio).toBe('😀'.repeat(280))
 })

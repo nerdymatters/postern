@@ -26,7 +26,7 @@ const HEADER_ITEM = 'header-action'
 const HEADER_ICON = 'size-5 sm:size-4'
 const HEADER_LABEL = 'sr-only sm:not-sr-only'
 
-export function App({ expectedIdentity, onSessionLost }: { expectedIdentity?: Identity; onSessionLost?: () => void } = {}) {
+export function App({ expectedIdentity, onSessionLost, onAccountSignOut }: { expectedIdentity?: Identity; onSessionLost?: () => void; onAccountSignOut?: () => void } = {}) {
   const { dark, toggle } = useTheme()
   const route = useRoute()
   const adminRoute = ['admin', 'progress', 'report', 'denials'].includes(route.name)
@@ -65,7 +65,7 @@ export function App({ expectedIdentity, onSessionLost }: { expectedIdentity?: Id
   // Refusals clear protected media before showing the required next step.
   useEffect(() => {
     return onRefusal(refused => {
-      if (expectedIdentity && (refused.code === 'sign_in_required' || refused.code === 'access_denied')) {
+      if (expectedIdentity && refused.code === 'sign_in_required') {
         setToken(null); forgetViews(); releaseAll(); onSessionLost?.(); return
       }
       if (refused.code === 'sign_in_required') {
@@ -93,7 +93,7 @@ export function App({ expectedIdentity, onSessionLost }: { expectedIdentity?: Id
     setLoading(true)
     void (async () => {
       try {
-        const settings = await api.config()
+        const settings = await (expectedIdentity ? api.configForAccount() : api.config())
         if (!live) return
         setConfig(settings)
         setTrouble('')
@@ -104,7 +104,7 @@ export function App({ expectedIdentity, onSessionLost }: { expectedIdentity?: Id
           return
         }
         // A reader who signs out while this loads must not leave their training behind for the next person.
-        const current = await api.session()
+        const current = await (expectedIdentity ? api.sessionForAccount({ quietRefusal: false }) : api.session())
         if (!live || currentToken() !== identity) return
         if (expectedIdentity && !sameIdentity(expectedIdentity, current.identity)) {
           setToken(null); forgetViews(); releaseAll(); onSessionLost?.(); return
@@ -124,9 +124,8 @@ export function App({ expectedIdentity, onSessionLost }: { expectedIdentity?: Id
 
   async function leave() {
     if (expectedIdentity) {
-      const credential = currentToken()
-      setToken(null); forgetViews(); releaseAll(); onSessionLost?.(); navigate('/home')
-      if (credential) void api.revokeForAccount(credential).catch(() => {})
+      // The account owner captures and revokes both credentials before clearing them.
+      onAccountSignOut?.()
       return
     }
     try {
@@ -182,7 +181,7 @@ export function App({ expectedIdentity, onSessionLost }: { expectedIdentity?: Id
       <Panel className="space-y-4">
         <Message text={trouble || 'Your private access could not be checked. Your Postern account is still available.'} />
         <Button onClick={reload}>Try again</Button>
-        <Link to="/home" className="block underline">Back to My spaces</Link>
+        <Link to="/home" className="block underline">Back to My Posterns</Link>
       </Panel>
     </Centred>
   )

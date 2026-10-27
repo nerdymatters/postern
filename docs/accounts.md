@@ -5,6 +5,11 @@ a private space. A valid Google sign-in can create an account when registration
 is open. Private resources still require admission by the resource server's
 roster, followed by its existing agreements and enrollment requirements.
 
+The interface calls each private resource space a **Postern**. **Posterns** in
+the navigation opens **My Posterns**, described as “Private spaces and resources
+shared with you.” **Profile** remains separate. These labels do not change the
+account/resource boundary or the existing routes.
+
 ## Deployment boundary
 
 This repository supplies the account/profile interface in the web app and the
@@ -87,9 +92,14 @@ that account and space sessions identify the same Google subject. Email or name
 equality is insufficient. Session responses lacking a verified identity fail
 closed; local demo identities cannot impersonate Google identities.
 
-A private-space 401/403 or roster outage affects that space's experience.
-Account logout and account switching clear both local sessions and protected
-media/progress state. Late responses from a previous identity must not restore
+A private-space refusal or roster outage affects that space's experience.
+Temporary private-host failures retain the credential and offer a retry without
+opening protected content. Resource-level denials preserve the session; a failed
+session authorization check requires fresh private sign-in.
+Account logout (including Sign out inside a Postern) and account switching clear
+both local sessions and protected media/progress state. Each open tab also
+attempts to revoke its own cached private credential when the account changes.
+Server revocation is best effort when the network is unavailable. Late responses from a previous identity must not restore
 the prior user's session or content.
 
 ## Launch and recovery

@@ -139,6 +139,11 @@ export class ApiError extends Error {
 
 let token = localStorage.getItem(TOKEN)
 export function currentToken() { return token }
+/** Revoke sessions held by this tab or opened in another tab, without adopting
+ * another tab's bearer for private API requests before identity verification. */
+export function tokensForSignOut() {
+  return [...new Set([token, localStorage.getItem(TOKEN)])].filter((value): value is string => !!value)
+}
 export function setToken(value: string | null) {
   token = value
   if (value) localStorage.setItem(TOKEN, value)
@@ -265,11 +270,12 @@ export const api = {
   },
   config: () => read<Config>('/api/config'),
   session: () => read<Session>('/api/session'),
+  configForAccount: async () => await (await send('/api/config', { signal: AbortSignal.timeout(15000) }, false, true)).json() as Config,
   revokeForAccount: async (credential: string) => {
     await fetch(BASE + '/api/auth/signout', { method: 'POST', headers: { Authorization: `Bearer ${credential}` }, cache: 'no-store', signal: AbortSignal.timeout(10000) })
   },
-  sessionForAccount: async () => await (await send('/api/session', undefined, false, true)).json() as Session,
-  signInGoogleForAccount: async (credential: string) => await (await send('/api/auth/google', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential }) }, false, true)).json() as SignIn,
+  sessionForAccount: async ({ quietRefusal = true }: { quietRefusal?: boolean } = {}) => await (await send('/api/session', { signal: AbortSignal.timeout(15000) }, false, quietRefusal)).json() as Session,
+  signInGoogleForAccount: async (credential: string) => await (await send('/api/auth/google', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential }), signal: AbortSignal.timeout(15000) }, false, true)).json() as SignIn,
   signInDemo: (email: string) => write<SignIn>('/api/auth/demo', { email, name: '' }),
   signInGoogle: (credential: string) => write<SignIn>('/api/auth/google', { credential }),
   consent: (version: string, ipVersion: string, monitoringAccepted: boolean, ipAccepted: boolean) => write<{ accepted: boolean }>('/api/consent', { version, ip_version: ipVersion, monitoring_accepted: monitoringAccepted, ip_accepted: ipAccepted }),

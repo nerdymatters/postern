@@ -17,9 +17,16 @@ described in [Architecture](docs/architecture.md).
 - **Hosting boundary:** managed cloud signup/account orchestration and future
   billing remain private and separate from the existing resource host. Define
   the reusable open-source interfaces and package boundaries before coding.
+- **UI design and marketing:** the project owner will use [Ploy.ai](https://ploy.ai/)
+  to develop Postern's interface direction and marketing. Selected designs and
+  copy feed into implementation through the parallel track below.
+- **Product vocabulary:** each private resource space is a **Postern**. The
+  navigation label is **Posterns**, the dashboard is **My Posterns**, and
+  **Profile** remains the separate place for a person's identity.
 - **Current milestone:** M1, accounts and profiles. Implementation is prepared;
-  a controlled Google pilot passed; production compatibility and rollout remain
-  pending. M0 launch preparation runs alongside it.
+  hosted Google sign-in, controlled two-account switching and a read-only
+  history comparison passed. Live member acceptance and production rollout
+  remain pending. M0 launch preparation runs alongside it.
 - **Later milestones:** ordered proposals, with implementation details to settle
   at each milestone. Their order is not a release-date commitment.
 - **Tracking:** task IDs remain stable. Check a task only after its outcome is
@@ -31,6 +38,7 @@ described in [Architecture](docs/architecture.md).
 |---|---|---|
 | M0 Launch preparation | Planned; parallel with M1 | Current deployment baseline |
 | M1 Accounts and profiles | Controlled Google pilot passed; production pending | M0 launch checks before release |
+| UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
 | M2 Private spaces and resource catalog | Planned | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
 | M4 Rust folder client | Later | M2 resource API and permissions |
@@ -39,6 +47,22 @@ described in [Architecture](docs/architecture.md).
 
 M3 and M4 can proceed independently after M2. Screen-sharing research can run
 earlier; it does not require rewriting the upstream application in Rust.
+
+## UI design and marketing
+
+**Outcome:** a consistent Postern interface and clear messaging for the resource
+hub. The project owner leads exploration in [Ploy.ai](https://ploy.ai/); selected
+outputs guide implementation in this repository. This track runs alongside M1.
+
+- [ ] **DM-01** Use Ploy.ai to explore the visual direction and key UI flows,
+  starting with sign-in, profiles and My Posterns. Include mobile layouts and
+  the invited-member and no-access states.
+- [ ] **DM-02** Use Ploy.ai to develop positioning, landing-page concepts and
+  launch copy for sharing resources with people and AI agents. Distinguish
+  available capabilities from the roadmap's future milestones.
+- [ ] **DM-03** Bring the selected designs and copy into Postern. Verify mobile
+  and keyboard usability, profile visibility, private-space access behavior and
+  the accuracy of public product claims before publishing.
 
 ## M0 Launch preparation
 
@@ -60,7 +84,7 @@ not block independent profile design work.
 
 ## M1 Accounts and profiles
 
-**Outcome:** someone can sign in, own a profile and reach My spaces, whether or
+**Outcome:** someone can sign in, own a profile and reach My Posterns, whether or
 not they belong to the existing private space.
 
 Implementation evidence for M1-01 through M1-07 is recorded in the
@@ -78,7 +102,7 @@ tasks do not represent a completed production rollout.
   to the same verified identity; refuse or deliberately switch accounts on a
   mismatch. Preserve existing membership checks, agreements and enrollment.
   A space refusal must leave the account usable.
-- [x] **M1-04** Build profile editing, a shareable `/@handle` page and My spaces
+- [x] **M1-04** Build profile editing, a shareable `/@handle` page and My Posterns
   with a zero-space state. Seed name/avatar from Google when available, preserve
   user edits, handle reserved/duplicate names and keep account pages independent
   of private-content loading. Verify mobile and keyboard use plus error states.
@@ -96,6 +120,9 @@ tasks do not represent a completed production rollout.
 - [ ] **M1-08** Pilot with an existing member, an outside Google account and a
   revoked member. Verify deployment, recovery and operational controls before
   broader registration. Record release evidence.
+  Hosted sign-in and two-account mismatch/switching checks passed against the
+  preview account service and synthetic space data; live member acceptance and
+  production operating decisions remain open.
 
 **Done when:** an outside Google user can create and edit a profile with zero
 private access; an existing member retains training access/history; removing
