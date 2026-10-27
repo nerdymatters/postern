@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "postern"
-version = "0.16.0"
+version = "0.17.0"
 description = "A self-hosted staff reading room"
 license = {text = "MIT OR Apache-2.0"}
 readme = "README.md"

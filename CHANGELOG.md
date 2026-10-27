@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.17.0 — Accounts and profiles (2026-10-27)
+
+- With an independently configured account service, sign in with Google, reach private Posterns from My Posterns, and edit a profile with an optional public address. Profiles start unpublished; accounts do not grant access to private resources. See [account setup](docs/accounts.md).
+- Keep account access available when a private Postern refuses access or is temporarily unavailable. Private entry verifies the same Google identity and retains existing invitation, agreement and enrollment requirements.
+- Preserve old training links and browser Back navigation inside private Posterns. Sign out clears account and private state across open tabs and attempts to revoke their sessions.
+- Update the pilot certificate bundle used by authenticated connections. Account registration and production rollout still require the documented deployment and compatibility checks; standalone installations remain the default.
+
 ## 0.16.0 — Public-release preparation
 
 - Keep operator identity, privacy contact, intellectual-property notice, roster fallback and certificate identity in a private branding file.
