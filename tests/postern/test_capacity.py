@@ -65,6 +65,30 @@ def test_reader_history_does_not_block_writer_and_revocation_wins(client, servic
         assert pending.result(5).status_code == 403
 
 
+@pytest.mark.parametrize('refused', [False, True], ids=['completed read', 'refused read'])
+def test_every_history_read_closes_its_database_connection(service, monkeypatch, refused):
+    # Each unclosed reader kept a file descriptor until the API ran out and refused new connections.
+    import postern.db as module
+    opened, connect = [], module.sqlite3.connect
+    def tracked(*args, **kwargs):
+        opened.append(connect(*args, **kwargs))
+        return opened[-1]
+    monkeypatch.setattr(module.sqlite3, 'connect', tracked)
+    def operation(db):
+        db.execute('SELECT count(*) FROM members').fetchone()
+        if refused:
+            raise Refusal(403, 'access_denied', 'Your access is no longer available.')
+    for _ in range(3):
+        try:
+            service.db.read(operation)
+        except Refusal:
+            assert refused
+    assert len(opened) == 3
+    for connection in opened:
+        with pytest.raises(sqlite3.ProgrammingError):
+            connection.execute('SELECT 1')
+
+
 def test_catalog_drops_content_archived_during_history_read(client, service, monkeypatch):
     import postern.service as module
     from postern.recover import import_events
