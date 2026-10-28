@@ -36,7 +36,7 @@ described in [Architecture](docs/architecture.md).
 
 | Milestone | Status | Dependency |
 |---|---|---|
-| M0 Launch preparation | Planned; parallel with M1 | Current deployment baseline |
+| M0 Launch preparation | In progress; parallel with M1 | Current deployment baseline |
 | M1 Accounts and profiles | Production pilot passed; registration closed | M0 launch checks before release |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
 | M2 Private spaces and resource catalog | Planned | M1 identity and access boundaries |
@@ -74,9 +74,14 @@ outputs guide implementation in this repository. This track runs alongside M1.
 - [ ] **M0-02** Review the [security follow-up](https://github.com/nerdymatters/postern/issues/1),
   resolve and verify auth-relevant findings before opening registration, and
   record the disposition of remaining findings in that issue.
-- [ ] **M0-03** Define account-service hosting, data storage, Google OAuth
+- [x] **M0-03** Define account-service hosting, data storage, Google OAuth
   configuration, backups and operating ownership. Keep managed account secrets
   and private resource data outside the public repository.
+  Recorded with the production pilot on Oct 28, 2026
+  ([validation report](docs/reports/accounts-profiles.md#production-pilot)):
+  a Worker and D1 database, the existing web OAuth client, recovery through
+  D1 Time Travel without extra exports, and the project owner as operator.
+  Identifiers and configuration stay in the private deployment record.
 
 **Ready when:** the launch has a verified compatibility baseline, documented
 security dispositions and a usable deployment/recovery plan. Preparation does

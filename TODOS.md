@@ -160,6 +160,20 @@ screen sharing and computing resources.
 **Priority:** P2
 **Depends on:** None
 
+## Accounts
+
+### Create Postern's Terms of Service
+
+**What:** Write Postern's Terms of Service.
+
+**Why:** Postern has an account privacy page but no terms of service, and public registration will need them.
+
+**Context:** Owner request, Oct 28, 2026. The account privacy page is `AccountPrivacy` in `dashboard/web/src/accounts.tsx`. Keep the terms separate from each private space's own agreements, which spaces still require when someone enters.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
 ## Infrastructure
 
 ### Upgrade the database for more users and new features
