@@ -88,6 +88,8 @@ pilot.
 
 - Resolve and verify the auth-relevant findings in the
   [security follow-up](https://github.com/nerdymatters/postern/issues/1) (M0-02).
+- Write and publish Postern's Terms of Service, and decide how accounts accept
+  them, including existing accounts and later revisions (M0-04).
 - Choose when to enable the account frontend on the main site. Rebuilding without
   `VITE_POSTERN_ACCOUNTS_API` restores the standalone UI; it does not disable the
   account API or unpublish profiles.
