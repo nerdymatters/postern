@@ -1,8 +1,9 @@
 # Accounts and profiles implementation validation
 
-Updated: 2026-10-27. M1 implementation is prepared; hosted Google sign-in,
-controlled two-identity switching and a read-only production-history comparison
-have passed. Live member acceptance and production rollout remain pending. The account feature is opt-in through
+Updated: Oct 28, 2026. M1 passed a controlled [production pilot](#production-pilot)
+on a separately provisioned account service, with the account frontend on a
+separate pilot origin and registration closed outside watched pilot windows. The
+main site's frontend and public registration are unchanged. The account feature is opt-in through
 `VITE_POSTERN_ACCOUNTS_API`, so a default deployment retains the standalone
 reading room.
 
@@ -56,19 +57,40 @@ checks with an editable install, `.venv/bin/python -m pytest tests -q`, and the 
 `bun run test` / `bun run build`. The private account service owns its own tests
 and operational runbook.
 
-## Remaining release evidence
+## Production pilot
 
-- Complete live member acceptance and remaining controlled profile/session/operator
-  checks. Hosted Google sign-in and two-identity mismatch/switching passed;
-  private-space checks used synthetic resource data and stopped at the agreement gate.
-- Record production monitoring, operating ownership and any exported-backup
-  policy before registration. The current account plan and preview retention
-  are verified; confirm that the separately provisioned production environment
-  has the intended settings and preserve the tested recovery procedure.
-- Deploy the updated resource API and certifi dependency through the ordinary
-  release process; the implementation test environment is not production.
-- Confirm production settings, recovery and training compatibility, then enable
-  the account frontend and registration deliberately.
+On Oct 28, 2026 the project owner ran a controlled pilot against production with
+two of their own Google accounts. The resource API ran v0.17.1, deployed through
+the ordinary release process. Checks read the account and resource databases
+read-only and recorded only counts, booleans, field names and status codes.
 
-These remaining checks are M1-08 and the M0 launch lane. Do not mark the whole
-milestone complete from fixture-based tests or a preview alone.
+| Check | Evidence and result |
+|---|---|
+| Deployment | A separate production Worker and D1 database with a 10-account cap, the existing web OAuth client and CORS limited to one pilot frontend origin. That origin was also added to the resource API's allowed origins and to Google's authorized JavaScript origins. The main site kept the standalone frontend. Identifiers and configuration are kept in the private deployment record. |
+| Registration window | Registration was closed by default. It was opened for the pilot under a watcher that closed it automatically within six minutes, once both pilot accounts existed; no other account was created. An earlier window closed at its deadline with no signups. Its first watcher stopped on a stalled database read and was restarted, so that window went unwatched for about six minutes. |
+| Existing member | An administrator with training history signed in, entered the private space, accepted the agreements and completed selfie enrollment. New sessions and events attached to the same canonical identity as the earlier history, and the role was unchanged. |
+| Revoked member | A member added for the test entered the private space. After the owner deleted its roster row, the next roster refresh removed the membership and revoked its private session. The account stayed active and signed in. |
+| Outside account | With no membership left, the same account was refused by the private space's Google sign-in. It then set a handle in the profile editor and published its profile. The public profile response contained exactly the handle, display name, avatar URL, bio and website, without the account email, and the `/@handle` page loaded. After unpublishing, the profile response returned 404. |
+| Operator controls | The operator tool suspended the account, which deleted its sessions and kept its profile unpublished; its Google sign-in was refused. Restoring it returned it to active with no sessions and no publication. Registration stayed closed. |
+| Recovery | D1 Time Travel history is available for the production database. No live restore was performed; the synthetic hosted recovery drill above remains the restore evidence. |
+| Health | Afterwards the resource API reported ready with its steady database-handle count and no new tracebacks. The account service's health and configuration endpoints reported ready with registration closed. |
+
+Operating decisions are recorded in the private deployment record: the project
+owner is the responsible operator; recovery relies on D1's seven-day Time Travel
+with no additional exports; usage is reviewed after each change and on request,
+with no automatic alerting.
+
+Not covered: a never-invited Google account, registration while the roster
+source is unavailable, the account frontend on the main site and load beyond the
+pilot.
+
+## Remaining before broader registration
+
+- Resolve and verify the auth-relevant findings in the
+  [security follow-up](https://github.com/nerdymatters/postern/issues/1) (M0-02).
+- Choose when to enable the account frontend on the main site. Rebuilding without
+  `VITE_POSTERN_ACCOUNTS_API` restores the standalone UI; it does not disable the
+  account API or unpublish profiles.
+- Review usage against the hosting plan's limits before raising the account cap.
+
+M1-08 is complete. Public launch remains part of the M0 launch lane.

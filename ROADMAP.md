@@ -23,10 +23,10 @@ described in [Architecture](docs/architecture.md).
 - **Product vocabulary:** each private resource space is a **Postern**. The
   navigation label is **Posterns**, the dashboard is **My Posterns**, and
   **Profile** remains the separate place for a person's identity.
-- **Current milestone:** M1, accounts and profiles. Implementation is prepared;
-  hosted Google sign-in, controlled two-account switching and a read-only
-  history comparison passed. Live member acceptance and production rollout
-  remain pending. M0 launch preparation runs alongside it.
+- **Current milestone:** M1, accounts and profiles. The production account
+  service passed a controlled pilot on Oct 28, 2026 from a separate pilot
+  frontend; registration stays closed outside watched pilot windows. Opening
+  registration waits for M0 launch preparation, which runs alongside it.
 - **Later milestones:** ordered proposals, with implementation details to settle
   at each milestone. Their order is not a release-date commitment.
 - **Tracking:** task IDs remain stable. Check a task only after its outcome is
@@ -37,7 +37,7 @@ described in [Architecture](docs/architecture.md).
 | Milestone | Status | Dependency |
 |---|---|---|
 | M0 Launch preparation | Planned; parallel with M1 | Current deployment baseline |
-| M1 Accounts and profiles | Controlled Google pilot passed; production pending | M0 launch checks before release |
+| M1 Accounts and profiles | Production pilot passed; registration closed | M0 launch checks before release |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
 | M2 Private spaces and resource catalog | Planned | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
@@ -87,9 +87,10 @@ not block independent profile design work.
 **Outcome:** someone can sign in, own a profile and reach My Posterns, whether or
 not they belong to the existing private space.
 
-Implementation evidence for M1-01 through M1-07 is recorded in the
-[validation report](docs/reports/accounts-profiles.md). Checked implementation
-tasks do not represent a completed production rollout.
+Implementation evidence for M1-01 through M1-07 and the M1-08 production pilot
+is recorded in the [validation report](docs/reports/accounts-profiles.md).
+The account frontend runs only on a separate pilot origin, and public
+registration is not open; checked tasks do not represent a completed rollout.
 
 - [x] **M1-01** Design the new-user, existing-member and no-access flows. Settle
   session/storage interfaces, public/private package boundaries and profile
@@ -117,12 +118,13 @@ tasks do not represent a completed production rollout.
   and handle behavior; same-identity session binding; logout/account switching;
   and roster revocation/outage affecting only the private space. Confirm existing
   progress, certificates and protected-content requirements remain intact.
-- [ ] **M1-08** Pilot with an existing member, an outside Google account and a
+- [x] **M1-08** Pilot with an existing member, an outside Google account and a
   revoked member. Verify deployment, recovery and operational controls before
   broader registration. Record release evidence.
-  Hosted sign-in and two-account mismatch/switching checks passed against the
-  preview account service and synthetic space data; live member acceptance and
-  production operating decisions remain open.
+  Production pilot passed on Oct 28, 2026
+  ([validation report](docs/reports/accounts-profiles.md#production-pilot)).
+  The outside-account checks reused the revoked member's account after its
+  removal, and recovery was checked for availability without a live restore.
 
 **Done when:** an outside Google user can create and edit a profile with zero
 private access; an existing member retains training access/history; removing
