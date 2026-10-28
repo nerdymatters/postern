@@ -12,6 +12,15 @@ import tarfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
+# Explicit product directories keep private workspace data and developer tools out.
+RELEASE_ROOTS = {'postern', 'config', 'ops', 'scripts', 'tests', 'docs', 'dashboard', 'status', '.github'}
+RELEASE_FILES = {'.gitignore', 'README.md', 'CHANGELOG.md', 'ROADMAP.md', 'TODOS.md', 'VERSION', 'pyproject.toml', 'requirements-pilot.lock',
+                 'vercel.json', 'LICENSE', 'LICENSE-MIT', 'LICENSE-APACHE', 'NOTICE', 'CONTRIBUTING.md', 'SECURITY.md'}
+
+
+def release_files(tracked):
+    """Tracked source paths that belong in the release bundle."""
+    return [p for p in tracked if p and (Path(p).parts[0] in RELEASE_ROOTS or p in RELEASE_FILES)]
 
 
 def public_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
@@ -49,11 +58,7 @@ def main():
     prefix = f'postern-{version}'
     destination = args.output / f'{prefix}-macos-pilot.tar.gz'
     tracked = subprocess.check_output(['git', 'ls-files', '-z'], cwd=ROOT).decode().split('\0')
-    # Explicit product directories keep private workspace data and developer tools out.
-    roots = {'postern', 'config', 'ops', 'scripts', 'tests', 'docs', 'dashboard', 'status', '.github'}
-    files = {'.gitignore', 'README.md', 'CHANGELOG.md', 'TODOS.md', 'VERSION', 'pyproject.toml', 'requirements-pilot.lock', 'vercel.json', 'LICENSE', 'LICENSE-MIT', 'LICENSE-APACHE',
-             'NOTICE', 'CONTRIBUTING.md', 'SECURITY.md'}
-    selected = [p for p in tracked if p and (Path(p).parts[0] in roots or p in files)]
+    selected = release_files(tracked)
     selected += [str(p.relative_to(ROOT)) for p in (ROOT / 'dashboard/web/dist').rglob('*') if p.is_file()]
     revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT).decode().strip()
     with tarfile.open(destination, 'w:gz') as archive:
