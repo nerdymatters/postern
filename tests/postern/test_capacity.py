@@ -89,6 +89,24 @@ def test_every_history_read_closes_its_database_connection(service, monkeypatch,
             connection.execute('SELECT 1')
 
 
+def test_catalog_returns_retryable_error_when_no_reader_can_open(client, service, monkeypatch):
+    # Value: protects=staff get the retryable 503 catalog_unavailable when SQLite cannot open a reader, as at the open-file limit;
+    #   fails_when=read() opens its connection inside the try, so cleanup raises UnboundLocalError and masks the sqlite3 error;
+    #   why_new=every existing read failure is raised after the reader opened; seam=none;
+    #   no_claim=file-descriptor counts, the writer, or how other read callers map the error
+    import postern.db as module
+    headers = sign_in(client)
+    connect = module.sqlite3.connect
+    def exhausted(*args, **kwargs):
+        raise sqlite3.OperationalError('unable to open database file')
+    monkeypatch.setattr(module.sqlite3, 'connect', exhausted)
+    response = client.get('/api/posts', headers=headers)
+    monkeypatch.setattr(module.sqlite3, 'connect', connect)
+    assert response.status_code == 503 and response.json()['error'] == 'catalog_unavailable'
+    assert 'posts' not in response.json()
+    assert client.get('/api/posts', headers=headers).status_code == 200
+
+
 def test_catalog_drops_content_archived_during_history_read(client, service, monkeypatch):
     import postern.service as module
     from postern.recover import import_events
