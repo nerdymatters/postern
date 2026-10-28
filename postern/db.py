@@ -109,10 +109,15 @@ class Database:
                 db.close()
 
     def read(self, operation):
-        with sqlite3.connect(f'file:{self.path}?mode=ro', uri=True, timeout=1) as db:
+        # A connection's `with` block ends its transaction but never closes it. Unclosed readers kept
+        # their file descriptors while the writer stayed open, until the API hit its open-file limit.
+        db = sqlite3.connect(f'file:{self.path}?mode=ro', uri=True, timeout=1)
+        try:
             db.row_factory = sqlite3.Row
             db.execute('PRAGMA query_only=ON')
             return operation(db)
+        finally:
+            db.close()
 
     def close(self):
         self.queue.put(None, timeout=5)
