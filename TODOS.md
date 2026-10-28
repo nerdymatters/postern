@@ -168,7 +168,7 @@ screen sharing and computing resources.
 
 **Why:** Postern has an account privacy page but no terms of service, and public registration will need them.
 
-**Context:** Owner request, Oct 28, 2026. The account privacy page is `AccountPrivacy` in `dashboard/web/src/accounts.tsx`. Keep the terms separate from each private space's own agreements, which spaces still require when someone enters.
+**Context:** Owner request, Oct 28, 2026. Also a launch task in the roadmap (M0-04), which gates opening registration. The account privacy page is `AccountPrivacy` in `dashboard/web/src/accounts.tsx`. Keep the terms separate from each private space's own agreements, which spaces still require when someone enters.
 
 **Effort:** M
 **Priority:** P2
@@ -182,7 +182,7 @@ screen sharing and computing resources.
 
 **Why:** The resource API keeps its local state and audit queue in one SQLite database with a single writer connection; Google Drive holds originals, portraits and audit batches, and a Google Sheet holds the catalog. That fits one organization's staff, but more users and search or analytics workloads will need more than this storage offers.
 
-**Context:** Owner request, Oct 28, 2026; low priority. The SQLite schema and writer live in `postern/db.py`, and Drive and Sheets storage is in `postern/storage.py`; the separate account service already uses Cloudflare D1. Start by measuring growth and the queries search and analytics would need. Any migration must keep training history, certificates and audit events intact.
+**Context:** Owner request, Oct 28, 2026; low priority. Also a roadmap task (M2-06), to choose before M2-03, M2-04 and M3-02. The SQLite schema and writer live in `postern/db.py`, and Drive and Sheets storage is in `postern/storage.py`; the separate account service already uses Cloudflare D1. Start by measuring growth and the queries search and analytics would need. Any migration must keep training history, certificates and audit events intact.
 
 **Effort:** L
 **Priority:** P3

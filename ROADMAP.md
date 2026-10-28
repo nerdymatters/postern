@@ -82,10 +82,15 @@ outputs guide implementation in this repository. This track runs alongside M1.
   a Worker and D1 database, the existing web OAuth client, recovery through
   D1 Time Travel without extra exports, and the project owner as operator.
   Identifiers and configuration stay in the private deployment record.
+- [ ] **M0-04** Write and publish Postern's Terms of Service before opening
+  registration, and decide how accounts accept them, including accounts created
+  before the terms existed and later revisions. Keep them separate from each
+  private space's own agreements.
 
 **Ready when:** the launch has a verified compatibility baseline, documented
-security dispositions and a usable deployment/recovery plan. Preparation does
-not block independent profile design work.
+security dispositions, a usable deployment/recovery plan, and published Terms
+of Service with a decided acceptance flow. Preparation does not block
+independent profile design work.
 
 ## M1 Accounts and profiles
 
@@ -156,9 +161,15 @@ with chosen audiences.
 - [ ] **M2-05** Verify two independent spaces cannot discover, read or manage one
   another's private resources, including through direct requests and restored
   data. Pilot a second audience with a real owner.
+- [ ] **M2-06** Choose storage for more users and spaces, including
+  permission-checked search, retrieval and analytics, before M2-03 moves
+  existing resources into the catalog and before M2-04 and M3-02. Migrate from
+  today's SQLite, Drive and Sheets storage once, without losing training
+  history, certificates or audit events.
 
 **Done when:** owners can invite/revoke audiences, resources are consistently
-scoped, and two-space isolation is demonstrated beyond the interface.
+scoped, two-space isolation is demonstrated beyond the interface, and existing
+training history, certificates and audit events survive the storage move.
 
 ## M3 Read-only agent access
 
