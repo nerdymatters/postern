@@ -1,5 +1,9 @@
 # TODOS
 
+This file tracks maintenance and deferred fixes. The [master-plan checklist](ROADMAP.md)
+tracks accounts and profiles, private spaces, agent access, the Rust folder client,
+screen sharing and computing resources.
+
 ## Staff progress
 
 ### Show certificates in Staff progress when no training content is published

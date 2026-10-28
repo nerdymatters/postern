@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { api, currentToken, inline, onRefusal, setToken, type Certificate, type Config, type Post, type QuizResult, type QuizStanding, type Refusal, type Session, type SignIn, type Wall } from './api'
+import { api, currentToken, inline, onRefusal, setToken, type Certificate, type Config, type Identity, type Post, type QuizResult, type QuizStanding, type Refusal, type Session, type SignIn, type Wall } from './api'
 import { releaseAll } from './blobs'
 import { SelfieEnrollment } from './selfie'
 import { TrainingDashboard } from './training-progress'
@@ -18,6 +18,7 @@ import { Button, Centred, Message, Panel, Wordmark, Label } from './ui'
 import { forgetViews } from './views'
 import { ThemeToggle, useTheme } from './theme'
 import { BrandingProvider, publicBranding } from './branding'
+import { sameIdentity } from './accounts-api'
 import { IconAdmin, IconSignOut, IconUpdateSelfie } from './PosternIcons'
 
 // Phones get icon-only header items in 44 px tap targets; the words stay for screen readers.
@@ -25,7 +26,7 @@ const HEADER_ITEM = 'header-action'
 const HEADER_ICON = 'size-5 sm:size-4'
 const HEADER_LABEL = 'sr-only sm:not-sr-only'
 
-export function App() {
+export function App({ expectedIdentity, onSessionLost, onAccountSignOut }: { expectedIdentity?: Identity; onSessionLost?: () => void; onAccountSignOut?: () => void } = {}) {
   const { dark, toggle } = useTheme()
   const route = useRoute()
   const adminRoute = ['admin', 'progress', 'report', 'denials'].includes(route.name)
@@ -63,7 +64,10 @@ export function App() {
 
   // Refusals clear protected media before showing the required next step.
   useEffect(() => {
-    onRefusal(refused => {
+    return onRefusal(refused => {
+      if (expectedIdentity && refused.code === 'sign_in_required') {
+        setToken(null); forgetViews(); releaseAll(); onSessionLost?.(); return
+      }
       if (refused.code === 'sign_in_required') {
         setToken(null)
         forgetViews()
@@ -82,25 +86,29 @@ export function App() {
         setRefusal(refused)
       }
     })
-  }, [show])
+  }, [show, expectedIdentity, onSessionLost])
 
   useEffect(() => {
     let live = true
     setLoading(true)
     void (async () => {
       try {
-        const settings = await api.config()
+        const settings = await (expectedIdentity ? api.configForAccount() : api.config())
         if (!live) return
         setConfig(settings)
         setTrouble('')
         const identity = currentToken()
         if (!identity) {
           setSession(null)
+          if (expectedIdentity) onSessionLost?.()
           return
         }
         // A reader who signs out while this loads must not leave their training behind for the next person.
-        const current = await api.session()
+        const current = await (expectedIdentity ? api.sessionForAccount({ quietRefusal: false }) : api.session())
         if (!live || currentToken() !== identity) return
+        if (expectedIdentity && !sameIdentity(expectedIdentity, current.identity)) {
+          setToken(null); forgetViews(); releaseAll(); onSessionLost?.(); return
+        }
         setSession(current)
         if (current.consent_required || current.selfie?.required) return
         const wall = await api.posts()
@@ -112,9 +120,14 @@ export function App() {
       }
     })()
     return () => { live = false }
-  }, [attempt])
+  }, [attempt, expectedIdentity, onSessionLost])
 
   async function leave() {
+    if (expectedIdentity) {
+      // The account owner captures and revokes both credentials before clearing them.
+      onAccountSignOut?.()
+      return
+    }
     try {
       await api.signOut()
     } catch {
@@ -140,6 +153,9 @@ export function App() {
   }
 
   function entered(result: SignIn) {
+    if (expectedIdentity && !sameIdentity(expectedIdentity, result.identity)) {
+      setToken(null); forgetViews(); releaseAll(); onSessionLost?.(); return
+    }
     setToken(result.token)
     setNotice('')
     // Nothing of a previous reader's training, certificate included, stays on screen for the next one.
@@ -160,6 +176,15 @@ export function App() {
     )
   }
   if (refusal) return <Refused refusal={refusal} onRetry={() => { setRefusal(null); reload() }} onSignOut={leave} />
+  if (!session && expectedIdentity) return loading ? <Centred title="Checking private access"><p role="status">Checking your space session…</p></Centred> : (
+    <Centred title="Private space is unavailable">
+      <Panel className="space-y-4">
+        <Message text={trouble || 'Your private access could not be checked. Your Postern account is still available.'} />
+        <Button onClick={reload}>Try again</Button>
+        <Link to="/home" className="block underline">Back to My Posterns</Link>
+      </Panel>
+    </Centred>
+  )
   if (!session) return <BrandingProvider value={branding}><Landing config={config} notice={notice} onSignedIn={entered} /></BrandingProvider>
   if (session.consent_required) return <Consent config={config} onAccepted={reload} onDeclined={leave} />
   if ((session.selfie?.required && !(session.role === 'admin' && adminRoute)) || renewing) return <SelfieEnrollment config={config} initial={session.selfie} onSaved={selfieSaved} onLeave={leave} onCancel={renewing && !session.selfie?.required ? () => setRenewing(false) : undefined} onAdmin={session.role === 'admin' && session.selfie?.required ? () => { setRenewing(false); navigate('/admin') } : undefined} />

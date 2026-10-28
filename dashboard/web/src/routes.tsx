@@ -14,6 +14,7 @@ export type Route =
 
 /** Real paths, so a copied link to a post survives sign-in and a reload. */
 export function parse(path: string): Route {
+  path = path.replace(/^\/s\/pilot(?=\/|$)/, '') || '/'
   if (path.startsWith('/privacy')) return { name: 'privacy' }
   const report = /^\/admin\/posts\/([^/]+)/.exec(path)
   if (report) return { name: 'report', id: decodeURIComponent(report[1]) }
@@ -30,25 +31,33 @@ export function parse(path: string): Route {
   return { name: 'grid' }
 }
 
+function routedPath(path: string) {
+  if (/^\/s\/pilot(?:\/|$)/.test(window.location.pathname) && (path === '/' || /^\/(?:post|quiz|final-exam|badges|certificate|admin|privacy)(?:\/|$)/.test(path))) return '/s/pilot' + (path === '/' ? '' : path)
+  return path
+}
+
 export function navigate(path: string) {
+  path = routedPath(path)
   window.history.pushState(null, '', path)
   window.dispatchEvent(new PopStateEvent('popstate'))
   // A new screen starts at its top: the home card's next step, or the viewer's title.
   ;(document.scrollingElement ?? document.documentElement).scrollTop = 0
 }
 
-export function useRoute(): Route {
+export function usePathname(): string {
   const [path, setPath] = useState(() => window.location.pathname)
   useEffect(() => {
     const update = () => setPath(window.location.pathname)
     window.addEventListener('popstate', update)
     return () => window.removeEventListener('popstate', update)
   }, [])
-  return parse(path)
+  return path
 }
+
+export function useRoute(): Route { return parse(usePathname()) }
 
 export function Link({ to, className = '', children }: { to: string; className?: string; children: ReactNode }) {
   return (
-    <a href={to} className={className} onClick={event => { event.preventDefault(); navigate(to) }}>{children}</a>
+    <a href={routedPath(to)} className={className} onClick={event => { event.preventDefault(); navigate(to) }}>{children}</a>
   )
 }
