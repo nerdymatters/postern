@@ -160,4 +160,30 @@ screen sharing and computing resources.
 **Priority:** P2
 **Depends on:** None
 
+## Infrastructure
+
+### Upgrade the database for more users and new features
+
+**What:** Choose and plan a database upgrade that supports more users and future features such as search, retrieval and analytics.
+
+**Why:** The resource API keeps its local state and audit queue in one SQLite database with a single writer connection; Google Drive holds originals, portraits and audit batches, and a Google Sheet holds the catalog. That fits one organization's staff, but more users and search or analytics workloads will need more than this storage offers.
+
+**Context:** Owner request, Oct 28, 2026; low priority. The SQLite schema and writer live in `postern/db.py`, and Drive and Sheets storage is in `postern/storage.py`; the separate account service already uses Cloudflare D1. Start by measuring growth and the queries search and analytics would need. Any migration must keep training history, certificates and audit events intact.
+
+**Effort:** L
+**Priority:** P3
+**Depends on:** None
+
+### Migrate the server from Python to Rust
+
+**What:** Evaluate rewriting the Python resource API in Rust for better performance and storage use.
+
+**Why:** The owner wants a faster, leaner server as usage grows.
+
+**Context:** Owner request, Oct 28, 2026; low priority. The server is the Python package in `postern/`; the roadmap's M4 Rust folder client is separate work. Start by profiling where time and storage go before choosing a full rewrite or a targeted Rust component, and keep the existing API contract and tests as the compatibility bar.
+
+**Effort:** XL
+**Priority:** P3
+**Depends on:** None
+
 ## Completed
