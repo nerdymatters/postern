@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.17.1 — Long-running API reliability (2026-10-27)
+
+- Keep the reading room accepting staff after days of uptime. The API now closes each read-only database connection when a read finishes, including refused reads, so open files no longer pile up until macOS's default limit of 256 refuses new connections. Upgrading needs only the code update and an API restart; data, configuration and dependencies are unchanged.
+
 ## 0.17.0 — Accounts and profiles (2026-10-27)
 
 - With an independently configured account service, sign in with Google, reach private Posterns from My Posterns, and edit a profile with an optional public address. Profiles start unpublished; accounts do not grant access to private resources. See [account setup](docs/accounts.md).
