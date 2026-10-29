@@ -5,7 +5,7 @@ agents. Profiles identify participants; private spaces organize resources and
 audiences; permissions govern what each participant may do. Resources can live on
 a hosted service, an organization's server or a connected device.
 
-This is the master-plan implementation checklist, created on 2026-10-26.
+This is the master-plan implementation checklist, created on Oct 26, 2026.
 [TODOS.md](TODOS.md) remains the maintenance backlog. The current system is
 described in [Architecture](docs/architecture.md).
 
@@ -82,15 +82,15 @@ outputs guide implementation in this repository. This track runs alongside M1.
   a Worker and D1 database, the existing web OAuth client, recovery through
   D1 Time Travel without extra exports, and the project owner as operator.
   Identifiers and configuration stay in the private deployment record.
-- [ ] **M0-04** Write and publish Postern's Terms of Service before opening
-  registration, and decide how accounts accept them, including accounts created
-  before the terms existed and later revisions. Keep them separate from each
-  private space's own agreements.
+- [ ] **M0-04** Before opening registration, write and publish Postern's Terms
+  of Service, then build and verify how accounts accept them, including accounts
+  created before the terms existed and later revisions. Keep them separate from
+  each private space's own agreements.
 
 **Ready when:** the launch has a verified compatibility baseline, documented
 security dispositions, a usable deployment/recovery plan, and published Terms
-of Service with a decided acceptance flow. Preparation does not block
-independent profile design work.
+of Service with a built and verified acceptance flow. Preparation does not
+block independent profile design work.
 
 ## M1 Accounts and profiles
 
