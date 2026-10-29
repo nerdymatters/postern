@@ -32,6 +32,9 @@ reading room.
 
 ## Verification
 
+These are historical results from the account/profile implementation and Oct 28
+pilot, not final verification of the Oct 29 publication candidate.
+
 | Check | Evidence and result |
 |---|---|
 | Python regression tests | 711 passed in a fresh full run with the editable installation in place. Two dependency deprecation warnings remain; no test failures. |
@@ -88,8 +91,11 @@ pilot.
 
 - Resolve and verify the auth-relevant findings in the
   [security follow-up](https://github.com/nerdymatters/postern/issues/1) (M0-02).
-- Write and publish Postern's Terms of Service, then build and verify how accounts
-  accept them, including existing accounts and later revisions (M0-04).
+- Verify live publication of the owner-approved [Terms version 2026-10-29](../terms/2026-10-29.md),
+  effective October 29, 2026. Separately activate its version and hash, keeping
+  registration closed, and verify the implemented acceptance flow on the hosted pilot,
+  including existing accounts and later revisions (M0-04). Local implementation
+  evidence is in the [launch-readiness report](launch-readiness.md).
 - Choose when to enable the account frontend on the main site. Rebuilding without
   `VITE_POSTERN_ACCOUNTS_API` restores the standalone UI; it does not disable the
   account API or unpublish profiles.

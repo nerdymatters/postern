@@ -19,7 +19,9 @@ continues to be the application entry point. Navigation calls the account home
 `/account-api`; Vite forwards that prefix to `http://127.0.0.1:8787`.
 
 The account API uses `/v1/config`, `/v1/auth/google`, `/v1/session`, `/v1/profile`,
-`/v1/profiles/:handle`, `/v1/auth/signout` and `/v1/account`. Account sessions are
+`/v1/profiles/:handle`, `/v1/terms/accept`, `/v1/auth/signout` and `/v1/account`.
+See the [account Terms contract](../../docs/accounts.md#account-terms) for revision
+acceptance and recovery behavior. Account sessions are
 stored separately from reading-room sessions. Public profile reads send no
 account credential and render only handle, chosen name, Google avatar, bio and
 HTTPS website. Profiles are private until their owner explicitly publishes them.

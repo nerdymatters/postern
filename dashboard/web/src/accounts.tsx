@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { api, currentToken, setToken, tokensForSignOut, Refusal, type Config, type SignIn } from './api'
-import { accountMessage, accounts, accountToken, AccountError, sameIdentity, setAccountToken, subscribeAccount, type Account, type AccountConfig, type Profile, type ProfileEdit, type PublicProfile } from './accounts-api'
+import { accountMessage, accounts, accountToken, AccountError, sameIdentity, setAccountToken, subscribeAccount, type Account, type AccountConfig, type Profile, type ProfileEdit, type PublicProfile, type TermsAcceptance } from './accounts-api'
+import { AccountTerms, TermsGate, TermsLink } from './terms'
 import { App } from './app'
 import { releaseAll } from './blobs'
 import { inAppBrowser } from './browser'
@@ -37,6 +38,12 @@ export function AccountsApp() {
   const [spaceNotice, setSpaceNotice] = useState('')
   const previous = useRef(token)
   const authGeneration = useRef(0)
+
+  useEffect(() => {
+    const changed = () => setAttempt(value => value + 1)
+    window.addEventListener('postern-terms-change', changed)
+    return () => window.removeEventListener('postern-terms-change', changed)
+  }, [])
 
   useEffect(() => {
     // Count every navigation, including away-and-back transitions batched into
@@ -87,7 +94,7 @@ export function AccountsApp() {
 
   useEffect(() => {
     let live = true
-    if (!account || !token || publicPage) return
+    if (!account || !token || publicPage || account.terms?.required || account.terms_unavailable) return
     const candidate = currentToken()
     if (!candidate) { setCheckingSpace(false); return }
     setCheckingSpace(true); setSpaceProblem(false)
@@ -108,7 +115,7 @@ export function AccountsApp() {
       }
     }).finally(() => { if (live) setCheckingSpace(false) })
     return () => { live = false }
-  }, [account?.id, account?.identity?.issuer, account?.identity?.subject, token, publicPage, spaceAttempt])
+  }, [account?.id, account?.identity?.issuer, account?.identity?.subject, account?.terms?.required, account?.terms_unavailable, token, publicPage, spaceAttempt])
 
   const spaceLost = useCallback(() => {
     clearSpace(); setSpace(null); setSpaceNotice('Your private-space session is no longer available. You are still signed in to Postern.')
@@ -124,11 +131,11 @@ export function AccountsApp() {
     for (const privateCredential of privateCredentials) void api.revokeForAccount(privateCredential).catch(() => {})
   }
 
-  async function signedIn(credential: string) {
+  async function signedIn(credential: string, terms?: TermsAcceptance) {
     const generation = ++authGeneration.current
     const original = accountToken()
     const destination = window.location.pathname
-    const result = await accounts.signIn(credential)
+    const result = await accounts.signIn(credential, terms)
     if (generation !== authGeneration.current || accountToken() !== original || window.location.pathname !== destination) {
       void accounts.signOut(result.token).catch(() => {}); return
     }
@@ -160,9 +167,11 @@ export function AccountsApp() {
 
   const ready = account && token && space?.accountToken === token && space.token === currentToken()
   if (publicPage) return <AccountFrame account={account} onLeave={leave}><PublicProfilePage key={handle} handle={handle} /></AccountFrame>
+  if (path === '/account/terms') return <AccountFrame account={account} onLeave={leave}><AccountTerms /></AccountFrame>
   if (path === '/privacy' || path === '/account/privacy') return <AccountFrame account={account} onLeave={leave}><AccountPrivacy /></AccountFrame>
   if ((loading || (loaded !== null && loaded.token !== token)) && token) return <AccountFrame><p role="status">Loading your account…</p></AccountFrame>
   if (!account) return <AccountFrame><Message text={error} />{token ? <Panel className="space-y-4"><p>Your account could not be loaded.</p><Button onClick={() => setAttempt(value => value + 1)}>Try again</Button><Button variant="quiet" onClick={leave}>Sign out</Button></Panel> : <AccountSignIn onCredential={signedIn} />}</AccountFrame>
+  if (account.terms_unavailable || account.terms?.required) return <AccountFrame account={account} onLeave={leave}><TermsGate key={`${account.id}:${account.terms_unavailable ? 'unavailable' : `${account.terms?.version}:${account.terms?.sha256}`}`} terms={account.terms_unavailable ? null : account.terms!} onAccepted={setAccount} onDeleted={leave} onReload={() => setAttempt(value => value + 1)} /></AccountFrame>
   if (spaceRoute(path)) {
     if (checkingSpace) return <AccountFrame account={account} onLeave={leave}><p role="status">Checking private access…</p></AccountFrame>
     if (spaceProblem) return <AccountFrame account={account} onLeave={leave}><Panel className="space-y-4"><h1 className="text-2xl font-semibold">Private space is unavailable</h1><Message text={spaceNotice} /><Button onClick={() => setSpaceAttempt(value => value + 1)}>Check again</Button><Link to="/home" className="block underline">Back to My Posterns</Link></Panel></AccountFrame>
@@ -181,7 +190,7 @@ export function AccountsApp() {
 
 function AccountFrame({ account, onLeave, children }: { account?: Account | null; onLeave?: () => void; children: ReactNode }) {
   const { dark, toggle } = useTheme()
-  return <div className="min-h-screen text-neutral-900 dark:text-neutral-100"><header className="border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"><div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-3 px-5 py-4"><Link to="/home"><Wordmark /></Link><nav aria-label="Account" className="flex items-center gap-3 text-sm"><ThemeToggle dark={dark} onToggle={toggle} />{account ? <><Link to="/home" className="py-2">Posterns</Link><Link to="/settings/profile" className="py-2">Profile</Link><button onClick={onLeave} className="py-2 underline">Sign out</button></> : <Link to="/home" className="py-2 underline">Sign in</Link>}</nav></div></header><main className="mx-auto max-w-3xl space-y-6 px-5 py-10">{children}</main><footer className="mx-auto max-w-3xl px-5 pb-8 text-sm text-neutral-500"><Link to="/account/privacy" className="underline">Account privacy</Link></footer></div>
+  return <div className="min-h-screen text-neutral-900 dark:text-neutral-100"><header className="border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"><div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-3 px-5 py-4"><Link to="/home"><Wordmark /></Link><nav aria-label="Account" className="flex items-center gap-3 text-sm"><ThemeToggle dark={dark} onToggle={toggle} />{account ? <><Link to="/home" className="py-2">Posterns</Link><Link to="/settings/profile" className="py-2">Profile</Link><button onClick={onLeave} className="py-2 underline">Sign out</button></> : <Link to="/home" className="py-2 underline">Sign in</Link>}</nav></div></header><main className="mx-auto max-w-3xl space-y-6 px-5 py-10">{children}</main><footer className="mx-auto max-w-3xl px-5 pb-8 text-sm text-neutral-500"><Link to="/account/privacy" className="underline">Account privacy</Link><span className="mx-3">·</span><Link to="/account/terms" className="underline">Terms of Service</Link></footer></div>
 }
 
 function GoogleButton({ clientId, onCredential }: { clientId: string; onCredential: (credential: string) => Promise<void> }) {
@@ -210,12 +219,21 @@ function GoogleButton({ clientId, onCredential }: { clientId: string; onCredenti
   return <div className="space-y-3"><div ref={target} aria-label="Sign in with Google" className={busy ? 'pointer-events-none opacity-50' : ''} />{busy ? <p role="status">Signing in…</p> : null}<Message text={error} /></div>
 }
 
-function AccountSignIn({ onCredential }: { onCredential: (credential: string) => Promise<void> }) {
+function AccountSignIn({ onCredential }: { onCredential: (credential: string, terms?: TermsAcceptance) => Promise<void> }) {
   const [config, setConfig] = useState<AccountConfig | null>(null)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [attempt, setAttempt] = useState(0)
+  const [accepted, setAccepted] = useState(false)
   useEffect(() => { let live = true; setError(''); accounts.config().then(value => { if (live) setConfig(value) }).catch(failure => { if (live) setError(accountMessage(failure)) }); return () => { live = false } }, [attempt])
-  return <Panel className="mx-auto max-w-lg space-y-5"><h1 className="text-3xl font-semibold tracking-tight">Your place on Postern</h1><p className="text-neutral-600 dark:text-neutral-300">Create your profile and find the resources people share with you. Private spaces decide access separately.</p><Message text={error} />{config ? <>{!config.registration_open ? <p>New account registration is currently closed. Existing accounts can still sign in.</p> : null}<GoogleButton clientId={config.google_client_id} onCredential={onCredential} /></> : error ? <Button onClick={() => setAttempt(value => value + 1)}>Try again</Button> : <p role="status">Loading sign-in…</p>}<p className="text-base text-neutral-500">Google supplies your verified identity and optional name/photo. Your profile stays private until you publish it. <Link to="/account/privacy" className="underline">Learn about account privacy</Link>.</p></Panel>
+  return <Panel className="mx-auto max-w-lg space-y-5"><h1 className="text-3xl font-semibold tracking-tight">Your place on Postern</h1><p className="text-neutral-600 dark:text-neutral-300">Create your profile and find the resources people share with you. Private spaces decide access separately.</p><Message text={error} />{config ? <>{!config.registration_open ? <p>New account registration is currently closed. Existing accounts can still sign in.</p> : null}{config.terms && config.registration_open ? <label className="flex items-start gap-3"><input type="checkbox" className="mt-1 size-4" checked={accepted} onChange={event => setAccepted(event.target.checked)} /><span>I agree to the <TermsLink terms={config.terms} />.</span></label> : null}
+      {notice ? <p role="status">{notice}</p> : null}
+      {config.terms && config.registration_open ? <p>Accept the Terms to create a new account. Existing accounts can sign in to review the Terms or delete their account.</p> : null}
+      <GoogleButton clientId={config.google_client_id} onCredential={async credential => {
+        setNotice('')
+        try { await onCredential(credential, accepted && config.terms ? { accepted: true, version: config.terms.version, sha256: config.terms.sha256 } : undefined) }
+        catch (failure) { if (failure instanceof AccountError && failure.code === 'terms_changed') { setNotice('The Terms have changed. Please review the updated version before continuing.'); setAccepted(false); setConfig(null); setAttempt(value => value + 1) }; throw failure }
+      }} /></> : error ? <Button onClick={() => setAttempt(value => value + 1)}>Try again</Button> : <p role="status">Loading sign-in…</p>}<p className="text-base text-neutral-500">Google supplies your verified identity and optional name/photo. Your profile stays private until you publish it. <Link to="/account/privacy" className="underline">Learn about account privacy</Link>.</p></Panel>
 }
 
 function SpaceEntry({ notice, onCredential }: { notice: string; onCredential: (credential: string) => Promise<void> }) {
@@ -292,5 +310,5 @@ function ProfileEditor({ account, onSaved, onDeleted }: { account: Account; onSa
 }
 
 function AccountPrivacy() {
-  return <article className="space-y-5"><h1 className="text-3xl font-semibold">Account privacy</h1><Panel className="space-y-4"><h2 className="text-lg font-semibold">Your identity and profile</h2><p>Postern uses your verified Google identity and email to maintain your account. Your name and photo, when provided by Google, are suggestions for your profile. You choose a handle and decide whether to publish your profile.</p><p>A published profile contains your handle, chosen display name, avatar, bio and website. Your email, private-space memberships, training results and enrollment photos are not public profile fields.</p><h2 className="text-lg font-semibold">Private spaces</h2><p>Creating an account does not grant access to private resources. Each space decides membership and applies its own agreements, enrollment and retention requirements. Losing access to a space does not delete your Postern account.</p><h2 className="text-lg font-semibold">Account controls</h2><p>You can unpublish your profile or delete your account from profile settings. Deletion removes the account profile and account sessions. Organization-owned training or activity history is managed separately by its space owner. Deleted account data may remain in service backups until the configured retention period expires.</p><p>Postern stores a session credential in this browser so you can remain signed in. Sign out on shared devices. Account creation and edits are limited to protect the service; an operator may suspend abusive accounts or unpublish profiles.</p></Panel><Link to="/home" className="inline-block underline">Back to My Posterns</Link></article>
+  return <article className="space-y-5"><h1 className="text-3xl font-semibold">Account privacy</h1><Panel className="space-y-4"><h2 className="text-lg font-semibold">Your identity and profile</h2><p>Postern uses your verified Google identity and email to maintain your account. Your name and photo, when provided by Google, are suggestions for your profile. You choose a handle and decide whether to publish your profile.</p><p>A published profile contains your handle, chosen display name, avatar, bio and website. Your email, private-space memberships, training results and enrollment photos are not public profile fields.</p><h2 className="text-lg font-semibold">Account Terms</h2><p>We keep the version and document hash of the Terms you accept, your account identifier and the server time of acceptance. These acceptance records are removed with your account from active storage. Contact Nerdy Matters LLC at nerd@nerdymatters.com about the hosted account service.</p><h2 className="text-lg font-semibold">Private spaces</h2><p>Creating an account does not grant access to private resources. Each space decides membership and applies its own agreements, enrollment and retention requirements. Losing access to a space does not delete your Postern account.</p><h2 className="text-lg font-semibold">Account controls</h2><p>You can unpublish your profile or delete your account from profile settings. Deletion removes the account profile and account sessions. Organization-owned training or activity history is managed separately by its space owner. Deleted account data may remain in service backups until the configured retention period expires.</p><p>Postern stores a session credential in this browser so you can remain signed in. Sign out on shared devices. Account creation and edits are limited to protect the service; an operator may suspend abusive accounts or unpublish profiles.</p></Panel><Link to="/home" className="inline-block underline">Back to My Posterns</Link></article>
 }

@@ -612,6 +612,26 @@ test('saving a name reads the reading room again, so an older answer cannot undo
   await waitFor(() => expect(reads()).toBe(before + 1))
 })
 
+test('a full reading-room load cannot overwrite a name saved while it was in flight', async () => {
+  installApi(world({ certificate: certificate() }))
+  setToken('session-token')
+  window.history.replaceState(null, '', '/certificate')
+  const mounted = render(<App onSessionLost={() => {}} />)
+  await screen.findByRole('button', { name: /Change name/ })
+  let finish!: (wall: Awaited<ReturnType<typeof api.posts>>) => void
+  const read = vi.spyOn(api, 'posts').mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  // Changing the callback triggers the same full load effect as reload().
+  mounted.rerender(<App onSessionLost={() => {}} />)
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(1))
+  fireEvent.click(screen.getByRole('button', { name: /Change name/ }))
+  fireEvent.change(screen.getByRole('textbox', { name: /Name on your certificate/ }), { target: { value: 'Maria Santos Rivera' } })
+  fireEvent.click(screen.getByRole('button', { name: /Save name/ }))
+  await screen.findByText(/Saved\. Your certificate shows this name\./)
+  await act(async () => finish({ posts: [], certificate: certificate() }))
+  within(screen.getAllByRole('article', { name: 'Certificate of completion' })[0]).getByText('Maria Santos Rivera')
+  within(document.querySelector('.print-root') as HTMLElement).getByText('Maria Santos Rivera')
+})
+
 test('signing out removes the certificate and its print copy before the next person signs in', async () => {
   const state = world({ posts: [chapterPost(9)], quizzes: [passed(9)], finalExam: exam({ passed: true, passed_at: OCT_5, locked_by: null }),
     certificate: certificate() })
@@ -709,6 +729,21 @@ test('Staff progress keeps a certificate when the Final Exam is unavailable, for
   screen.getByText('Certificate PT-2026-0AF23CC6 · awarded Oct 7, 2026 · printed name “Maria Santos”')
   fireEvent.click(screen.getByRole('button', { name: 'View certificate' }))
   within(screen.getAllByRole('article', { name: 'Certificate of completion' })[0]).getByText('Maria Santos')
+})
+
+test('Staff progress can view and print certificates with an empty published catalog', async () => {
+  const person: TrainingPerson = { email: 'maria@example.invalid', name: 'Maria', role: 'reader', percent: null,
+    status: 'no_content', completed_items: 0, total_items: 0, opened_items: 0, last_activity_at: OCT_5, items: [],
+    final_exam: null, certificate: certificate({ name_confirmed: true }) }
+  vi.spyOn(api, 'trainingProgress').mockResolvedValue({ people: [person], total_items: 0, history_incomplete: false })
+  const print = vi.spyOn(window, 'print').mockImplementation(() => {})
+  render(<TrainingDashboard />)
+  await screen.findByText(/No published training content yet/)
+  fireEvent.click(screen.getByRole('button', { name: 'View progress for Maria' }))
+  fireEvent.click(screen.getByRole('button', { name: 'View certificate' }))
+  within(document.querySelector('.print-root') as HTMLElement).getByText('Maria Santos')
+  fireEvent.click(screen.getByRole('button', { name: 'Print certificate' }))
+  expect(print).toHaveBeenCalledTimes(1)
 })
 
 // Value: protects=Staff progress dates a certificate like its printed copy and number; fails_when=training-progress drops

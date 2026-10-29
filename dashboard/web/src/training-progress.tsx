@@ -180,7 +180,8 @@ export function TrainingDashboard() {
         <Panel><p className="text-sm text-neutral-600 dark:text-neutral-300">All items completed</p><p className="mt-2 text-2xl font-semibold tabular-nums">{people.filter(person => person.status === 'complete').length}</p></Panel>
         <Panel><p className="text-sm text-neutral-600 dark:text-neutral-300">{incomplete ? 'Progress unknown' : 'Not started'}</p><p className="mt-2 text-2xl font-semibold tabular-nums">{people.filter(person => person.status === (incomplete ? 'unknown' : 'not_started')).length}</p></Panel>
       </div>
-      {!report.total_items ? <Panel><p>No published training content yet. Publish a document or video to start tracking progress here.</p></Panel> : !people.length ? <Panel><p>No staff are on the current list.</p></Panel> : <Panel className="space-y-4">
+      {!report.total_items ? <Panel><p>No published training content yet. Publish a document or video to start tracking progress here.</p></Panel> : null}
+      {!people.length ? <Panel><p>No staff are on the current list.</p></Panel> : <Panel className="space-y-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-48 flex-1"><Field label="Find a person"><input type="search" className={input} placeholder="Name or email" value={search} onChange={event => setSearch(event.target.value)} /></Field></div>
           <Field label="Progress status"><select className={input} value={status} onChange={event => setStatus(event.target.value)}><option value="all">All progress</option><option value="not_started">Not started</option><option value="in_progress">In progress</option><option value="complete">Completed</option><option value="unknown">History incomplete</option><option value="unavailable">Progress unavailable</option></select></Field>

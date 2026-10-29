@@ -59,7 +59,9 @@ function journey(): World {
 }
 
 function answer(question: number, option: string) {
-  fireEvent.click(screen.getByRole('radio', { name: new RegExp(`Choice ${question}${option}`) }))
+  // The label is unique. Resolving every radio's accessible name and computed
+  // styles for each click makes the 80-option exam quadratic in jsdom.
+  fireEvent.click(screen.getByLabelText(new RegExp(`Choice ${question}${option}`)))
 }
 
 test('the earliest unpassed earlier quiz locks a chapter, never for exempt roles or modules', () => {

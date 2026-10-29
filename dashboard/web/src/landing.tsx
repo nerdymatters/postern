@@ -7,6 +7,7 @@ import { Button, Centred, Field, Message, Panel, Wordmark, input, Thai } from '.
 import { Link } from './routes'
 import { IconArrowRight, IconPrivacy } from './PosternIcons'
 import { useBranding } from './branding'
+import { publishedTerms } from './published-terms'
 
 export function Landing({ config, notice, onSignedIn }: { config: Config; notice: string; onSignedIn: (result: SignIn) => void }) {
   const { organization_name: organization } = useBranding()
@@ -87,7 +88,7 @@ export function Landing({ config, notice, onSignedIn }: { config: Config; notice
         )}
       </Panel>
       <p className="text-sm text-neutral-500 dark:text-neutral-400">Sign in with the Google account your manager put on the staff list.</p>
-      <p className="text-xs text-neutral-500 dark:text-neutral-400"><Link to="/privacy" className="inline-flex items-center gap-1 underline"><IconPrivacy className="size-3.5" />Privacy</Link></p>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400"><Link to="/privacy" className="inline-flex items-center gap-1 underline"><IconPrivacy className="size-3.5" />Privacy</Link><span className="mx-3">·</span><a href={publishedTerms.url} className="underline">Hosted account Terms</a></p>
     </Centred>
   )
 }

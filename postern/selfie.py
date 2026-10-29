@@ -211,7 +211,7 @@ async def capture(service, request, upload, version):
 def authorize_pending(service, db, photo):
     session = db.execute('SELECT token_hash FROM sessions WHERE id=?', (photo['session_id'],)).fetchone()
     if not session:
-        raise Refusal(403, 'access_denied', 'The enrollment session ended.')
+        raise Refusal(403, 'access_denied', 'The enrollment session ended. / เซสชันยืนยันตัวตนสิ้นสุดแล้ว')
     context = service.permissions.authorize_content_request(db, '', token_digest=session[0], selfie=False)
     if photo['expires_at'] <= time.time():
         raise Refusal(403, 'selfie_required', 'Take a new selfie to continue.')
@@ -326,19 +326,19 @@ async def local_photo(service, photo):
         current = await asyncio.to_thread(service.db.read, lambda db: db.execute(
             'SELECT * FROM selfies WHERE id=?', (photo['id'],)).fetchone())
         if not current or not readable(current, service.config):
-            raise Refusal(404, 'selfie_unavailable', 'This selfie is no longer retained.')
+            raise Refusal(404, 'selfie_unavailable', 'This selfie is no longer retained. / รูปเซลฟีนี้ถูกลบตามระยะเวลาเก็บรักษาแล้ว')
         path = service.config.data_dir/'selfies'/(photo['id']+'.jpg')
         if not path.is_file():
             temporary = path.with_name(photo['id']+'.'+str(uuid.uuid4())+'.part')
             try:
                 await asyncio.to_thread(service.store.download, photo['drive_id'], temporary, photo['sha256'], 512*1024)
                 if temporary.stat().st_size > 512 * 1024:
-                    raise Refusal(409, 'selfie_unavailable', 'This selfie is unavailable.')
+                    raise Refusal(409, 'selfie_unavailable', 'This selfie is unavailable. / ไม่สามารถเข้าถึงรูปเซลฟีนี้ได้')
                 temporary.replace(path)
             except Refusal:
                 raise
             except Exception as error:
-                raise Refusal(503, 'selfie_unavailable', 'Your enrollment photo could not be loaded from private storage. Please try again shortly.') from error
+                raise Refusal(503, 'selfie_unavailable', 'Your enrollment photo could not be loaded from private storage. Please try again shortly. / ไม่สามารถโหลดรูปยืนยันตัวตนจากที่เก็บข้อมูลส่วนตัวได้ กรุณาลองใหม่ในอีกสักครู่') from error
             finally:
                 temporary.unlink(missing_ok=True)
         return path
@@ -349,9 +349,9 @@ async def image(service, request, identity):
         enabled(service)
         photo = db.execute('SELECT * FROM selfies WHERE id=?', (identity,)).fetchone()
         if not photo or not readable(photo, service.config):
-            raise Refusal(404, 'selfie_unavailable', 'This selfie is no longer retained.')
+            raise Refusal(404, 'selfie_unavailable', 'This selfie is no longer retained. / รูปเซลฟีนี้ถูกลบตามระยะเวลาเก็บรักษาแล้ว')
         if ctx['role'] != 'admin' and photo['id'] != ctx.get('selfie_id'):
-            raise Refusal(403, 'access_denied', 'This selfie is not available.')
+            raise Refusal(403, 'access_denied', 'This selfie is not available. / ไม่สามารถเข้าถึงรูปเซลฟีนี้ได้')
         return dict(photo)
     def viewed(db, ctx):
         photo = authorize(db, ctx)
@@ -362,7 +362,7 @@ async def image(service, request, identity):
     try:
         body = await asyncio.to_thread(path.read_bytes)
     except OSError as error:
-        raise Refusal(503, 'selfie_unavailable', 'Your enrollment photo could not be loaded. Please try again shortly.') from error
+        raise Refusal(503, 'selfie_unavailable', 'Your enrollment photo could not be loaded. Please try again shortly. / ไม่สามารถโหลดรูปยืนยันตัวตนได้ กรุณาลองใหม่ในอีกสักครู่') from error
     await service.execute(request, authorize, event_name=None)
     return body
 

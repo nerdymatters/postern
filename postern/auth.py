@@ -122,7 +122,7 @@ def verify_google_identity(credential, client_ids):
     if not isinstance(subject, str) or not 1 <= len(subject) <= 255 or not subject.isascii() or not subject.isprintable():
         raise Refusal(401, 'sign_in_required', 'Google could not confirm that account identity. Please try again.')
     if not isinstance(claims.get('email'), str) or not claims['email'] or claims.get('email_verified') is not True:
-        raise Refusal(403, 'access_denied', 'Your Google account has no verified email address.')
+        raise Refusal(403, 'access_denied', 'Your Google account has no verified email address. / บัญชี Google ของคุณไม่มีอีเมลที่ยืนยันแล้ว')
     return {'sub': subject, 'email': claims['email'], 'name': claims.get('name', '')}
 
 
@@ -154,7 +154,7 @@ class Permissions:
 
     def require_fresh(self, db):
         if not self.fresh(db):
-            raise Refusal(503, 'authorization_source_unavailable', 'Access temporarily paused while we verify permissions.')
+            raise Refusal(503, 'authorization_source_unavailable', 'Access temporarily paused while we verify permissions. / หยุดการเข้าถึงชั่วคราวระหว่างตรวจสอบสิทธิ์')
 
     def apply(self, db, snapshot, *, groups=None, warnings=()):
         previous = {r['email']: dict(r) for r in db.execute('SELECT * FROM members')}
@@ -197,9 +197,9 @@ class Permissions:
         self.require_fresh(db)
         member = db.execute('SELECT * FROM members WHERE email=?', (session['email'],)).fetchone()
         if session['revoked'] or not member:
-            raise Refusal(403, 'access_denied', 'Your access is no longer available.')
+            raise Refusal(403, 'access_denied', 'Your access is no longer available. / คุณไม่มีสิทธิ์เข้าถึงแล้ว')
         if admin and member['role'] != 'admin':
-            raise Refusal(403, 'access_denied', 'Administrator access is required.')
+            raise Refusal(403, 'access_denied', 'Administrator access is required. / ต้องมีสิทธิ์ผู้ดูแลระบบ')
         if consent and not self.consent_current(db, session):
             raise Refusal(403, 'consent_required', 'Please review and accept both agreements before entering.')
         context = {**dict(session), 'role': member['role'], **(request_context or {})}
@@ -212,19 +212,19 @@ class Permissions:
         if view_id:
             view = db.execute('SELECT * FROM views WHERE id=?', (view_id,)).fetchone()
             if not view or view['session_id'] != session['id']:
-                raise Refusal(403, 'access_denied', 'This view is not available to your session.')
+                raise Refusal(403, 'access_denied', 'This view is not available to your session. / เซสชันของคุณไม่สามารถเปิดหน้านี้ได้')
             item_id = view['item_id']
             context['view'] = dict(view)
         if item_id:
             item = db.execute('SELECT * FROM items WHERE id=?', (item_id,)).fetchone()
             if not item:
-                raise Refusal(403, 'access_denied', 'This attachment is not available.')
+                raise Refusal(403, 'access_denied', 'This attachment is not available. / ไม่สามารถเข้าถึงไฟล์แนบนี้ได้')
             post_id = item['post_id']
             context['item'] = dict(item)
         if post_id:
             post = db.execute('SELECT * FROM posts WHERE id=?', (post_id,)).fetchone()
             if not post or (post['status'] != 'published' and member['role'] != 'admin') or meta(db, 'recovery_mode', False):
-                raise Refusal(403, 'access_denied', 'This post is not available.')
+                raise Refusal(403, 'access_denied', 'This post is not available. / ไม่สามารถเข้าถึงโพสต์นี้ได้')
             if getattr(self, 'quizzes', None):
                 # Staff open a chapter only after passing every earlier chapter's quiz.
                 from .quiz import require_unlocked

@@ -118,10 +118,15 @@ def main():
             if used > max_bytes:
                 raise ValueError('Derived output exceeds the item budget')
     else:
+        formats = ('JPEG', 'PNG')
         if source.suffix.lower() in ('.heic','.heif'):
             import pillow_heif
             pillow_heif.register_heif_opener()
-        with Image.open(source) as image:
+            if kind != 'selfie':
+                formats += ('HEIF',)
+        # Restrict plugin dispatch before parsing: checking image.format afterwards
+        # is too late for malformed input in an unapproved decoder.
+        with Image.open(source, formats=formats) as image:
             if image.format not in (('JPEG', 'PNG') if kind == 'selfie' else ('JPEG','PNG','HEIF','HEIC')):
                 raise ValueError('Unsupported photo format')
             image = ImageOps.exif_transpose(image)
@@ -138,7 +143,7 @@ def main():
                 image.thumbnail((2000,2000))
                 image.convert('RGB').save(output/'page-0.jpg',format='JPEG',quality=88)
         pages = 1
-    with Image.open(output/'page-0.jpg') as thumb:
+    with Image.open(output/'page-0.jpg', formats=('JPEG',)) as thumb:
         thumb.thumbnail((400,600))
         thumb.convert('RGB').save(output/'thumb.jpg',format='JPEG',quality=82)
     size = sum(p.stat().st_size for p in output.glob('*.jpg'))

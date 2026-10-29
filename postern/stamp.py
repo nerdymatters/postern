@@ -55,7 +55,7 @@ def chip(page, reader, minute, selfie_path=None):
     draw = ImageDraw.Draw(framed)
     draw.line((0, page.height, page.width, page.height), fill=(220, 222, 224, 255))
     if selfie_path:
-        with Image.open(selfie_path) as photo:
+        with Image.open(selfie_path, formats=('JPEG', 'PNG')) as photo:
             framed.paste(photo.convert('RGB').resize((avatar_size, avatar_size)), (pad, page.height + pad))
     for index, line in enumerate(lines):
         draw.text((pad + inset, page.height + pad + index * line_height), line, font=font, fill=(65, 65, 65, 255))
@@ -65,7 +65,7 @@ def chip(page, reader, minute, selfie_path=None):
 def stamp(path, reader, thumbnail=False, minute=None, selfie_path=None):
     """Return stamped JPEG bytes for one derived page image."""
     minute = int(time.time() // 60) if minute is None else minute
-    with Image.open(path) as source:
+    with Image.open(path, formats=('JPEG', 'PNG')) as source:
         page = source.convert('RGBA')
     if thumbnail:
         page.thumbnail(THUMBNAIL)

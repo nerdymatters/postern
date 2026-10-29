@@ -68,12 +68,19 @@ outputs guide implementation in this repository. This track runs alongside M1.
 
 **Outcome:** expand the product while preserving the existing private pilot.
 
-- [ ] **M0-01** Record the baseline for sign-in, membership removal, agreements,
+- [x] **M0-01** Record the baseline for sign-in, membership removal, agreements,
   enrollment, training progress and certificate attribution. Define migration
   and rollback checks that preserve live activity.
+  Recorded in the [launch baseline and rollback checklist](docs/runbooks/launch-readiness.md)
+  with the Oct 28 pilot evidence and Oct 29 local verification. The additive
+  Terms migration preserved a legacy account/session in disposable local D1
+  without inferring acceptance; no live restore was performed.
 - [ ] **M0-02** Review the [security follow-up](https://github.com/nerdymatters/postern/issues/1),
   resolve and verify auth-relevant findings before opening registration, and
   record the disposition of remaining findings in that issue.
+  Dependency and CI remediation is implemented and checked locally in the
+  [launch-readiness report](docs/reports/launch-readiness.md); issue disposition
+  and deployed-version/behavior verification remain before release.
 - [x] **M0-03** Define account-service hosting, data storage, Google OAuth
   configuration, backups and operating ownership. Keep managed account secrets
   and private resource data outside the public repository.
@@ -86,6 +93,10 @@ outputs guide implementation in this repository. This track runs alongside M1.
   of Service, then build and verify how accounts accept them, including accounts
   created before the terms existed and later revisions. Keep them separate from
   each private space's own agreements.
+  The owner approved [Terms version 2026-10-29](docs/terms/2026-10-29.md) for
+  publication. The static page and versioned acceptance implementation are
+  prepared; live publication, private-service activation and a hosted
+  acceptance/revision check remain. Registration is still closed.
 
 **Ready when:** the launch has a verified compatibility baseline, documented
 security dispositions, a usable deployment/recovery plan, and published Terms

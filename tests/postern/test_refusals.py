@@ -5,6 +5,7 @@ row written for the request that was refused.
 """
 from __future__ import annotations
 import json
+import re
 import sqlite3
 import uuid
 
@@ -17,6 +18,8 @@ def refused(response, status, code):
     assert response.status_code == status, response.text
     body = response.json()
     assert set(body) == {'error', 'message'} and body['error'] == code and body['message'], body
+    if code in {'access_denied', 'authorization_source_unavailable', 'audit_unavailable', 'selfie_unavailable'}:
+        assert re.search(r' / [ก-๛]', body['message']), body
     assert 'no-store' in response.headers['cache-control']
     return body
 
