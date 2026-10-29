@@ -4,33 +4,7 @@ This file tracks maintenance and deferred fixes. The [master-plan checklist](ROA
 tracks launch preparation, accounts and profiles, private spaces, agent access, the
 Rust folder client, screen sharing and computing resources.
 
-## Staff progress
-
-### Show certificates in Staff progress when no training content is published
-
-**What:** Keep certificate holders (and their View and Print certificate controls) visible in Staff progress when no content is published.
-
-**Why:** Certificates outlive the catalog. While every post is archived, for example when the SOP set is replaced, admins cannot view or print anyone's certificate.
-
-**Context:** `dashboard/web/src/training-progress.tsx` replaces the whole people table with "No published training content yet." when `report.total_items` is 0, although `GET /api/admin/progress` still returns each person's `certificate`. Found by the outside review of 0.12.0. Add a zero-item test.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
 ## Certificate page
-
-### Stop an older reading-room load from undoing a just-saved name
-
-**What:** Give the app's full load path (`reload()`) the same invalidation the progress refresh got in 0.12.0.
-
-**Why:** If a full reload, for example after a selfie renewal, is still on its way when someone saves their certificate name, its older answer can put the old name back on screen and in the print copy until the next refresh.
-
-**Context:** `dashboard/web/src/app.tsx`: `onSaved` now calls `refreshProgress()`, which cancels only the progress-refresh effect, not the load effect. One response-generation counter across both paths fixes it. Found by the outside review of 0.12.0.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
 
 ### Show feedback when "Check again" runs
 
@@ -136,18 +110,6 @@ Rust folder client, screen sharing and computing resources.
 
 ## Selfie enrollment
 
-### Complete Thai copy on whole-screen refusal pages
-
-**What:** Add Thai server messages, titles and hints for access, authorization, audit and portrait-outage refusal pages.
-
-**Why:** Thai-first staff still see English-only whole-screen outage guidance, although inline selfie guidance is bilingual.
-
-**Context:** Owner-deferred in the selfie release review (D2 item 1B). Start with `dashboard/web/src/refusal.tsx` and the corresponding server refusals; keep the shared `Bilingual` presentation and verify each refusal route.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
 ### Make selfie reservations idempotent across writer deadlines
 
 **What:** Give reservations and refunds a durable identity so a commit after the writer deadline can be reconciled without charging a failed capture or refunding twice.
@@ -175,3 +137,17 @@ Rust folder client, screen sharing and computing resources.
 **Depends on:** None
 
 ## Completed
+
+- **Completed: v0.18.0 (2026-10-29) — Complete Thai copy on whole-screen refusals.**
+  Access, roster verification, audit and portrait refusal messages, titles,
+  hints and recovery buttons now use the shared bilingual presentation.
+  All four UI states and the server refusal routes are checked.
+
+- **Completed: v0.18.0 (2026-10-29) — Show certificates in Staff progress with no published content.**
+  The people table and View/Print controls remain available with an empty
+  catalog; a zero-item regression verifies both controls.
+- **Completed: v0.18.0 (2026-10-29) — Stop an older reading-room load from undoing a saved name.**
+  Full loads and progress refreshes share a response generation; a forced late
+  response cannot overwrite the displayed or printed certificate name.
+
+See the [verification report](docs/reports/launch-readiness.md).

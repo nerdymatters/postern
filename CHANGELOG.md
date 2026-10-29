@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.18.0 — Hosted Terms and launch readiness (2026-10-29)
+
+- Read the approved hosted account [Terms of Service](https://postern.fyi/legal/terms/2026-10-29.html) without signing in or running JavaScript. The account interface supports explicit acceptance of each revision, recovery when Terms are unavailable, and account deletion without accepting. Registration and private-service activation remain separate launch gates.
+- Read Thai explanations and recovery controls when access, staff-list verification, audit recording or enrollment photos are unavailable.
+- View and print staff certificates even with no published training content. A delayed page refresh can no longer replace a newly saved certificate name.
+- Restrict image decoding to supported formats and update security-sensitive dependencies. Quiz test selection is faster while preserving the same scoring assertions and timeouts.
+
 ## 0.17.1 — Long-running API reliability (2026-10-27)
 
 - Keep the reading room accepting staff after days of uptime. The API now closes each read-only database connection when a read finishes, including refused reads, so open files no longer pile up until macOS's default limit of 256 refuses new connections. Upgrading needs only the code update and an API restart; data, configuration and dependencies are unchanged.
