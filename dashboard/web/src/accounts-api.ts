@@ -2,8 +2,10 @@ import type { Identity } from './api'
 
 export interface Profile { handle: string | null; display_name: string; avatar_url: string | null; bio: string; website: string; published: boolean }
 export type PublicProfile = Omit<Profile, 'published' | 'handle'> & { handle: string }
-export interface Account { id: string; email: string; identity: Identity; profile: Profile }
-export interface AccountConfig { google_client_id: string; registration_open: boolean }
+export interface Terms { version: string; sha256: string; url: string }
+export interface TermsAcceptance { accepted: true; version: string; sha256: string }
+export interface Account { id: string; email: string; identity: Identity; profile: Profile; terms?: (Terms & { required: boolean; accepted_at: number | null }) | null; terms_unavailable?: boolean }
+export interface AccountConfig { google_client_id: string; registration_open: boolean; terms?: Terms | null; terms_unavailable?: boolean }
 export type ProfileEdit = Pick<Profile, 'display_name' | 'bio' | 'website' | 'published'> & { handle: string }
 
 const KEY = 'postern.account.token'
@@ -46,6 +48,7 @@ async function request<T>(path: string, method = 'GET', body?: unknown, token: s
     // Only the credential that made this request can expire the current account.
     // A late refusal for a signed-out account must not clear a newer sign-in.
     if (token && token === accountToken() && (response.status === 401 || value?.error === 'account_suspended')) setAccountToken(null)
+    if (token && token === accountToken() && ['terms_required', 'terms_unavailable'].includes(value?.error)) window.dispatchEvent(new Event('postern-terms-change'))
     throw new AccountError(response.status, value?.error ?? '', value?.message ?? 'The account service could not complete that request.')
   }
   if (value === null) throw new AccountError(502, 'invalid_response', 'The account service returned an incomplete response. Please try again.')
@@ -54,7 +57,8 @@ async function request<T>(path: string, method = 'GET', body?: unknown, token: s
 
 export const accounts = {
   config: () => request<AccountConfig>('/v1/config', 'GET', undefined, null),
-  signIn: (credential: string) => request<{ token: string; account: Account }>('/v1/auth/google', 'POST', { credential }, null),
+  signIn: (credential: string, terms?: TermsAcceptance) => request<{ token: string; account: Account }>('/v1/auth/google', 'POST', { credential, ...(terms ? { terms } : {}) }, null),
+  acceptTerms: (terms: TermsAcceptance) => request<{ account: Account }>('/v1/terms/accept', 'POST', terms),
   session: () => request<{ account: Account }>('/v1/session'),
   save: (profile: ProfileEdit) => request<{ account: Account }>('/v1/profile', 'PATCH', profile),
   signOut: (token: string | null) => request<{ signed_out: boolean }>('/v1/auth/signout', 'POST', undefined, token),

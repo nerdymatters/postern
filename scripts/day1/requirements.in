@@ -1,0 +1,6 @@
+# Measurement harness; keep shared packages aligned with the tested pilot lock.
+fastapi==0.141.1
+uvicorn==0.53.0
+Pillow==13.0.0
+psutil==7.2.2
+pytest==9.1.1

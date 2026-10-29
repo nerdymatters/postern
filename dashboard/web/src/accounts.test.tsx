@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { AccountsApp } from './accounts'
 import { App } from './app'
-import { accountToken, setAccountToken, type Account } from './accounts-api'
+import { accounts, AccountError, accountToken, setAccountToken, type Account, type Terms } from './accounts-api'
 import { currentToken, setToken } from './api'
 import { calls, installApi, world, type World } from './testing'
 import { hold, liveUrls } from './blobs'
@@ -26,6 +26,7 @@ interface AccountWorld {
   spaceSubject: string
   spaceDenied: boolean
   saveError: boolean
+  terms?: Terms
 }
 
 function fake(): AccountWorld {
@@ -46,9 +47,16 @@ function fake(): AccountWorld {
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) : null
     state.accountCalls.push({ path, authorization, method: init?.method ?? 'GET', body })
     const account = authorization === 'Bearer account-b' ? state.b : state.a
-    if (path.endsWith('/v1/config')) return json({ google_client_id: 'account-client', registration_open: true })
+    if (path.endsWith('/v1/config')) return json({ google_client_id: 'account-client', registration_open: true, terms: state.terms })
     if (path.endsWith('/v1/session')) return json({ account })
-    if (path.endsWith('/v1/auth/google')) return json({ account: body.credential === 'google-b' ? state.b : state.a, token: body.credential === 'google-b' ? 'account-b' : 'account-a' })
+    if (path.endsWith('/v1/auth/google')) {
+      if (state.terms && body.terms?.accepted) state.a.terms = { ...state.terms, required: false, accepted_at: 123 }
+      return json({ account: body.credential === 'google-b' ? state.b : state.a, token: body.credential === 'google-b' ? 'account-b' : 'account-a' })
+    }
+    if (path.endsWith('/v1/terms/accept')) {
+      if (account.terms) account.terms = { ...account.terms, required: false, accepted_at: 123 }
+      return json({ account })
+    }
     if (path.endsWith('/v1/auth/signout')) return json({ signed_out: true })
     if (path.endsWith('/v1/profile')) {
       if (state.saveError) return json({ error: 'handle_taken', message: 'That handle is already taken.' }, 409)
@@ -67,13 +75,183 @@ afterEach(() => { vi.unstubAllEnvs() })
 
 test('a memberless Google user gets an account home without private config/content requests', async () => {
   const state = fake()
-  render(<AccountsApp />)
+  // Config and the mocked GIS loader resolve asynchronously. Flush their React
+  // effects before polling the injected button, including under full-suite load.
+  await act(async () => { render(<AccountsApp />) })
   fireEvent.click(await screen.findByRole('button', { name: 'Google test sign-in' }))
   expect(await screen.findByRole('heading', { name: 'No Posterns yet' })).toBeTruthy()
   expect(accountToken()).toBe('account-a')
   expect(currentToken()).toBeNull()
   expect(calls).toEqual([])
   expect(state.accountCalls.find(call => call.path.endsWith('/v1/auth/google'))?.authorization).toBeNull()
+})
+
+const publishedTerms: Terms = { version: '2026-10-29', sha256: 'a'.repeat(64), url: 'https://example.invalid/terms/2026-10-29.html' }
+
+// Value: protects=failed Terms-gate deletion preserves identity and can be retried;
+// fails_when=a failed delete signs out or leaves the action disabled;
+// why_new=existing gate deletion tests cover success only; seam=none;
+// no_claim=live deletion enforcement (mocked account API).
+test('a failed Terms-gate deletion preserves the account and permits a confirmed retry', async () => {
+  const state = fake(); state.a.terms = { ...publishedTerms, required: true, accepted_at: null }
+  setAccountToken('account-a')
+  const remove = vi.spyOn(accounts, 'delete').mockRejectedValueOnce(new AccountError(503, 'unavailable', 'Deletion is temporarily unavailable.'))
+  render(<AccountsApp />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete account' }))
+  fireEvent.change(screen.getByLabelText('Type DELETE to confirm'), { target: { value: 'DELETE' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Permanently delete account' }))
+  await screen.findByText('Deletion is temporarily unavailable.')
+  expect(accountToken()).toBe('account-a')
+  expect(calls).toEqual([])
+  expect(screen.getByRole('button', { name: 'Permanently delete account' })).toHaveProperty('disabled', false)
+  fireEvent.click(screen.getByRole('button', { name: 'Permanently delete account' }))
+  await waitFor(() => expect(accountToken()).toBeNull())
+  expect(remove).toHaveBeenCalledTimes(2)
+  expect(state.accountCalls.some(call => call.path.endsWith('/v1/terms/accept'))).toBe(false)
+})
+
+// Value: protects=pending Terms deletion sends once and cannot sign out a replacement account after navigation;
+// fails_when=repeat clicks duplicate deletion or a late completion clears the new identity;
+// why_new=late acceptance coverage does not exercise deletion callbacks; seam=none;
+// no_claim=server deletion idempotency (mocked pending API).
+test('a pending Terms deletion ignores repeat clicks and cannot clear the next account after navigation', async () => {
+  const state = fake(); state.a.terms = { ...publishedTerms, required: true, accepted_at: null }
+  setAccountToken('account-a')
+  let finish!: (value: { deleted: boolean }) => void
+  const remove = vi.spyOn(accounts, 'delete').mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  render(<AccountsApp />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete account' }))
+  fireEvent.change(screen.getByLabelText('Type DELETE to confirm'), { target: { value: 'DELETE' } })
+  const button = screen.getByRole('button', { name: 'Permanently delete account' })
+  fireEvent.click(button); fireEvent.click(button)
+  expect(remove).toHaveBeenCalledTimes(1)
+  expect(button).toHaveProperty('disabled', true)
+  act(() => navigate('/account/terms'))
+  await screen.findByRole('heading', { name: 'Terms of Service' })
+  act(() => { setAccountToken('account-b'); navigate('/home') })
+  await screen.findByText('Account Bob')
+  await act(async () => finish({ deleted: true }))
+  expect(accountToken()).toBe('account-b')
+  screen.getByText('Account Bob')
+  expect(screen.queryByText('Account Alice')).toBeNull()
+  expect(state.accountCalls.some(call => call.path.endsWith('/v1/auth/signout') && call.authorization === 'Bearer account-b')).toBe(false)
+})
+
+test('signup requires an unchecked Terms choice and sends the exact displayed version', async () => {
+  const state = fake(); state.terms = publishedTerms
+  render(<AccountsApp />)
+  const agree = await screen.findByRole('checkbox', { name: /I agree to the Terms/ })
+  expect(agree).toHaveProperty('checked', false)
+  const signIn = vi.spyOn(accounts, 'signIn').mockRejectedValueOnce(new AccountError(428, 'terms_required', 'Review and accept the Terms before creating your account.'))
+  fireEvent.click(await screen.findByRole('button', { name: 'Google test sign-in' }))
+  await screen.findByText('Review and accept the Terms before creating your account.')
+  expect(accountToken()).toBeNull()
+  expect(signIn).toHaveBeenCalledWith('google-a', undefined)
+  expect(screen.getByRole('link', { name: /Terms of Service \(version/ }).getAttribute('href')).toBe(publishedTerms.url)
+  fireEvent.click(agree)
+  fireEvent.click(await screen.findByRole('button', { name: 'Google test sign-in' }))
+  await screen.findByRole('heading', { name: 'My Posterns' })
+  expect(state.accountCalls.find(call => call.path.endsWith('/v1/auth/google'))?.body).toEqual({ credential: 'google-a', terms: { accepted: true, version: publishedTerms.version, sha256: publishedTerms.sha256 } })
+  signIn.mockRestore()
+})
+
+test('open registration lets existing users sign in and delete without accepting revised Terms', async () => {
+  const state = fake(); state.terms = publishedTerms
+  state.a.terms = { ...publishedTerms, required: true, accepted_at: null }
+  await act(async () => { render(<AccountsApp />) })
+  expect(screen.getByRole('checkbox', { name: /I agree to the Terms/ })).toHaveProperty('checked', false)
+  fireEvent.click(screen.getByRole('button', { name: 'Google test sign-in' }))
+  await screen.findByRole('heading', { name: 'Review the Terms of Service' })
+  expect(state.accountCalls.find(call => call.path.endsWith('/v1/auth/google'))?.body).toEqual({ credential: 'google-a' })
+  fireEvent.click(screen.getByRole('button', { name: 'Delete account' }))
+  fireEvent.change(screen.getByLabelText('Type DELETE to confirm'), { target: { value: 'DELETE' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Permanently delete account' }))
+  await waitFor(() => expect(accountToken()).toBeNull())
+  expect(state.accountCalls.some(call => call.path.endsWith('/v1/terms/accept'))).toBe(false)
+})
+
+test('a Terms revision during signup explains the reset and requires a fresh choice', async () => {
+  const state = fake(); state.terms = publishedTerms
+  const signIn = vi.spyOn(accounts, 'signIn').mockImplementationOnce(async () => {
+    state.terms = { ...publishedTerms, version: 'next', sha256: 'b'.repeat(64) }
+    throw new AccountError(409, 'terms_changed', 'Terms changed.')
+  })
+  await act(async () => { render(<AccountsApp />) })
+  fireEvent.click(screen.getByRole('checkbox', { name: /I agree to the Terms/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Google test sign-in' }))
+  await screen.findByRole('link', { name: 'Terms of Service (version next)' })
+  screen.getByText('The Terms have changed. Please review the updated version before continuing.')
+  expect(screen.getByRole('checkbox', { name: /I agree to the Terms/ })).toHaveProperty('checked', false)
+  expect(accountToken()).toBeNull()
+  signIn.mockRestore()
+})
+
+test('unavailable Terms preserve existing sign-in and a reachable deletion flow without private access', async () => {
+  const state = fake(); state.a.terms_unavailable = true
+  const config = vi.spyOn(accounts, 'config').mockResolvedValue({ google_client_id: 'account-client', registration_open: false, terms: null, terms_unavailable: true })
+  window.history.replaceState(null, '', '/s/pilot')
+  await act(async () => { render(<AccountsApp />) })
+  fireEvent.click(screen.getByRole('button', { name: 'Google test sign-in' }))
+  await screen.findByRole('heading', { name: 'Terms are temporarily unavailable' })
+  expect(screen.queryByRole('button', { name: 'Accept and continue' })).toBeNull()
+  expect(calls).toEqual([])
+  fireEvent.click(screen.getByRole('button', { name: 'Delete account' }))
+  fireEvent.change(screen.getByLabelText('Type DELETE to confirm'), { target: { value: 'DELETE' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Permanently delete account' }))
+  await waitFor(() => expect(accountToken()).toBeNull())
+  expect(state.accountCalls.some(call => call.path.endsWith('/v1/terms/accept'))).toBe(false)
+  config.mockRestore()
+})
+
+test('existing accounts must accept before a private deep link loads, and a revision resets the choice', async () => {
+  const state = fake(); state.a.terms = { ...publishedTerms, required: true, accepted_at: null }
+  setAccountToken('account-a'); setToken('private-old')
+  window.history.replaceState(null, '', '/s/pilot')
+  render(<AccountsApp />)
+  await screen.findByRole('heading', { name: 'Review the Terms of Service' })
+  expect(screen.getByRole('button', { name: 'Accept and continue' })).toHaveProperty('disabled', true)
+  expect(calls).toEqual([])
+  const accept = vi.spyOn(accounts, 'acceptTerms').mockRejectedValueOnce(new AccountError(409, 'terms_changed', 'The Terms have changed.'))
+  fireEvent.click(screen.getByRole('checkbox', { name: /I have read and agree/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Accept and continue' }))
+  await screen.findByText('The Terms have changed.')
+  state.a.terms = { ...publishedTerms, version: 'next', sha256: 'b'.repeat(64), required: true, accepted_at: null }
+  fireEvent.click(screen.getByRole('button', { name: 'Reload current Terms' }))
+  await screen.findByRole('link', { name: 'Terms of Service (version next)' })
+  expect(screen.getByRole('checkbox', { name: /I have read and agree/ })).toHaveProperty('checked', false)
+  expect(calls).toEqual([])
+  accept.mockRestore()
+  fireEvent.click(screen.getByRole('checkbox', { name: /I have read and agree/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Accept and continue' }))
+  await waitFor(() => expect(calls.some(call => call.url.includes('/api/session'))).toBe(true))
+})
+
+test('declining current Terms still allows confirmed account deletion', async () => {
+  const state = fake(); state.a.terms = { ...publishedTerms, required: true, accepted_at: null }
+  setAccountToken('account-a')
+  render(<AccountsApp />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete account' }))
+  expect(screen.getByRole('button', { name: 'Permanently delete account' })).toHaveProperty('disabled', true)
+  fireEvent.change(screen.getByLabelText('Type DELETE to confirm'), { target: { value: 'DELETE' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Permanently delete account' }))
+  await waitFor(() => expect(accountToken()).toBeNull())
+  expect(state.accountCalls.some(call => call.path.endsWith('/v1/terms/accept'))).toBe(false)
+})
+
+test('a late acceptance response cannot replace a different signed-in account', async () => {
+  const state = fake(); state.a.terms = { ...publishedTerms, required: true, accepted_at: null }
+  setAccountToken('account-a')
+  let finish!: (result: { account: Account }) => void
+  const accept = vi.spyOn(accounts, 'acceptTerms').mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  render(<AccountsApp />)
+  fireEvent.click(await screen.findByRole('checkbox', { name: /I have read and agree/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Accept and continue' }))
+  act(() => setAccountToken('account-b'))
+  await screen.findByText('Account Bob')
+  await act(async () => finish({ account: { ...state.a, terms: { ...publishedTerms, required: false, accepted_at: 123 } } }))
+  screen.getByText('Account Bob')
+  expect(screen.queryByText('Account Alice')).toBeNull()
+  accept.mockRestore()
 })
 
 test('an anonymous public profile projects only allowed fields and sends no account credential', async () => {
@@ -353,7 +531,7 @@ test('a private bootstrap network failure offers retry after the wrapper admitte
   expect(await screen.findByRole('heading', { name: 'Private space is unavailable' })).toBeTruthy()
   expect(calls.some(call => call.url === '/api/posts')).toBe(false)
   expect(accountToken()).toBe('account-a')
-  fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+  fireEvent.click(screen.getByRole('button', { name: /^Try again/ }))
   expect(await screen.findByText('Tip pooling policy')).toBeTruthy()
 })
 
@@ -408,7 +586,7 @@ test('a resource-level 403 keeps the bound private session and retries without G
   await screen.findByText('This post is not available.')
   expect(currentToken()).toBe('private-old'); expect(accountToken()).toBe('account-a')
   state.private.refuse = null
-  fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+  fireEvent.click(screen.getByRole('button', { name: /^Try again/ }))
   expect(await screen.findByText('Tip pooling policy')).toBeTruthy()
 })
 

@@ -91,6 +91,26 @@ test('a late account refusal leaves a replacement credential intact', async () =
   expect(accountToken()).toBe('new-account')
 })
 
+test.each([['terms_required', 428], ['terms_unavailable', 503]] as const)('%s refreshes only the account that made the request', async (error, status) => {
+  setAccountToken('old-account')
+  const changed = vi.fn()
+  window.addEventListener('postern-terms-change', changed)
+  const refuse = () => new Response(JSON.stringify({ error, message: 'Review Terms.' }), { status })
+  try {
+    globalThis.fetch = vi.fn(async () => refuse())
+    await expect(accounts.acceptTerms({ accepted: true, version: 'v1', sha256: 'a'.repeat(64) })).rejects.toThrow('Review Terms.')
+    expect(changed).toHaveBeenCalledTimes(1)
+    let finish!: (response: Response) => void
+    globalThis.fetch = vi.fn(() => new Promise<Response>(resolve => { finish = resolve }))
+    const pending = accounts.acceptTerms({ accepted: true, version: 'v1', sha256: 'a'.repeat(64) })
+    setAccountToken('new-account')
+    finish(refuse())
+    await expect(pending).rejects.toThrow('Review Terms.')
+    expect(changed).toHaveBeenCalledTimes(1)
+    expect(accountToken()).toBe('new-account')
+  } finally { window.removeEventListener('postern-terms-change', changed) }
+})
+
 // Coverage audit path 24.
 // Value: protects=retrying account reads without losing a valid session;
 // fails_when=transport or malformed-success failures escape AccountError or clear the credential;

@@ -7,5 +7,7 @@
     "dev": "wrangler dev --test-scheduled",
     "deploy": "wrangler deploy --config wrangler.production.json"
   },
-  "devDependencies": { "wrangler": "4.148.0" }
+  "devDependencies": {
+    "wrangler": "4.155.0"
+  }
 }

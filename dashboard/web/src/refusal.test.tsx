@@ -1,8 +1,22 @@
-import { render, screen, waitFor } from '@testing-library/react'
-import { expect, test } from 'vitest'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { expect, test, vi } from 'vitest'
 import { App } from './app'
-import { setToken } from './api'
+import { Refusal, setToken } from './api'
 import { installApi, world, type World } from './testing'
+import { Refused } from './refusal'
+
+test.each(['access_denied', 'authorization_source_unavailable', 'audit_unavailable', 'selfie_unavailable'] as const)('%s has Thai guidance and working recovery controls', code => {
+  const retry = vi.fn(), signOut = vi.fn()
+  render(<Refused refusal={new Refusal(code, 503, 'Please try again. / กรุณาลองใหม่')} onRetry={retry} onSignOut={signOut} />)
+  expect(screen.getByRole('heading').querySelector('[lang="th"]')?.textContent).toBeTruthy()
+  expect(document.querySelector('section p:last-child [lang="th"]')?.textContent).toBeTruthy()
+  for (const [name, callback] of [['Try again', retry], ['Sign out', signOut]] as const) {
+    const button = screen.getByRole('button', { name: new RegExp(name) })
+    expect(within(button).getByText(/^[ก-๛]/).getAttribute('lang')).toBe('th')
+    fireEvent.click(button)
+    expect(callback).toHaveBeenCalledOnce()
+  }
+})
 
 function signedIn(refuse: World['refuse']) {
   const state = world({ refuse })

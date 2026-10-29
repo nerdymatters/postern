@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { api, currentToken, inline, onRefusal, setToken, type Certificate, type Config, type Identity, type Post, type QuizResult, type QuizStanding, type Refusal, type Session, type SignIn, type Wall } from './api'
 import { releaseAll } from './blobs'
 import { SelfieEnrollment } from './selfie'
@@ -44,19 +44,22 @@ export function App({ expectedIdentity, onSessionLost, onAccountSignOut }: { exp
   const [trouble, setTrouble] = useState('')
   const [loading, setLoading] = useState(true)
   const [attempt, setAttempt] = useState(0)
-  const reload = useCallback(() => setAttempt(count => count + 1), [])
+  // Saves and both load paths share an ordering: an older snapshot cannot undo a save.
+  const wallGeneration = useRef(0)
+  const reload = useCallback(() => { wallGeneration.current++; setAttempt(count => count + 1) }, [])
   const [renewing, setRenewing] = useState(false)
   const selfieSaved = useCallback(() => { setRenewing(false); forgetViews(); releaseAll(); reload() }, [reload])
   const [progressVersion, setProgressVersion] = useState(0)
-  const refreshProgress = useCallback(() => setProgressVersion(value => value + 1), [])
+  const refreshProgress = useCallback(() => { wallGeneration.current++; setProgressVersion(value => value + 1) }, [])
 
   useEffect(() => {
     if (!progressVersion || !session || session.consent_required || session.selfie?.required) return
     let live = true
     const identity = currentToken()
     const timer = window.setTimeout(() => {
+      const generation = ++wallGeneration.current
       api.posts().then(result => {
-        if (live && currentToken() === identity) show(result)
+        if (live && currentToken() === identity && generation === wallGeneration.current) show(result)
       }).catch(() => { /* Existing progress stays visible; refusals use the shared handler. */ })
     }, 250)
     return () => { live = false; window.clearTimeout(timer) }
@@ -111,8 +114,9 @@ export function App({ expectedIdentity, onSessionLost, onAccountSignOut }: { exp
         }
         setSession(current)
         if (current.consent_required || current.selfie?.required) return
+        const generation = ++wallGeneration.current
         const wall = await api.posts()
-        if (live && currentToken() === identity) show(wall)
+        if (live && currentToken() === identity && generation === wallGeneration.current) show(wall)
       } catch (failure) {
         if (live) setTrouble(inline(failure))
       } finally {

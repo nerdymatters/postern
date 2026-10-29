@@ -188,7 +188,7 @@ def test_a_reader_cannot_reach_any_admin_route(client):
         body = response.json()
         assert response.status_code == 403, (method, path, response.status_code, response.text)
         assert set(body) == {'error', 'message'}, (method, path, body)
-        assert body['error'] == 'access_denied' and body['message'] == 'Administrator access is required.', (method, path, body)
+        assert body['error'] == 'access_denied' and body['message'] == 'Administrator access is required. / ต้องมีสิทธิ์ผู้ดูแลระบบ', (method, path, body)
     # The refusals were refusals: nothing the reader posted reached the post.
     state = client.get('/api/admin/posts', headers=room['admin']).json()['posts']
     assert [(p['id'], p['status']) for p in state] == [(room['post']['id'], 'published')]

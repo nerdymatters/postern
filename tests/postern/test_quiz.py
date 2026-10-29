@@ -398,7 +398,7 @@ def test_managers_and_c_suite_skip_quizzes_but_never_reach_admin_routes(client, 
                      client.post('/api/admin/posts', headers=leader, json={'title': 'Probe', 'body': '', 'category': 'SOP Chapter 1'}),
                      client.post(f'/api/admin/posts/{post}/archive', headers=leader)):
         assert response.status_code == 403, response.text
-        assert response.json() == {'error': 'access_denied', 'message': 'Administrator access is required.'}
+        assert response.json() == {'error': 'access_denied', 'message': 'Administrator access is required. / ต้องมีสิทธิ์ผู้ดูแลระบบ'}
 
 
 def test_attempts_older_than_a_minute_no_longer_count_toward_the_limit(client, service, catalog):

@@ -39,9 +39,10 @@ and errors use `Cache-Control: no-store`.
 
 | Method and path | Request | Response |
 |---|---|---|
-| `GET /v1/config` | None | `google_client_id`, `registration_open` |
-| `POST /v1/auth/google` | `credential` from Google Identity Services | `token`, `account` |
+| `GET /v1/config` | None | `google_client_id`, `registration_open`, `terms` |
+| `POST /v1/auth/google` | `credential` from Google Identity Services; current `terms` acceptance for signup | `token`, `account` |
 | `GET /v1/session` | Account bearer token | `account` |
+| `POST /v1/terms/accept` | Account bearer token; `accepted: true`, `version`, `sha256` | Updated `account` |
 | `POST /v1/auth/signout` | Account bearer token | `signed_out: true` |
 | `PATCH /v1/profile` | Account bearer token; `handle`, `display_name`, `bio`, `website`, `published` | Updated `account` |
 | `DELETE /v1/account` | Account bearer token; `confirm: true` | `deleted: true` |
@@ -62,6 +63,52 @@ Errors use `{error, message}` with an appropriate HTTP status: 401 for a missing
 or expired session, 403 for disabled accounts or closed new registration, 409 for
 a conflicting handle, 422 for invalid profile data and 429 for rate limits.
 Opening registration must never weaken private-space admission.
+
+## Account Terms
+
+The current Terms descriptor is `{version, sha256, url}`: an immutable version,
+SHA-256 of the published document and its HTTPS URL. Configuration returns
+`terms: null` until publication and activation. An account response adds
+`terms: {...descriptor, required, accepted_at}`; `accepted_at` is a server Unix
+timestamp or null. Older services may omit the field during a closed pilot;
+this compatibility path is not sufficient for opening registration.
+
+Malformed active configuration returns `terms_unavailable: true` on config and
+authenticated account responses, with `terms: null` and registration closed.
+Existing users can still authenticate and reach a recovery screen with retry,
+sign-out and confirmed deletion. It offers no acceptance or profile/space-entry
+controls. Health, signup, profile writes and acceptance fail closed until the
+operator repairs the configuration. This differs from a deliberately inactive
+closed pilot, where Terms are null and `terms_unavailable` is false.
+
+New accounts require `terms: {accepted: true, version, sha256}` in the verified
+Google sign-in request. The service atomically creates the account and its
+acceptance record. Registration fails closed without configured Terms. An
+unchecked box, an old version or a different document hash cannot create an
+account. Account creation alone does not select or authorize a paid tier.
+
+Existing accounts can sign in while registration is closed. If the current
+version/hash has no acceptance record, the account screen requires an unchecked
+explicit acceptance before profile editing or entering a private space through
+that screen. The account API separately refuses profile writes with HTTP 428
+`terms_required`; hiding a button is insufficient. Sign-out, account deletion,
+privacy information and public profile reads remain available. The standalone
+resource host retains its own membership, agreements and enrollment policies.
+
+Accepting an old descriptor returns HTTP 409 `terms_changed`; the interface
+offers to reload and requires a fresh unchecked choice. A repeated acceptance
+is idempotent and keeps the original server timestamp. Revisions preserve prior
+acceptance rows. Deleting an account removes its acceptance records alongside
+its sessions and profile. An acceptance is associated with the authenticated
+account, never an email or account ID supplied by the request body.
+
+The owner approved [Terms version 2026-10-29](terms/2026-10-29.md), effective
+October 29, 2026, using Nerdy Matters LLC, nerd@nerdymatters.com, and
+Massachusetts, USA. Freemium is one planned tier; prices, limits and paid
+purchase terms remain separate. The public page is prepared; live publication
+verification and private-service activation remain pending, with registration
+closed. See the [launch checklist](runbooks/launch-readiness.md) for
+publication, activation and rollback checks.
 
 ## Profile behavior
 

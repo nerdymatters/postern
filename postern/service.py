@@ -69,7 +69,7 @@ class Service:
             result=await asyncio.wait_for(asyncio.wrap_future(future),1.5)
         except (asyncio.TimeoutError, AuditUnavailable):
             future.cancel()
-            raise Refusal(503,'audit_unavailable','Content is paused because its audit record could not be saved.')
+            raise Refusal(503,'audit_unavailable','Content is paused because its audit record could not be saved. / หยุดแสดงเนื้อหาชั่วคราวเนื่องจากบันทึกการใช้งานไม่ได้')
         if timings is not None:
             # Reported per response so the day-one load harness can measure the real app, not only the probe.
             timings.update({'audit_ms':(time.monotonic()-started)*1000,
@@ -195,7 +195,7 @@ class Service:
             return {**context,'role':member['role'],'consent_required':True,'token':token,
                     'identity':session_identity(identity['sub'],self.config.mode)}
         result=await self.write(create)
-        if result is None:raise Refusal(403,'access_denied','Your Google account is not on the staff list.')
+        if result is None:raise Refusal(403,'access_denied','Your Google account is not on the staff list. / บัญชี Google ของคุณไม่อยู่ในรายชื่อพนักงาน')
         return result
 
     async def consent(self,request,version,ip_version,monitoring_accepted,ip_accepted):
@@ -273,7 +273,7 @@ class Service:
         async with self.operation_lock:
             def rename(db, ctx):
                 if meta(db, 'recovery_mode', False):
-                    raise Refusal(403, 'access_denied', 'Content cannot be renamed while history is being restored.')
+                    raise Refusal(403, 'access_denied', 'Content cannot be renamed while history is being restored. / ไม่สามารถเปลี่ยนชื่อเนื้อหาขณะกู้คืนประวัติได้')
                 posts = rows(db, 'SELECT * FROM posts')
                 affected = [post for post in posts if category_key(post['category']) == source]
                 if not affected:
@@ -592,7 +592,7 @@ class Service:
             await asyncio.to_thread(self.db.read,lambda db:self.still_authorized(db,context))
             return body,context
         except SessionInvalidated:
-            raise Refusal(403,'access_denied','Your access is no longer available.')
+            raise Refusal(403,'access_denied','Your access is no longer available. / คุณไม่มีสิทธิ์เข้าถึงแล้ว')
         except FileNotFoundError:
             # A rebuildable derivative was evicted; queue it again rather than serving nothing forever.
             await self.write(lambda db:db.execute("UPDATE items SET derive_status='queued' WHERE id=? AND derive_status='ready'",(item['id'],)))
@@ -607,14 +607,14 @@ class Service:
         self.permissions.require_fresh(db)
         member=db.execute('SELECT role FROM members WHERE email=?',(context['email'],)).fetchone()
         if session['revoked'] or not member:
-            raise Refusal(403,'access_denied','Your access is no longer available.')
+            raise Refusal(403,'access_denied','Your access is no longer available. / คุณไม่มีสิทธิ์เข้าถึงแล้ว')
         if not self.permissions.consent_current(db,session):
             raise Refusal(403,'consent_required','Please review and accept both agreements before entering.')
         if self.config.selfie_enabled:
             selfie.require_enrollment(db,context,self.config.selfie_notice_version)
         post=db.execute('SELECT status,category FROM posts WHERE id=?',(context['post']['id'],)).fetchone()
         if not post or (post['status']!='published' and member['role']!='admin') or meta(db,'recovery_mode',False):
-            raise Refusal(403,'access_denied','This post is not available.')
+            raise Refusal(403,'access_denied','This post is not available. / ไม่สามารถเข้าถึงโพสต์นี้ได้')
         if self.permissions.quizzes:
             quiz.require_unlocked(db,self.permissions.quizzes,member['role'],context['email'],post['category'])
 
