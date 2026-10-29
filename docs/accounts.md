@@ -127,4 +127,6 @@ the prior user's session or content.
 
 See [M1 in the roadmap](../ROADMAP.md#m1-accounts-and-profiles) for the release
 criteria and [the security follow-up](https://github.com/nerdymatters/postern/issues/1)
-for separately tracked dependency/workflow work.
+for separately tracked dependency/workflow work. Opening registration also waits
+for [M0 launch preparation](../ROADMAP.md#m0-launch-preparation), including
+published Terms of Service with a built and verified acceptance flow.
