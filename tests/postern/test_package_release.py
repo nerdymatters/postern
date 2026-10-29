@@ -11,10 +11,11 @@ import pytest
 from scripts.package_release import ROOT, public_member, release_files
 
 LINK = re.compile(r'\]\(([^)\s]+)\)')
+# Agent instructions stay out of the release on purpose.
+UNBUNDLED_DOCS = {'CLAUDE.md'}
 
 
-def test_bundled_docs_link_only_to_bundled_files():
-    # README, TODOS and docs/accounts.md linked to ROADMAP.md while the bundle left it out.
+def tracked_files():
     try:
         listed = subprocess.run(['git', 'ls-files', '-z'], cwd=ROOT, capture_output=True, check=True).stdout
     except (OSError, subprocess.CalledProcessError):
@@ -23,17 +24,33 @@ def test_bundled_docs_link_only_to_bundled_files():
     # An extracted release lists nothing, even inside another repository, so there is nothing to compare.
     if 'scripts/package_release.py' not in tracked:
         pytest.skip('needs a git checkout of this repository')
-    bundled = set(release_files(tracked))
-    missing = []
-    for name in sorted(p for p in bundled if p.endswith('.md')):
+    return tracked
+
+
+def doc_links(names):
+    """Yield (doc, link, repository path) for each relative link in the named Markdown files."""
+    for name in sorted(names):
         for target in LINK.findall((ROOT / name).read_text(encoding='utf-8')):
             path = target.split('#', 1)[0]
-            if not path or re.match(r'[a-z][a-z0-9+.-]*:', path, re.I):
-                continue
-            resolved = posixpath.normpath(posixpath.join(posixpath.dirname(name), path))
-            if resolved not in bundled and not any(p.startswith(resolved + '/') for p in bundled):
-                missing.append(f'{name} -> {target}')
+            if path and not re.match(r'[a-z][a-z0-9+.-]*:', path, re.I):
+                yield name, target, posixpath.normpath(posixpath.join(posixpath.dirname(name), path))
+
+
+def test_bundled_docs_link_only_to_bundled_files():
+    # README, TODOS and docs/accounts.md linked to ROADMAP.md while the bundle left it out.
+    bundled = set(release_files(tracked_files()))
+    missing = [f'{name} -> {target}' for name, target, path in doc_links(p for p in bundled if p.endswith('.md'))
+               if path not in bundled and not any(p.startswith(path + '/') for p in bundled)]
     assert missing == []
+
+
+def test_root_docs_are_linked_from_bundled_docs():
+    # An unlinked root-level doc could miss the bundle unnoticed; once linked, the test above requires it.
+    tracked = tracked_files()
+    bundled = set(release_files(tracked))
+    linked = {path for _, _, path in doc_links(p for p in bundled if p.endswith('.md'))}
+    root_docs = {p for p in tracked if p.endswith('.md') and '/' not in p}
+    assert root_docs - linked - UNBUNDLED_DOCS == set()
 
 
 # Value: protects=release_files() keeps product-root paths and listed root files (incl. ROADMAP.md) and drops

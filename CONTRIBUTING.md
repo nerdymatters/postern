@@ -29,6 +29,13 @@ for behavior changes, update operator documentation when setup or recovery chang
 and explain validation and limitations in the pull request. Do not weaken a test or
 security check just to make a change pass.
 
+When you add a root-level Markdown document, link it from a bundled doc such as the
+README and add it to `RELEASE_FILES` in `scripts/package_release.py`; the
+release-archive tests fail until both are done. Other root-level files ship only
+when listed there. Agent instruction files such as `CLAUDE.md` stay unlinked and
+out of the archive; list them in `UNBUNDLED_DOCS` in
+`tests/postern/test_package_release.py`.
+
 ## License and sign-off
 
 By submitting source code, documentation or sample content for inclusion, you agree
