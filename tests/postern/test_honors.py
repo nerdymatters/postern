@@ -1,13 +1,15 @@
 """The Final Exam certificate: a number and a printed name derived from audit events, like every standing."""
+import json
 import re
 import time
-from datetime import datetime
+from types import SimpleNamespace
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 import pytest
 from conftest import ADMIN, READER, events, sign_in
 from postern import honors
-from postern.db import set_meta
+from postern.db import Database, set_meta
 from postern.recover import import_events
 from test_exam import chosen, restore
 from test_quiz import MANAGER, allowlist, pause_worker, publish
@@ -124,6 +126,140 @@ def test_a_person_chooses_the_printed_name_and_admins_see_it(client, service):
     people = client.get('/api/admin/progress', headers=sign_in(client, ADMIN)).json()['people']
     assert next(p for p in people if p['email'] == READER)['certificate'] == certificate(client, headers)
     assert next(p for p in people if p['email'] == ADMIN)['certificate'] is None
+
+
+def test_new_names_win_after_the_clock_moves_back_without_bypassing_the_daily_cap(client, service, monkeypatch):
+    publish(service, 'SOP Chapter 9: Safety')
+    headers = sign_in(client)
+    restore(service, chapter=0, score=16, total=20, identity='final-pass')
+    now = time.time()
+    future = now + 86400
+    service.db.submit(lambda db: import_events(db, [
+        {'event_id': 'future-name', 'event': honors.NAMED, 'ts': future, 'email': READER, 'detail': {'name': 'Old Name'}},
+        {'event_id': 'other-future-name', 'event': honors.NAMED, 'ts': future + 86400, 'email': ADMIN, 'detail': {'name': 'Other Person'}},
+    ])).result()
+    # Equal clock readings must also preserve save order, regardless of random event ids.
+    monkeypatch.setattr(honors, 'time', SimpleNamespace(time=lambda: now))
+    for attempt in range(honors.PER_DAY - 1):
+        name = f'New Name {attempt}'
+        saved = rename(client, headers, name)
+        assert saved.status_code == 200, saved.text
+        assert saved.json()['name'] == name
+        assert certificate(client, headers) == saved.json()
+    stamped = [row['ts'] for row in events(service, honors.NAMED) if row['email'] == READER]
+    assert all(earlier < later for earlier, later in zip(stamped, stamped[1:]))
+    assert stamped[-1] < future + 86400  # Another account cannot advance this account's clock.
+    assert rename(client, headers, 'One More Name').status_code == 429
+
+
+def test_restored_invalid_date_cannot_poison_new_saved_name_or_summary(client, service):
+    headers = sign_in(client)
+    restore(service, chapter=0, score=16, total=20, identity='final-pass')
+    restored = {'event_id': 'invalid-date', 'event': honors.NAMED, 'ts': 1e30,
+                'email': READER, 'detail': {'name': 'Unusable Date'}}
+    service.db.submit(lambda db: import_events(db, [restored])).result()
+    saved = rename(client, headers, 'Corrected Name')
+    assert saved.status_code == 200 and saved.json()['name'] == 'Corrected Name'
+    records = events(service, honors.NAMED)
+    new = next(row for row in records if row['id'] != 'invalid-date')
+    assert datetime.fromtimestamp(new['ts'], timezone.utc).year == datetime.now(timezone.utc).year
+    assert next(row for row in records if row['id'] == 'invalid-date')['ts'] == 1e30
+    history = service.db.read(lambda db: honors.name_history(db, READER))
+    assert history['history_incomplete'] is True
+    assert [entry['name'] for entry in history['entries']] == ['Corrected Name']
+
+
+def test_future_restored_date_does_not_extend_daily_rename_limit(client, service, monkeypatch):
+    headers = sign_in(client)
+    restore(service, chapter=0, score=16, total=20, identity='final-pass')
+    now = time.time()
+    future = now + 30 * 86400
+    service.db.submit(lambda db: import_events(db, [
+        {'event_id': 'future-name', 'event': honors.NAMED, 'ts': future, 'email': READER,
+         'detail': {'name': 'Restored Name'}}])).result()
+    monkeypatch.setattr(honors, 'time', SimpleNamespace(time=lambda: now))
+    for attempt in range(honors.PER_DAY - 1):
+        assert rename(client, headers, f'Correction {attempt}').status_code == 200
+    assert rename(client, headers, 'Too Soon').status_code == 429
+    now += 2 * 86400
+    saved = rename(client, headers, 'Later Correction')
+    assert saved.status_code == 200 and saved.json()['name'] == 'Later Correction'
+    history = service.db.read(lambda db: honors.name_history(db, READER))
+    assert history['entries'][0]['saved_at'] == now
+
+
+@pytest.mark.parametrize('name', ['علی\u200cرضا رضایی', 'ශ්\u200dරී පෙරේරා', 'क्\u200dष कुमार'], ids=['persian', 'sinhala', 'devanagari'])
+def test_joined_names_survive_saving_suggestions_and_restore(client, service, tmp_path, name):
+    headers = sign_in(client)
+    restore(service, chapter=0, score=16, total=20, identity='final-pass')
+    saved = rename(client, headers, name)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()['name'] == name
+    assert honors.suggested(name, 'Ari', READER) == name
+    records = [json.loads(row['payload']) for row in events(service)
+               if row['type'] in ('quiz_attempt', honors.NAMED)]
+    restored = Database(tmp_path/'joined-name.sqlite3')
+    try:
+        restored.submit(lambda db: import_events(db, records)).result()
+        assert restored.read(lambda db: honors.certificate(db, READER))['name'] == name
+    finally:
+        restored.close()
+
+
+@pytest.mark.parametrize('raw, expected', [
+    ('\u200dAri\u200c', 'Ari'),
+    ('Ari\u200d Smith', 'Ari Smith'),
+    ('Ari \u200cSmith', 'Ari Smith'),
+    ('A\u200d\u200cB', 'AB'),
+    ('\u3164\u200d\u2800', ''),
+    ('A\u200d\u3164', 'A'),
+    ('A\u0301\u200dB', 'Á\u200dB'),
+    ('q\u0301\u0301\u0301\u200d\u0301B', 'q\u0301\u0301\u0301\u200dB'),
+    ('a\u200b\u0301', 'á'),
+    ('q' + '\U0001171e' * 5 + '\u200dB', 'q' + '\U0001171e' * 5 + '\u200dB'),
+])
+def test_name_joiners_need_printable_neighbors_and_do_not_bypass_mark_limits(raw, expected):
+    assert honors.tidy(raw) == expected
+    assert honors.tidy(expected) == expected
+
+
+@pytest.mark.parametrize('raw, expected', [
+    ('Maria ' + 'Longsurname' * 8, 'Maria'),
+    ('x' * 81, 'x' * 80),
+    ('ก' * 79 + 'ขิ่', 'ก' * 79),
+    ('अ' * 79 + 'कि', 'अ' * 79),
+    ('a' * 78 + 'क्\u200dष', 'a' * 78),
+    ('a' * 79 + '👍🏽', 'a' * 79),
+    ('a' * 79 + '🇹🇭', 'a' * 79),
+    ('a' * 78 + 'ขิ่', 'a' * 78),
+    ('a' * 77 + 'ขิ่', 'a' * 77 + 'ขิ่'),
+])
+def test_long_suggestions_end_at_whole_words_or_graphemes(raw, expected):
+    assert honors.fitted(raw) == expected
+
+
+@pytest.mark.parametrize('kind', ['quiz_attempt', honors.NAMED])
+def test_tied_certificate_events_survive_reversed_restore_order(service, tmp_path, kind):
+    passes = [
+        {'event_id': f'{letter}-pass', 'event': 'quiz_attempt', 'ts': 70, 'email': READER,
+         'name': f'{name} Person Example', 'detail': {'chapter': 0, 'score': 16, 'total': 20, 'passed': True}}
+        for letter, name in [('a', 'Alpha'), ('z', 'Zulu')]
+    ]
+    named = [
+        {'event_id': f'{letter}-name', 'event': honors.NAMED, 'ts': 80, 'email': READER, 'detail': {'name': name}}
+        for letter, name in [('a', 'Alpha Name'), ('z', 'Zulu Name')]
+    ]
+    records = passes if kind == 'quiz_attempt' else passes[:1] + named
+    service.db.submit(lambda db: import_events(db, records)).result()
+    before = service.db.read(lambda db: honors.certificate(db, READER))
+    assert before['number'] == honors.number('a-pass', 70)
+    assert before['name'] == ('Alpha Person Example' if kind == 'quiz_attempt' else 'Zulu Name')
+    restored = Database(tmp_path/'restored.sqlite3')
+    try:
+        restored.submit(lambda db: import_events(db, list(reversed(records)))).result()
+        assert restored.read(lambda db: honors.certificate(db, READER)) == before
+    finally:
+        restored.close()
 
 
 # Value: protects=a certificate never prints a blank, invisible or symbol-only name; fails_when=tidy() keeps Hangul,

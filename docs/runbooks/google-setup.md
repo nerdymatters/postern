@@ -14,7 +14,20 @@ Create a Desktop OAuth client for the host's installed-app flow. Save its downlo
 
 The manually maintained roster Sheet is separate from app-created storage. Create a dedicated service account with no project roles. Where your organization's policy permits JSON keys, save its key outside the checkout with mode `0600`; share only the roster Sheet with that account as Viewer. Set `allowlist_credentials` and `allowlist_sheet_id` in private `config.json`. The server requests read-only Sheets access.
 
-The header row needs `Email`; optional `Name` feeds the suggested certificate name, and optional `Role` controls access:
+The header row needs `Email`; optional `Name` feeds the suggested certificate name,
+and optional `Role` controls access.
+
+Use a person's full name in `Name`, without job titles or notes such as `Nok (Server)`.
+Until the person saves a certificate name, Postern compares the current Sheet name
+with the Google name recorded on their first passing Final Exam attempt. It prefers
+a plain name, then more words, then more words written as names; the Sheet wins a tie.
+A Sheet name containing a note or other non-name text is used only when no Google
+name is known.
+Saving **Keep this name** or **Change name** takes precedence over later Sheet edits.
+Profile display names are separate. See [certificate names and printing](../../dashboard/web/README.md#badges-and-certificate)
+for the selection, length and recovery rules.
+
+The `Role` values are:
 
 | Role | Chapter quizzes | Administration |
 | --- | --- | --- |

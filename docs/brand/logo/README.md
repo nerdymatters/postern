@@ -84,6 +84,22 @@ const label = "sr-only sm:not-sr-only";
 
 Keep the Google button on the sign-in page as Google supplies it. Its own "G" mark has to stay.
 
+## Medals and certificate seal
+
+The award artwork is inline SVG in [`dashboard/web/src/honors.tsx`](../../../dashboard/web/src/honors.tsx),
+not separate files in `icons/`. `Medal` draws a rosette with ribbons: earned badges
+use a gold edge and green ribbons; unearned badges use neutral colours in both themes.
+Chapter faces follow the nine SOP topics, **All chapters** uses a trophy, **Final Exam**
+uses a mortarboard, and other chapter numbers use a plain award. The SVG's accessible
+name includes the badge title, earned state and, when available, award date.
+
+`Seal` draws the gold-edged green seal on `CertificateCard`, with the open-door n at
+its centre. Its ring reads **FINAL EXAM PASSED**, preceded by the installation's
+organization name when configured. It is decorative (`aria-hidden`); the surrounding
+certificate supplies the name, date and number. The screen and print copies use the
+same artwork. Keep these filled awards distinct from the `currentColor` line icons
+used for **View certificate** and **Print** actions.
+
 ## Colours
 
 | Name        | Hex       | Tailwind    | Used for |
@@ -92,12 +108,16 @@ Keep the Google button on the sign-in page as Google supplies it. Its own "G" ma
 | Emerald     | `#007A55` | emerald-700 | The door. It's the same green as the progress bars |
 | Deep green  | `#004F3B` | emerald-900 | The door in the app icon (9.6:1 against the white arch) |
 | Emerald 500 | `#00BC7D` | emerald-500 | The door on dark backgrounds |
+| Award gold | `#fde68a` → `#f59e0b` → `#b45309` | Literal SVG colours | Medal and seal edge gradient |
+| Seal green | `#065f46` | Literal SVG colour | Seal face and doorway cutout |
+| Seal ring gold | `#fcd34d` | Literal SVG colour | Seal circles |
+| Seal door gold | `#fbbf24` | Literal SVG colour | Arch-shaped n in the seal |
 
 ## Rules
 
 - Keep the wordmark at least 16 px tall on screen. Below that, use the icon.
 - Leave clear space around the wordmark equal to the height of the "o".
 - The door is the only green in the header. Don't put other green elements next to it, and don't recolour the door to show a status.
-- Elsewhere in the interface, use green for progress bars and Published status badges. Post status badges use amber for Draft, blue for Publishing, green for Published, and grey for Archived in both themes; staff-progress links stay neutral.
+- Elsewhere in the interface, use green for progress bars, Published status badges and the award artwork described above. Post status badges use amber for Draft, blue for Publishing, green for Published, and grey for Archived in both themes; staff-progress links stay neutral.
 - The wordmark is lowercase on purpose. The arch-shaped n is what makes this logo, and a capital N has no arch.
 - A half-open door was tested. It reads at 64 px and up, but at 32 px it looks like a half-filled n, so the door stays closed.

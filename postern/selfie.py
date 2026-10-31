@@ -83,16 +83,39 @@ def enabled(service):
         raise Refusal(404, 'not_found', 'Selfie enrollment is not enabled.')
 
 
-async def release(service, request, reason, fault, reserved_at):
-    """Give back a reserved attempt that ended in a face the check did not find (fault 'photo') or a server
-    fault ('server'). It carries the attempt's own timestamp, so the pair leaves the daily window together.
-    Best effort: if it cannot be recorded, the attempt keeps counting."""
+def settle_reservation(db, identity, outcome, reason=None):
+    """Settle one reservation and its refund atomically; replay never refunds twice."""
+    row = db.execute('SELECT * FROM selfie_reservations WHERE id=? AND outcome IS NULL', (identity,)).fetchone()
+    if not row:
+        return
+    release_id = None
+    if outcome in ('photo', 'server'):
+        release_id = event(db, 'selfie_capture_released', json.loads(row['context']), summary=False,
+                           detail={'reason': reason, 'fault': outcome}, timestamp=row['ts'])
+    db.execute('UPDATE selfie_reservations SET outcome=?,release_id=? WHERE id=? AND outcome IS NULL',
+               (outcome, release_id, identity))
+
+
+def reconcile_reservations(db, email):
+    """Caller holds this account's capture lock: an unfinished capture has stopped.
+
+    A photo insert settles its reservation in the same transaction, even if its
+    response times out. Anything still unfinished had an interrupted capture or
+    settlement; classify that storage/request failure as a server fault.
+    """
+    for row in rows(db, 'SELECT id FROM selfie_reservations WHERE email=? AND outcome IS NULL', (email,)):
+        settle_reservation(db, row['id'], 'server', 'interrupted')
+    # Events remain the rolling-budget source, including legacy unpaired attempts.
+    db.execute('DELETE FROM selfie_reservations WHERE email=? AND outcome IS NOT NULL AND ts<=?',
+               (email, time.time()-86400))
+
+
+async def finish_reservation(service, identity, outcome, reason=None):
+    # Internal compensation uses the saved, authorized context, not a login that
+    # might since have expired. Failure leaves a durable row for reconciliation.
     with contextlib.suppress(Exception):
         async with service.selfie_admissions:
-            await service.execute(request, lambda db, ctx: event(db, 'selfie_capture_released', ctx, summary=False,
-                                                                detail={'reason': reason, 'fault': fault},
-                                                                timestamp=reserved_at),
-                                  selfie=False, event_name=None)
+            await service.write(lambda db: settle_reservation(db, identity, outcome, reason))
 
 
 async def capture(service, request, upload, version):
@@ -109,6 +132,7 @@ async def capture(service, request, upload, version):
     # parallel, bounded by the converter's slots, and readers restoring a portrait never wait behind someone's
     # face check.
     async with service.capture_locks[context['email']]:
+        identity = str(uuid.uuid4())
         def check(db, ctx, reserve=False):
             binding = browser(db, ctx)
             if not binding:
@@ -118,6 +142,7 @@ async def capture(service, request, upload, version):
             if pending:
                 raise Refusal(409, 'selfie_pending', 'Your previous selfie is still being saved. Please wait. / กำลังบันทึกเซลฟีก่อนหน้าของคุณ กรุณารอสักครู่')
             if reserve:
+                reconcile_reservations(db, ctx['email'])
                 attempts, released, faults = db.execute(
                     "SELECT coalesce(sum(type='selfie_capture_attempt'),0), coalesce(sum(type='selfie_capture_released'),0), "
                     "coalesce(sum(type='selfie_capture_released' AND CASE WHEN json_valid(payload) "
@@ -131,12 +156,20 @@ async def capture(service, request, upload, version):
                     # The day's trouble was the service's, not the person's photos: the refusal must not blame them.
                     raise Refusal(429, 'rate_limited', 'The selfie service had repeated trouble today. Please try again tomorrow. / '
                                   'ระบบเซลฟีขัดข้องหลายครั้งในวันนี้ กรุณาลองใหม่พรุ่งนี้')
-                event(db, 'selfie_capture_attempt', ctx, summary=False, timestamp=reserved_at)
+                attempt_id = event(db, 'selfie_capture_attempt', ctx, summary=False, timestamp=reserved_at)
+                db.execute('INSERT INTO selfie_reservations(id,email,attempt_id,ts,context) VALUES (?,?,?,?,?)',
+                           (identity, ctx['email'], attempt_id, reserved_at, json.dumps(ctx)))
             return binding
         reserved_at = time.time()
-        async with service.selfie_admissions:
-            binding = await service.execute(request, lambda db, ctx: check(db, ctx, True), selfie=False, event_name=None)
-        identity = str(uuid.uuid4())
+        try:
+            async with service.selfie_admissions:
+                binding = await service.execute(request, lambda db, ctx: check(db, ctx, True), selfie=False, event_name=None)
+        except BaseException:
+            # An already-running reservation can commit after this response. The
+            # worker (or the next capture) reconciles it after this lock is free.
+            service.selfie_wakeup.set()
+            await upload.close()
+            raise
         source = service.config.data_dir/'staging'/(identity+'.jpg')
         derived = service.config.data_dir/'staging'/('selfie-'+identity)
         target = service.config.data_dir/'selfies'/(identity+'.jpg')
@@ -172,6 +205,7 @@ async def capture(service, request, upload, version):
                 event(db, 'selfie_consent_accepted', ctx, detail={'version': version, 'selfie_id': identity,
                     'id': identity, 'device_hash': binding, 'captured_at': now, 'expires_at': now+LIFETIME,
                     'drive_id': drive_id, 'sha256': digest, 'consent_version': version})
+                settle_reservation(db, identity, 'captured')
                 return {'pending_id': identity}
             # A timed-out writer can still commit. Retain the prepared bytes
             # once dispatched; the worker reconciles any unreferenced file.
@@ -185,19 +219,25 @@ async def capture(service, request, upload, version):
                 raise
         except SelfieFaceError as error:
             status, message = FACE_REFUSALS.get(error.code, RETAKE)
-            await release(service, request, error.code, 'server' if status >= 500 else 'photo', reserved_at)
+            await finish_reservation(service, identity, 'server' if status >= 500 else 'photo', error.code)
             raise Refusal(status, error.code, message)
         except DeriveFault as error:
             # The host or the converter failed, not the photo: given back, and never "take another photo".
-            await release(service, request, 'capacity' if isinstance(error, DeriveCapacity) else 'converter', 'server', reserved_at)
+            await finish_reservation(service, identity, 'server', 'capacity' if isinstance(error, DeriveCapacity) else 'converter')
             raise Refusal(503, 'selfie_unavailable', UNAVAILABLE)
         except DeriveError:
+            await finish_reservation(service, identity, 'charged')
             raise Refusal(422, 'invalid_selfie', 'The photo could not be prepared safely. Take another clear photo. / '
                           'ไม่สามารถเตรียมรูปภาพนี้ได้อย่างปลอดภัย กรุณาถ่ายภาพใหม่ให้ชัดเจน')
         except (StoreUnavailable, OSError):
-            await release(service, request, 'storage', 'server', reserved_at)
+            await finish_reservation(service, identity, 'server', 'storage')
             raise Refusal(503, 'selfie_unavailable', UNAVAILABLE)
+        except Refusal as error:
+            if error.code != 'audit_unavailable':
+                await finish_reservation(service, identity, 'charged')
+            raise
         finally:
+            service.selfie_wakeup.set()
             await upload.close()
             source.unlink(missing_ok=True)
             await asyncio.to_thread(shutil.rmtree, derived, True)
@@ -223,6 +263,14 @@ def authorize_pending(service, db, photo):
 async def process(service, *, maintenance=True):
     if not service.config.selfie_enabled:
         return
+    unfinished = await asyncio.to_thread(service.db.read, lambda db: rows(db,
+        'SELECT DISTINCT email FROM selfie_reservations WHERE outcome IS NULL'))
+    for row in unfinished:
+        lock = service.capture_locks[row['email']]
+        if lock.locked():
+            continue  # Never refund a live conversion or wait behind its upload.
+        async with lock, service.selfie_admissions:
+            await service.write(lambda db: reconcile_reservations(db, row['email']))
     async with service.selfie_lock:
         pending = await asyncio.to_thread(service.db.read, lambda db: rows(db,
             "SELECT * FROM selfies WHERE status='pending' AND next_try<=? ORDER BY captured_at LIMIT 1", (time.time(),)))
@@ -278,6 +326,7 @@ def readable(photo, config, now=None):
 async def purge(service):
     now = time.time()
     def retire(db):
+        db.execute('DELETE FROM selfie_reservations WHERE outcome IS NOT NULL AND ts<=?', (now-86400,))
         for photo in rows(db, "SELECT id,email,expires_at FROM selfies WHERE status='active' AND (expires_at<=? OR (? AND email NOT IN (SELECT email FROM members)))", (now, service.permissions.fresh(db))):
             when = min(now, photo['expires_at'])
             db.execute("UPDATE selfies SET status='retired',retired_at=?,attempts=0,next_try=0,error=NULL WHERE id=?", (when, photo['id']))

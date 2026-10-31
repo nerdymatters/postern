@@ -122,8 +122,9 @@ the restricted decoder list. These checks do not substitute for live Google
 sign-in or the deployed native-tool inventory.
 
 The owner approved Terms version `2026-10-29`, effective October 29, 2026.
-The public page is prepared; live publication verification, separate private-service
-activation and a hosted acceptance/revision check remain release gates.
+The public page was subsequently published and verified in the publication round
+below. Separate private-service activation and a hosted acceptance/revision check
+remain release gates.
 Registration remains closed. Installed production dependencies and live Google/image behavior must be
 checked after release. Issue #1 stays open pending those dispositions and
 deployment verification. See the [launch and rollback checklist](../runbooks/launch-readiness.md).
@@ -138,4 +139,26 @@ private-service activation; registration remains closed.
 
 The P2 Thai refusal-copy TODO is implemented across server messages and all
 four whole-screen states, including retry and sign-out controls. No access
-policy or writer deadline changed. Live publication verification is pending.
+policy or writer deadline changed.
+
+Publication completed in v0.18.0 through
+[PR #8](https://github.com/nerdymatters/postern/pull/8), merged October 29 at
+15:43:25 UTC as `a1c3b52c2dfce623c56f742fdea12fed3473348e`. All six GitHub checks
+passed on its head; CI recorded 727 Python, 314 frontend and 14 status tests.
+The main and pilot frontend deployments reported READY for that merge.
+
+Post-deploy checks at 15:45 UTC received HTTP 200 for the standalone Terms on
+both public origins. The [canonical document](https://postern.fyi/legal/terms/2026-10-29.html)
+matched SHA-256
+`91e252f92e44eec5aeca199eba860935d328631737cc17a6c0e61d6a11c66a8f`.
+Both responses had immutable caching, restrictive CSP, nosniff and frame denial.
+Desktop and 375px mobile browser checks found no horizontal overflow or console
+errors on the legal page. These are recorded release-time observations, not a
+continuous health guarantee or validation of later uncommitted work.
+
+The same release check confirmed registration closed and account acceptance
+inactive. Private account-service activation, hosted acceptance/revision testing,
+office Python runtime and status-worker rollout remain separate. No real Google
+sign-in or account acceptance/deletion was performed by this publication check.
+Security issue #1 remains open for its remaining dispositions and deployment
+verification. Public Terms publication is complete; M0-04 as a whole is not.

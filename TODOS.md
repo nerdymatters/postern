@@ -4,124 +4,6 @@ This file tracks maintenance and deferred fixes. The [master-plan checklist](ROA
 tracks launch preparation, accounts and profiles, private spaces, agent access, the
 Rust folder client, screen sharing and computing resources.
 
-## Certificate page
-
-### Show feedback when "Check again" runs
-
-**What:** Show "Checking…" and "Checked just now", or a retryable error, after tapping Check again on `/badges` and `/certificate`.
-
-**Why:** A tap that finds nothing new, or fails, looks like a dead button.
-
-**Context:** Deferred by the owner in the 0.12.0 review. The pages call the app's `refreshProgress`, which waits 250 ms and swallows errors (`dashboard/web/src/app.tsx`). The quiz page's own Check again shows the pattern to copy.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
-## Certificate names
-
-### Make a new name win over a future-dated saved name
-
-**What:** Stamp a name save no earlier than just after the person's latest `certificate_name` event.
-
-**Why:** `chosen()` prints the latest-stamped name. If the office Mac's clock jumped back, or a restore came from a Mac whose clock ran ahead, a new save is accepted and reported as saved, but the older future-dated name keeps printing.
-
-**Context:** `postern/honors.py` `chosen()` and `rename()`. Found by the adversarial review of 0.12.0.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
-### Use a restore-stable tie-break for certificate events
-
-**What:** Break timestamp ties in `FIRST_PASS` and `chosen()` with something a restore preserves, such as the event id, instead of `seq`.
-
-**Why:** Recovery assigns new `seq` numbers in import order, so two events with the same timestamp can resolve differently after a restore: a different certificate number or printed name.
-
-**Context:** `postern/honors.py` orders both queries by `seq`; `postern/recover.py` imports batches in batch-id order. A tie needs two events in the same second (Final Exam attempts are limited per minute), so it mostly affects restores from the summary log.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
-### Keep zero-width joiners inside names
-
-**What:** Keep U+200C and U+200D when they sit between letters or marks in `tidy()`.
-
-**Why:** Persian, Sinhala and some Indic spellings need them. `tidy()` drops every format character, so those names print misspelled.
-
-**Context:** `postern/honors.py` `tidy()`. Thai and English names are unaffected. Keep refusing the invisible names tested in `tests/postern/test_honors.py`.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
-### Cut long suggested names at a word, and count length like the server
-
-**What:** Cut staff-list or Google names over 80 characters at a word or grapheme boundary, and count the name field's length after the same Unicode normalization the server applies.
-
-**Why:** A long Thai name loses the marks of its last syllable. A few rare characters expand under normalization, so the field can accept a name the server then refuses with "1 to 80 characters".
-
-**Context:** `postern/honors.py` `fitted()` and `NAME_LIMIT`; `dashboard/web/src/honors.tsx` `maxLength={NAME_LIMIT}`.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
-### Correct the restore claim in honors.py's docstring
-
-**What:** Say that a restore keeps a certificate only while its first passing Final Exam attempt reached an export tier.
-
-**Why:** The docs were corrected in 0.12.0; the module docstring still says every restore shows the same certificate.
-
-**Context:** `postern/honors.py` module docstring; `docs/runbooks/recovery.md` has the accurate wording.
-
-**Effort:** S
-**Priority:** P4
-**Depends on:** None
-
-## Product decisions
-
-### Decide how admins can check a printed certificate
-
-**What:** Choose between locking the printed name after it is first confirmed, showing admins the name history, and making certificate numbers searchable in Staff progress.
-
-**Why:** A holder can change the printed name up to 20 times a day under the same number. Staff progress shows only the latest name and cannot look up a number, so an admin cannot check a certificate someone presents.
-
-**Context:** Raised by the adversarial review of 0.12.0. Every name change is already kept as a `certificate_name` audit event.
-
-**Effort:** M
-**Priority:** P3
-**Depends on:** None
-
-## Documentation
-
-### Close the 0.12.0 documentation gaps
-
-**What:** Note in `docs/runbooks/google-setup.md` that the Sheet's Name column now feeds the suggested certificate name, describe when the home page's "Your certificate is ready" card shows, and cover the medal and seal art in the logo kit.
-
-**Why:** The 0.12.0 documentation audit found these gaps.
-
-**Context:** See the Documentation section of the 0.12.0 pull request.
-
-**Effort:** S
-**Priority:** P4
-**Depends on:** None
-
-## Selfie enrollment
-
-### Make selfie reservations idempotent across writer deadlines
-
-**What:** Give reservations and refunds a durable identity so a commit after the writer deadline can be reconciled without charging a failed capture or refunding twice.
-
-**Why:** A reservation can commit after the 1.5-second deadline while the user sees the audit-paused screen; a failed best-effort release also leaves the attempt counted.
-
-**Context:** Owner-deferred in D2 item 5A; documented in `docs/runbooks/capacity.md`. The admission bound reduces writer crowding but cannot establish rollback. Start with `postern/selfie.py` and `postern/db.py`; preserve the ten/30/90 rolling-window ceilings and ambiguous-insert retention.
-
-**Effort:** M
-**Priority:** P2
-**Depends on:** None
-
 ## Infrastructure
 
 ### Migrate the server from Python to Rust
@@ -136,7 +18,67 @@ Rust folder client, screen sharing and computing resources.
 **Priority:** P3
 **Depends on:** None
 
+### Verify concentrated native catalog workloads before production enablement
+
+**What:** Improve and benchmark resource listing when a member can see few or no
+resources in a large space, preserving authorization, audit and revocation checks.
+
+**Why:** The agreed synthetic pilot (100 spaces, 10,000 accounts, 100,000 resources)
+passed a no-visible-resource probe at about 0.8–0.9 seconds. Concentrating 10,000
+resources in one space exceeded the service's five-second deadline. An extra grant
+index alone did not resolve it. These are local probes, not customer quotas or a
+hosted capacity guarantee.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** Complete before enabling native Posterns in production; v0.19.0
+keeps that service disabled.
+
 ## Completed
+
+- **2026-10-29 — Check printed certificates by number and saved-name history.**
+  Owner chose admin-only number lookup and name history, keeping name corrections
+  available. Staff progress searches current certificate numbers and printed names;
+  **All locations** searches the whole current roster. **Details → Show name history**
+  loads audited, paginated saved names with timestamps and incomplete-history notices.
+  Unsaved suggestions are not historical evidence. See the
+  [web guide](dashboard/web/README.md#badges-and-certificate). Local implementation
+  complete; deployment remains pending.
+
+- **2026-10-29 — Close the certificate documentation gaps.**
+  [Google setup](docs/runbooks/google-setup.md#roster-reader) explains how the
+  Sheet name competes with the Google name and when a saved name takes precedence.
+  The [web guide](dashboard/web/README.md#badges-and-certificate) covers the
+  home-page certificate card, current name normalization and configured prefix.
+  The [logo kit](docs/brand/logo/README.md#medals-and-certificate-seal) documents
+  medal states, chapter faces, the certificate seal and accessibility. Local
+  documentation update complete; publication remains pending.
+
+- **2026-10-29 — Preserve joined names and shorten suggestions safely.**
+  Certificate names keep U+200C/U+200D between letters or marks, including through
+  saves and restores. Long suggestions stop at a whole word or complete grapheme.
+  The name form counts cleaned Unicode code points, preserves text while editing,
+  and sends the normalized name; the server still enforces the 80-character limit.
+  Python and browser checks agree across a 7,622-case Unicode corpus, including
+  the Ahom mark whose category changed in Unicode 16. Grapheme fitting adds the
+  `regex` runtime dependency, pinned in the pilot lockfile. Local implementation
+  complete; deployment remains pending.
+
+- **2026-10-29 — Certificate check feedback and event ordering.**
+  `/badges` and `/certificate` now show bilingual checking, checked and retryable
+  error states without duplicate requests or losing keyboard focus. Background
+  refreshes keep their debounce and stale-response guards. New names beat
+  future-dated choices; event-id tie-breaks preserve names and numbers when
+  restores import tied events in a different order. The honors module's restore
+  claim now states the export requirement. Local implementation complete;
+  deployment remains pending. See the [recovery notes](docs/runbooks/recovery.md).
+
+- **2026-10-29 — Make selfie reservations idempotent across writer deadlines.**
+  Durable reservation identities pair each attempt with at most one refund.
+  The worker and the next capture reconcile interrupted work, including after
+  restart, while preserving committed photos, live captures and the ten/30/90
+  rolling limits. Server rollout remains pending. See the
+  [reservation lifecycle](docs/runbooks/capacity.md#durable-selfie-reservations).
 
 - **Completed: v0.18.0 (2026-10-29) — Complete Thai copy on whole-screen refusals.**
   Access, roster verification, audit and portrait refusal messages, titles,

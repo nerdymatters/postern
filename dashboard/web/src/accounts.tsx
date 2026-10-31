@@ -10,6 +10,8 @@ import { Link, navigate, usePathname } from './routes'
 import { ThemeToggle, useTheme } from './theme'
 import { Button, Field, Message, Panel, Wordmark, buttonClass, input } from './ui'
 import { forgetViews } from './views'
+import { SpaceOnboarding } from './spaces'
+import { nativeSpacesEnabled, onboardingDestination } from './spaces-api'
 
 function clearSpace() { setToken(null); forgetViews(); releaseAll() }
 function legacySpaceRoute(path: string) { return /^\/(?:post|quiz|final-exam|badges|certificate|admin)(?:\/|$)/.test(path) }
@@ -95,6 +97,7 @@ export function AccountsApp() {
   useEffect(() => {
     let live = true
     if (!account || !token || publicPage || account.terms?.required || account.terms_unavailable) return
+    if (nativeSpacesEnabled() && !spaceRoute(path)) { setCheckingSpace(false); return }
     const candidate = currentToken()
     if (!candidate) { setCheckingSpace(false); return }
     setCheckingSpace(true); setSpaceProblem(false)
@@ -115,7 +118,7 @@ export function AccountsApp() {
       }
     }).finally(() => { if (live) setCheckingSpace(false) })
     return () => { live = false }
-  }, [account?.id, account?.identity?.issuer, account?.identity?.subject, account?.terms?.required, account?.terms_unavailable, token, publicPage, spaceAttempt])
+  }, [account?.id, account?.identity?.issuer, account?.identity?.subject, account?.terms?.required, account?.terms_unavailable, token, publicPage, spaceAttempt, path])
 
   const spaceLost = useCallback(() => {
     clearSpace(); setSpace(null); setSpaceNotice('Your private-space session is no longer available. You are still signed in to Postern.')
@@ -142,7 +145,7 @@ export function AccountsApp() {
     const outgoing = currentToken()
     clearSpace(); setSpace(null); setAccountToken(result.token)
     if (outgoing) void api.revokeForAccount(outgoing).catch(() => {})
-    if (!spaceRoute(destination) && destination !== '/settings/profile') navigate('/home')
+    if (!spaceRoute(destination) && destination !== '/settings/profile' && !(nativeSpacesEnabled() && onboardingDestination(destination))) navigate('/home')
   }
 
   async function enterSpace(credential: string) {
@@ -179,6 +182,7 @@ export function AccountsApp() {
     return <AccountFrame account={account} onLeave={leave}><SpaceEntry key={account.id} notice={spaceNotice} onCredential={enterSpace} /></AccountFrame>
   }
   if (path === '/settings/profile') return <AccountFrame account={account} onLeave={leave}><ProfileEditor key={account.id} account={account} onSaved={setAccount} onDeleted={leave} /></AccountFrame>
+  if (nativeSpacesEnabled()) return <AccountFrame account={account} onLeave={leave}><SpaceOnboarding key={`${token}:${path}`} account={account} credential={token!} path={path} /></AccountFrame>
   return <AccountFrame account={account} onLeave={leave}>
     <div className="space-y-2"><p className="text-sm text-neutral-500 dark:text-neutral-400">Your account</p><h1 className="text-3xl font-semibold tracking-tight">My Posterns</h1><p className="text-neutral-600 dark:text-neutral-300">Private spaces and resources shared with you.</p></div>
     <Panel className="flex flex-wrap items-center gap-4"><Avatar profile={account.profile} /><div className="min-w-0 flex-1"><p className="font-semibold">{account.profile.display_name}</p><p className="text-sm text-neutral-500">{account.profile.handle ? `@${account.profile.handle}` : 'Choose a handle to make this yours.'}</p></div><Link to="/settings/profile" className={buttonClass('secondary')}>Edit profile</Link></Panel>

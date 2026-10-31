@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-from conftest import ADMIN, READER, sign_in
+from conftest import ADMIN, READER, events, sign_in
 from postern.db import event, set_meta
 from postern.progress import dashboard
 from postern.recover import import_events
@@ -147,7 +147,6 @@ def test_report_scan_leaves_writer_free_and_rechecks_admin_before_disclosure(cli
     import concurrent.futures
     import threading
     import postern.service as service_module
-    from conftest import events
     admin = sign_in(client, ADMIN)
     fetch(client, admin)
     assert len(events(service, 'training_progress_viewed')) == 1

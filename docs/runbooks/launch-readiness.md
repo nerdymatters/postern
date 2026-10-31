@@ -26,6 +26,12 @@ production dependency versions or real-device behavior.
 
 ## Terms publication and activation
 
+Publication steps 1–2 were completed with v0.18.0 on October 29, 2026; see the
+[release evidence](../reports/launch-readiness.md#publication-round) for the
+canonical URL, exact SHA-256 and hosted checks. Private-service activation and
+hosted acceptance/revision checks in steps 3–7 remain pending. Keep the published
+revision immutable; activation does not require publishing it again.
+
 1. The owner approved [version 2026-10-29](../terms/2026-10-29.md), effective
    October 29, 2026, including Nerdy Matters LLC, nerd@nerdymatters.com,
    Massachusetts, USA, and the freemium/multiple-tier model. The approved

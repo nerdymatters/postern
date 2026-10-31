@@ -40,6 +40,7 @@ Pygments==2.21.0
 pyparsing==3.3.3
 pytest==9.1.1
 python-multipart==0.0.32
+regex==2026.9.29
 requests==2.34.2
 requests-oauthlib==2.0.0
 starlette==1.6.0

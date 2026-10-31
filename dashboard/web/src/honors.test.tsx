@@ -266,11 +266,12 @@ test('the certificate page shows the certificate, confirms the printed name and 
   fireEvent.click(screen.getByRole('button', { name: /Change name/ }))
   const field = screen.getByRole<HTMLInputElement>('textbox', { name: /Name on your certificate/ })
   expect(document.activeElement).toBe(field)
-  expect(field.maxLength).toBe(NAME_LIMIT)
+  expect(field.hasAttribute('maxlength')).toBe(false)
+  screen.getByText(`${[...state.certificate!.name].length} / ${NAME_LIMIT} characters`)
   fireEvent.change(field, { target: { value: '  Maria  Santos Rivera ' } })
   fireEvent.click(screen.getByRole('button', { name: /Save name/ }))
   await screen.findByText(/Saved\. Your certificate shows this name\./)
-  expect(JSON.parse(calls.find(call => call.url.endsWith('/api/certificate/name'))!.body)).toEqual({ name: '  Maria  Santos Rivera ' })
+  expect(JSON.parse(calls.find(call => call.url.endsWith('/api/certificate/name'))!.body)).toEqual({ name: 'Maria Santos Rivera' })
   expect(saved).toHaveBeenCalledWith(expect.objectContaining({ name: 'Maria Santos Rivera', name_confirmed: true }))
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: /Change name/ })))
 })
@@ -319,6 +320,61 @@ test('a second press while the name is saving sends nothing more', async () => {
   fireEvent.click(screen.getByRole('button', { name: /Saving/ }))
   expect(save).toHaveBeenCalledTimes(1)
   await act(async () => answer(certificate({ name: 'Maria Santos Rivera', name_confirmed: true })))
+})
+
+test('certificate name validation counts the cleaned name without truncating input', async () => {
+  const save = vi.spyOn(api, 'nameCertificate').mockImplementation(async name => certificate({ name, name_confirmed: true }))
+  render(<CertificatePage certificate={certificate()} loading={false} onSaved={() => {}} onRefresh={() => {}} onQuiz={() => {}} onBack={() => {}} />)
+  fireEvent.click(screen.getByRole('button', { name: /Change name/ }))
+  const field = screen.getByRole<HTMLInputElement>('textbox', { name: /Name on your certificate/ })
+  const raw = 'q'.repeat(79) + '\u0344' // NFC expands the last character into two marks.
+  fireEvent.change(field, { target: { value: raw } })
+  expect(field.value).toBe(raw)
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: /Save name/ }).disabled).toBe(true)
+  expect(field.getAttribute('aria-invalid')).toBe('true')
+  screen.getByText('81 / 80 characters')
+  fireEvent.submit(field.closest('form')!)
+  expect(save).not.toHaveBeenCalled()
+  expect((await screen.findByRole('alert')).textContent).toContain('1 to 80')
+  fireEvent.change(field, { target: { value: 'q'.repeat(78) + '\u0344' } })
+  screen.getByText('80 / 80 characters')
+  fireEvent.click(screen.getByRole('button', { name: /Save name/ }))
+  await screen.findByText(/Saved\. Your certificate shows this name\./)
+  expect(save).toHaveBeenCalledExactlyOnceWith('q'.repeat(78) + '\u0308\u0301')
+})
+
+test.each([
+  ['decomposed', 'e\u0301'.repeat(80), 'é'.repeat(80)],
+  ['supplementary', '𠀀'.repeat(80), '𠀀'.repeat(80)],
+  ['joiners', '\u200dعلی\u200cرضا رضایی\u200d', 'علی\u200cرضا رضایی'],
+  ['marks', 'q\u0301\u0301\u0301\u200d\u0301B', 'q\u0301\u0301\u0301\u200dB'],
+  ['filtered normalization', 'a\u200b\u0301', 'á'],
+  ['Ahom spacing mark', 'q' + '\u{1171e}'.repeat(5) + '\u200dB', 'q' + '\u{1171e}'.repeat(5) + '\u200dB'],
+  ['whitespace', '\u001cMaria\u0085Santos\u001f', 'Maria Santos'],
+])('the name form preserves and counts %s names as the server does', async (_kind, raw, expected) => {
+  const save = vi.spyOn(api, 'nameCertificate').mockImplementation(async name => certificate({ name, name_confirmed: true }))
+  render(<CertificatePage certificate={certificate()} loading={false} onSaved={() => {}} onRefresh={() => {}} onQuiz={() => {}} onBack={() => {}} />)
+  fireEvent.click(screen.getByRole('button', { name: /Change name/ }))
+  const field = screen.getByRole<HTMLInputElement>('textbox', { name: /Name on your certificate/ })
+  expect(field.hasAttribute('maxlength')).toBe(false)
+  fireEvent.change(field, { target: { value: raw } })
+  expect(field.value).toBe(raw)
+  screen.getByText(`${[...expected].length} / 80 characters`)
+  fireEvent.click(screen.getByRole('button', { name: /Save name/ }))
+  await screen.findByText(/Saved\. Your certificate shows this name\./)
+  expect(save).toHaveBeenCalledExactlyOnceWith(expected)
+})
+
+test.each(['\u200c\u200d', '\u3164\u200d\u2800', '\u0301\u200c\u0301'])('the name form rejects invisible names (%s)', raw => {
+  const save = vi.spyOn(api, 'nameCertificate')
+  render(<CertificatePage certificate={certificate()} loading={false} onSaved={() => {}} onRefresh={() => {}} onQuiz={() => {}} onBack={() => {}} />)
+  fireEvent.click(screen.getByRole('button', { name: /Change name/ }))
+  const field = screen.getByRole<HTMLInputElement>('textbox', { name: /Name on your certificate/ })
+  fireEvent.change(field, { target: { value: raw } })
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: /Save name/ }).disabled).toBe(true)
+  fireEvent.submit(field.closest('form')!)
+  expect(save).not.toHaveBeenCalled()
+  screen.getByRole('alert')
 })
 
 // Value: protects=a saved certificate is "Training Certificate.pdf" and the page title comes back after; fails_when=
@@ -568,6 +624,66 @@ test('the app routes to the badges and certificate pages from the reading room d
   render(<App />)
   await screen.findByRole('heading', { name: /^Your badges/ })
   screen.getByText('2 of 2 earned')
+})
+
+test.each([
+  ['/badges', false], ['/certificate', false], ['/badges', true], ['/certificate', true],
+] as const)('%s Check again reports pending, unchanged, failed and retried checks (passed=%s)', async (path, passedExam) => {
+  const state = world({ posts: [], quizzes: [], certificate: null,
+    finalExam: passedExam ? exam({ passed: true, passed_at: OCT_5, locked_by: null }) : null })
+  installApi(state)
+  setToken('session-token')
+  window.history.replaceState(null, '', path)
+  const read = vi.spyOn(api, 'posts')
+  render(<App />)
+  const button = await screen.findByRole('button', { name: /Check again/ })
+  // A missing certificate after a pass also triggers one automatic check on /certificate.
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(passedExam && path === '/certificate' ? 2 : 1))
+  let finish: (wall: Awaited<ReturnType<typeof api.posts>>) => void = () => {}
+  read.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const before = read.mock.calls.length
+  fireEvent.click(button)
+  const checking = screen.getByRole('button', { name: /Checking…/ })
+  expect(checking.getAttribute('aria-busy')).toBe('true')
+  fireEvent.click(checking)
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(before + 1))
+  expect(screen.queryByText('Checked just now.')).toBeNull()
+  const unchanged = { posts: [], quizzes: [], certificate: null, final_exam: state.finalExam }
+  await act(async () => finish(unchanged))
+  const checked = await screen.findByText('Checked just now.')
+  const status = checked.closest('[role="status"]')!
+  expect(status.textContent).toContain('ตรวจเมื่อสักครู่')
+  expect(screen.queryByText(/Pass the Final Exam to earn your certificate/)).toBeNull()
+
+  // Exercise the real API's network-error shape, not only a rejected component callback.
+  vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new TypeError('network offline'))
+  fireEvent.click(screen.getByRole('button', { name: /Check again/ }))
+  expect(status.textContent).toBe('')  // Clear first so repeated results are announced.
+  const error = await screen.findByRole('alert')
+  expect(error.textContent).toContain('Postern could not be reached. Check your connection.')
+  expect(error.textContent).toContain('กรุณาลองใหม่อีกครั้ง')
+  read.mockResolvedValueOnce(unchanged)
+  fireEvent.click(screen.getByRole('button', { name: /Check again/ }))
+  await screen.findByText('Checked just now.')
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(read).toHaveBeenCalledTimes(before + 3)
+})
+
+test('a manual certificate check answered after sign-out cannot restore protected progress', async () => {
+  installApi(world({ posts: [], quizzes: [], certificate: null, finalExam: null }))
+  setToken('session-token')
+  window.history.replaceState(null, '', '/certificate')
+  render(<App />)
+  const check = await screen.findByRole('button', { name: /Check again/ })
+  let finish: (wall: Awaited<ReturnType<typeof api.posts>>) => void = () => {}
+  vi.spyOn(api, 'posts').mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  fireEvent.click(check)
+  fireEvent.click(screen.getByRole('button', { name: /Sign out/ }))
+  await screen.findByText('You are signed out.')
+  await act(async () => finish({ posts: [], certificate: certificate() }))
+  expect(screen.queryByText('Maria Santos')).toBeNull()
+  expect(screen.queryByText('Checked just now.')).toBeNull()
+  expect(document.querySelector('.print-root')).toBeNull()
 })
 
 // Value: protects=App passes a saved name to the certificate on screen and its print copy; fails_when=App's onSaved is not

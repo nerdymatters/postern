@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS views(id TEXT PRIMARY KEY, session_id TEXT NOT NULL R
 CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE NOT NULL, ts REAL NOT NULL, type TEXT NOT NULL, email TEXT, post_id TEXT, item_id TEXT, view_id TEXT, summary INTEGER NOT NULL, payload TEXT NOT NULL, batch_id TEXT);
 CREATE INDEX IF NOT EXISTS events_report ON events(post_id,type,email);
 CREATE INDEX IF NOT EXISTS events_progress ON events(email,type,item_id);
+CREATE INDEX IF NOT EXISTS events_name_history ON events(email,ts DESC,id DESC) WHERE type='certificate_name';
 CREATE TABLE IF NOT EXISTS video_metadata(item_id TEXT PRIMARY KEY REFERENCES items(id), duration_seconds REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS video_tickets(token_hash TEXT PRIMARY KEY, view_id TEXT UNIQUE NOT NULL REFERENCES views(id), expires_at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS video_checkpoints(view_id TEXT PRIMARY KEY REFERENCES views(id), reported_at REAL NOT NULL);
@@ -33,6 +34,8 @@ CREATE TABLE IF NOT EXISTS selfies(id TEXT PRIMARY KEY, email TEXT NOT NULL, dev
 CREATE INDEX IF NOT EXISTS selfies_reader ON selfies(email,device_hash,status);
 CREATE UNIQUE INDEX IF NOT EXISTS selfies_pending ON selfies(email,device_hash) WHERE status='pending';
 CREATE UNIQUE INDEX IF NOT EXISTS selfies_active ON selfies(email,device_hash) WHERE status='active';
+CREATE TABLE IF NOT EXISTS selfie_reservations(id TEXT PRIMARY KEY, email TEXT NOT NULL, attempt_id TEXT UNIQUE NOT NULL, ts REAL NOT NULL, context TEXT NOT NULL, outcome TEXT, release_id TEXT UNIQUE);
+CREATE INDEX IF NOT EXISTS selfie_reservations_unfinished ON selfie_reservations(email) WHERE outcome IS NULL;
 CREATE TABLE IF NOT EXISTS operations(id TEXT PRIMARY KEY, post_id TEXT NOT NULL, revision INTEGER NOT NULL, kind TEXT NOT NULL, actor TEXT NOT NULL, status TEXT NOT NULL, created_at REAL NOT NULL, next_try REAL NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0, error TEXT);
 CREATE TABLE IF NOT EXISTS quiz_standing(email TEXT NOT NULL, chapter INTEGER NOT NULL, attempts INTEGER NOT NULL, best_score INTEGER NOT NULL, last_score INTEGER NOT NULL, last_ts REAL NOT NULL, last_seq INTEGER NOT NULL, passed_at REAL, PRIMARY KEY(email,chapter));
 CREATE TABLE IF NOT EXISTS quiz_seen(email TEXT NOT NULL, chapter INTEGER NOT NULL, question TEXT NOT NULL, times INTEGER NOT NULL, last_ts REAL NOT NULL, last_seq INTEGER NOT NULL, PRIMARY KEY(email,chapter,question));

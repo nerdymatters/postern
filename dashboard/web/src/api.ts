@@ -94,6 +94,12 @@ export interface TrainingProgress {
   people: TrainingPerson[]; total_items: number; history_incomplete: boolean; quiz_total?: number
   groups?: string[]; roster_warnings?: { group: string; row: number; message: string }[]
 }
+export interface CertificateHistory {
+  certificate: Certificate
+  entries: { id: string; name: string; saved_at: number }[]
+  next_cursor: string | null
+  history_incomplete: boolean
+}
 export interface Denial { ts: number; email: string | null; ip: string | null; user_agent: string | null }
 export interface Operation {
   id: string; post_id: string; kind: string; status: 'pending' | 'confirmed' | 'cancelled'
@@ -303,6 +309,7 @@ export const api = {
   archive: (postId: string) => write<{ status: string }>(`/api/admin/posts/${postId}/archive`),
   report: (postId: string) => read<Report>(`/api/admin/posts/${postId}/report`),
   trainingProgress: () => read<TrainingProgress>('/api/admin/progress'),
+  certificateHistory: (email: string, before?: string) => read<CertificateHistory>(`/api/admin/certificate-history?${new URLSearchParams({ email, ...(before ? { before } : {}) })}`),
   denials: () => read<{ denied: Denial[] }>('/api/admin/signin-denials'),
   health: () => read<AdminHealth>('/api/admin/health'),
 }

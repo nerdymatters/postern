@@ -33,6 +33,17 @@ this open-source repository. Leaving the account API setting unset retains the
 standalone reading-room flow. See [Accounts and profiles](accounts.md) for the
 interface, configuration and rollout checks.
 
+## Planned private Posterns
+
+The [M2 design contract](private-spaces.md) defines responsible owners,
+space-scoped roles, memberships, audience groups and resource grants. It is a
+future contract, not behavior enforced by the current single-space host.
+Restaurant/location groups remain reporting metadata. The
+[implementation plan](designs/private-spaces.md) preserves the account/resource
+boundary and legacy attribution, selects storage before catalog migration, and
+requires direct API/media/cache/restore isolation checks before a second space
+can share a backend.
+
 ## Limits
 
 Watermarks cannot prevent screenshots. Playback events cannot prove attention. A selfie face check cannot prove identity or liveness. Cloud exports have a loss window for unexported activity. Certificates depend on the first passing exam event retained by those exports. The [backlog](../TODOS.md) and [capacity guide](runbooks/capacity.md) record known limits; no simultaneous-viewer capacity is guaranteed.

@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useState } from 'react'
-import { api, inline, type QuizStanding, type TrainingItem, type TrainingPerson, type TrainingProgress } from './api'
+import { Fragment, useEffect, useRef, useState } from 'react'
+import { api, currentToken, inline, type Certificate, type CertificateHistory, type QuizStanding, type TrainingItem, type TrainingPerson, type TrainingProgress } from './api'
 import { moduleName } from './contents'
 import { dated, EASTERN, moment } from './format'
 import { CertificateCard, PrintableCertificate } from './honors'
@@ -60,10 +60,68 @@ function itemNote(item: TrainingItem, incomplete: boolean) {
   return `${item.opened_pages} of ${item.pages} pages opened`
 }
 
+function StaffCertificate({ email, initial }: { email: string; initial: Certificate }) {
+  const [showCertificate, setShowCertificate] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  const [history, setHistory] = useState<CertificateHistory | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const running = useRef(false)
+  const generation = useRef(0)
+  useEffect(() => () => { generation.current++ }, [])
+  const certificate = history?.certificate ?? initial
+  async function load(before?: string) {
+    if (running.current) return
+    running.current = true
+    const request = ++generation.current, identity = currentToken()
+    const live = () => request === generation.current && identity === currentToken()
+    setBusy(true); setError('')
+    try {
+      const result = await api.certificateHistory(email, before)
+      if (live()) setHistory(previous => ({ ...result,
+        entries: before ? [...(previous?.entries ?? []), ...result.entries] : result.entries,
+        history_incomplete: result.history_incomplete || (!!before && !!previous?.history_incomplete),
+      }))
+    } catch (failure) {
+      if (live()) setError(inline(failure) || 'Name history could not be loaded. Please try again.')
+    } finally {
+      if (live()) { setBusy(false); running.current = false }
+    }
+  }
+  return <div className="space-y-3">
+    <p className="break-words text-sm text-neutral-600 dark:text-neutral-300">Certificate {certificate.number} · awarded {dated(certificate.awarded_at, 'short', EASTERN)} · {certificate.name_confirmed ? `printed name “${certificate.name}”` : `printed name “${certificate.name}” (suggested, not yet confirmed)`}</p>
+    <div className="flex flex-wrap gap-3">
+      <Button variant="secondary" aria-expanded={showCertificate} onClick={() => setShowCertificate(value => !value)}><IconAward className="size-5" />{showCertificate ? 'Hide certificate' : 'View certificate'}</Button>
+      <Button variant="secondary" aria-expanded={showHistory} onClick={() => {
+        setShowHistory(!showHistory)
+        if (!showHistory && !history) void load()
+      }}>{showHistory ? 'Hide name history' : 'Show name history'}</Button>
+    </div>
+    {showHistory ? <section className="space-y-3 rounded-lg border border-neutral-200 p-4 dark:border-neutral-700" aria-label="Certificate name history" aria-busy={busy}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="font-semibold">Saved name history</h3>
+        <Button variant="secondary" aria-disabled={busy} onClick={() => void load()}>Refresh name history</Button>
+      </div>
+      <p className="text-sm text-neutral-600 dark:text-neutral-300">Names saved by this person, newest first. Suggested names that were never saved are not recorded.</p>
+      {busy ? <p role="status" className="text-sm text-neutral-600 dark:text-neutral-300">Loading saved names…</p> : null}
+      <Message text={error} />
+      {history?.history_incomplete ? <p className="text-sm text-amber-900 dark:text-amber-200">Some restored history is missing. An older saved name may not appear.</p> : null}
+      {history?.entries.length ? <ul aria-label="Saved certificate names" className="divide-y divide-neutral-200 dark:divide-neutral-700">{history.entries.map(entry => <li key={entry.id} className="py-2">
+        <p className="break-words font-medium">{entry.name}</p>
+        <time dateTime={new Date(entry.saved_at * 1000).toISOString()} className="text-sm text-neutral-500 dark:text-neutral-400">{moment(entry.saved_at)}</time>
+      </li>)}</ul> : history ? <p className="text-sm text-neutral-600 dark:text-neutral-300">No saved names in the available history.</p> : null}
+      {history?.next_cursor ? <Button variant="secondary" aria-disabled={busy} onClick={() => void load(history.next_cursor!)}>Load older names</Button> : null}
+    </section> : null}
+    {showCertificate ? <>
+      <div className="max-w-2xl"><CertificateCard certificate={certificate} level={3} /></div>
+      <Button onClick={() => window.print()}><IconPrint className="size-5" />Print certificate</Button>
+      <PrintableCertificate certificate={certificate} />
+    </> : null}
+  </div>
+}
+
 function PersonDetails({ person, incomplete }: { person: TrainingPerson; incomplete: boolean }) {
   const quizzes = person.quizzes ?? []
-  // One person's details are open at a time, so at most one certificate is ever ready to print.
-  const [showCertificate, setShowCertificate] = useState(false)
   const certificate = person.certificate
   return <div id={`details-${encodeURIComponent(person.email)}`} className="space-y-4 px-1 py-2">
     {quizzes.length ? <section className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
@@ -85,18 +143,10 @@ function PersonDetails({ person, incomplete }: { person: TrainingPerson; incompl
         <div className="min-w-0 space-y-1">
           <h2 className="font-semibold">Final Exam <span lang="th">· แบบทดสอบปลายหลักสูตร</span></h2>
           {person.final_exam ? <p className="text-sm text-neutral-600 dark:text-neutral-300">{quizNote(person.final_exam, incomplete)}</p> : null}
-          {certificate ? <p className="break-words text-sm text-neutral-600 dark:text-neutral-300">Certificate {certificate.number} · awarded {dated(certificate.awarded_at, 'short', EASTERN)} · {certificate.name_confirmed ? `printed name “${certificate.name}”` : `printed name “${certificate.name}” (suggested, not yet confirmed)`}</p> : null}
         </div>
         {person.final_exam ? <span><QuizBadge quiz={person.final_exam} exempt={person.final_exam.optional ?? false} />{person.final_exam.optional && person.final_exam.attempts > 0 ? <span className="mt-1 block text-xs text-neutral-500 dark:text-neutral-400">Optional</span> : null}</span> : null}
       </div>
-      {certificate ? <div className="space-y-3">
-        <Button variant="secondary" aria-expanded={showCertificate} onClick={() => setShowCertificate(value => !value)}><IconAward className="size-5" />{showCertificate ? 'Hide certificate' : 'View certificate'}</Button>
-        {showCertificate ? <>
-          <div className="max-w-2xl"><CertificateCard certificate={certificate} level={3} /></div>
-          <Button onClick={() => window.print()}><IconPrint className="size-5" />Print certificate</Button>
-          <PrintableCertificate certificate={certificate} />
-        </> : null}
-      </div> : null}
+      {certificate ? <StaffCertificate key={JSON.stringify(certificate)} email={person.email} initial={certificate} /> : null}
     </section> : null}
     <h2 className="text-base font-semibold">Content progress for {person.name || person.email}</h2>
     {grouped(person.items).map(group => {
@@ -130,7 +180,7 @@ export function TrainingDashboard() {
   const [status, setStatus] = useState('all')
   const [sort, setSort] = useState('name')
   const [expanded, setExpanded] = useState<string | null>(null)
-  const [selectedGroup, setSelectedGroup] = useState('')
+  const [selectedGroup, setSelectedGroup] = useState<string | null | undefined>(undefined)
   useEffect(() => {
     let live = true
     setBusy(true); setError('')
@@ -139,12 +189,14 @@ export function TrainingDashboard() {
     return () => { live = false }
   }, [refresh])
   const groups = report?.groups?.length ? report.groups : ['Staff']
-  const activeGroup = groups.includes(selectedGroup) ? selectedGroup : groups[0]
-  const people = (report?.people ?? []).filter(person => (person.groups ?? [groups[0]]).includes(activeGroup))
-  const chooseGroup = (group: string) => {
+  const tabs = [...(groups.length > 1 ? [{ group: null, label: 'All locations' }] : []), ...groups.map(group => ({ group, label: group }))]
+  const activeGroup = selectedGroup === null && groups.length > 1 ? null : selectedGroup && groups.includes(selectedGroup) ? selectedGroup : groups[0]
+  const activeTab = tabs.findIndex(tab => tab.group === activeGroup)
+  const people = (report?.people ?? []).filter(person => activeGroup === null || (person.groups ?? [groups[0]]).includes(activeGroup))
+  const chooseGroup = (group: string | null) => {
     setSelectedGroup(group); setExpanded(null); setSearch(''); setStatus('all')
   }
-  const visible = people.filter(person => `${person.name} ${person.email}`.toLowerCase().includes(search.trim().toLowerCase()) && (status === 'all' || person.status === status))
+  const visible = people.filter(person => `${person.name} ${person.email} ${person.certificate?.number ?? ''} ${person.certificate?.name ?? ''}`.toLowerCase().includes(search.trim().toLowerCase()) && (status === 'all' || person.status === status))
     .sort((a, b) => sort === 'quizzes' ? (a.quizzes_passed ?? 0) - (b.quizzes_passed ?? 0) || (a.name || a.email).localeCompare(b.name || b.email) : sort === 'low' ? (a.percent ?? -1) - (b.percent ?? -1) : sort === 'high' ? (b.percent ?? -1) - (a.percent ?? -1) : sort === 'recent' ? (b.last_activity_at ?? 0) - (a.last_activity_at ?? 0) : (a.name || a.email).localeCompare(b.name || b.email))
   const incomplete = report?.history_incomplete ?? false
   const quizTotal = report?.quiz_total ?? 0
@@ -162,18 +214,18 @@ export function TrainingDashboard() {
       <p className="text-base leading-relaxed text-neutral-600 dark:text-neutral-300">Current staff list, including admins · Published content only. Documents count unique pages opened; videos count unique sections watched. Each item has equal weight. Activity does not confirm understanding.{quizTotal ? ' Staff must pass each chapter quiz to unlock the next chapter; admins, managers and C-suite may skip them.' : ''}</p>
       {incomplete ? <Message text={`Some viewing history is missing. Percentages are minimum recorded progress; people without records are unknown, not confirmed as unstarted.${quizTotal ? ' Quiz passes in the missing history are not shown, and those chapters stay locked until the quiz is passed again.' : ''}`} /> : null}
       <div role="tablist" aria-label="Staff locations" className="flex gap-2 overflow-x-auto border-b border-neutral-200 pb-2 dark:border-neutral-800">
-        {groups.map((group, index) => <button key={group} type="button" role="tab" id={`staff-group-${index}`} aria-selected={group === activeGroup} aria-controls="staff-group-panel" tabIndex={group === activeGroup ? 0 : -1}
+        {tabs.map(({ group, label }, index) => <button key={index} type="button" role="tab" id={`staff-group-${index}`} aria-selected={group === activeGroup} aria-controls="staff-group-panel" tabIndex={group === activeGroup ? 0 : -1}
           className={`min-h-11 shrink-0 rounded-lg px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 ${group === activeGroup ? 'bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'}`}
           onClick={() => chooseGroup(group)} onKeyDown={event => {
-            const target = event.key === 'ArrowRight' ? (index + 1) % groups.length : event.key === 'ArrowLeft' ? (index - 1 + groups.length) % groups.length : event.key === 'Home' ? 0 : event.key === 'End' ? groups.length - 1 : null
+            const target = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : null
             if (target === null) return
-            event.preventDefault(); chooseGroup(groups[target])
+            event.preventDefault(); chooseGroup(tabs[target].group)
             const tab = document.getElementById(`staff-group-${target}`)
             tab?.focus(); tab?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
-          }}>{group}</button>)}
+          }}>{label}</button>)}
       </div>
-      <section id="staff-group-panel" role="tabpanel" aria-labelledby={`staff-group-${groups.indexOf(activeGroup)}`} className="space-y-4">
-      {(report.roster_warnings ?? []).filter(warning => warning.group === activeGroup).map(warning => <p key={warning.row} className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">Spreadsheet row {warning.row}: {warning.message}. This row has no login access. Add an email address in the spreadsheet to include this person.</p>)}
+      <section id="staff-group-panel" role="tabpanel" aria-labelledby={`staff-group-${activeTab}`} className="space-y-4">
+      {(report.roster_warnings ?? []).filter(warning => activeGroup === null || warning.group === activeGroup).map(warning => <p key={`${warning.group}:${warning.row}`} className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">{activeGroup === null ? `${warning.group} · ` : ''}Spreadsheet row {warning.row}: {warning.message}. This row has no login access. Add an email address in the spreadsheet to include this person.</p>)}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Panel><p className="text-sm text-neutral-600 dark:text-neutral-300">Staff</p><p className="mt-2 text-2xl font-semibold tabular-nums">{people.length}</p></Panel>
         <Panel><p className="text-sm text-neutral-600 dark:text-neutral-300">Overall progress</p><p className="mt-2 text-2xl font-semibold tabular-nums">{report.total_items && people.length ? percentage(average, incomplete) : '—'}</p><p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Average across staff in this tab</p></Panel>
@@ -183,7 +235,7 @@ export function TrainingDashboard() {
       {!report.total_items ? <Panel><p>No published training content yet. Publish a document or video to start tracking progress here.</p></Panel> : null}
       {!people.length ? <Panel><p>No staff are on the current list.</p></Panel> : <Panel className="space-y-4">
         <div className="flex flex-wrap items-end gap-3">
-          <div className="min-w-48 flex-1"><Field label="Find a person"><input type="search" className={input} placeholder="Name or email" value={search} onChange={event => setSearch(event.target.value)} /></Field></div>
+          <div className="min-w-48 flex-1"><Field label="Find a person or certificate"><input type="search" className={input} placeholder="Name, email or certificate number" value={search} onChange={event => setSearch(event.target.value)} /></Field></div>
           <Field label="Progress status"><select className={input} value={status} onChange={event => setStatus(event.target.value)}><option value="all">All progress</option><option value="not_started">Not started</option><option value="in_progress">In progress</option><option value="complete">Completed</option><option value="unknown">History incomplete</option><option value="unavailable">Progress unavailable</option></select></Field>
           <Field label="Sort by"><select className={input} value={sort} onChange={event => setSort(event.target.value)}><option value="name">Name</option><option value="low">Lowest progress</option><option value="high">Highest progress</option><option value="recent">Recent activity</option>{quizTotal ? <option value="quizzes">Fewest quizzes passed</option> : null}</select></Field>
         </div>
