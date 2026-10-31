@@ -42,8 +42,7 @@ keeps that service disabled.
   **All locations** searches the whole current roster. **Details → Show name history**
   loads audited, paginated saved names with timestamps and incomplete-history notices.
   Unsaved suggestions are not historical evidence. See the
-  [web guide](dashboard/web/README.md#badges-and-certificate). Local implementation
-  complete; deployment remains pending.
+  [web guide](dashboard/web/README.md#badges-and-certificate). Included in v0.19.0.
 
 - **2026-10-29 — Close the certificate documentation gaps.**
   [Google setup](docs/runbooks/google-setup.md#roster-reader) explains how the
@@ -51,8 +50,7 @@ keeps that service disabled.
   The [web guide](dashboard/web/README.md#badges-and-certificate) covers the
   home-page certificate card, current name normalization and configured prefix.
   The [logo kit](docs/brand/logo/README.md#medals-and-certificate-seal) documents
-  medal states, chapter faces, the certificate seal and accessibility. Local
-  documentation update complete; publication remains pending.
+  medal states, chapter faces, the certificate seal and accessibility. Included in v0.19.0.
 
 - **2026-10-29 — Preserve joined names and shorten suggestions safely.**
   Certificate names keep U+200C/U+200D between letters or marks, including through
@@ -61,8 +59,7 @@ keeps that service disabled.
   and sends the normalized name; the server still enforces the 80-character limit.
   Python and browser checks agree across a 7,622-case Unicode corpus, including
   the Ahom mark whose category changed in Unicode 16. Grapheme fitting adds the
-  `regex` runtime dependency, pinned in the pilot lockfile. Local implementation
-  complete; deployment remains pending.
+  `regex` runtime dependency, pinned in the pilot lockfile. Included in v0.19.0.
 
 - **2026-10-29 — Certificate check feedback and event ordering.**
   `/badges` and `/certificate` now show bilingual checking, checked and retryable
@@ -70,14 +67,13 @@ keeps that service disabled.
   refreshes keep their debounce and stale-response guards. New names beat
   future-dated choices; event-id tie-breaks preserve names and numbers when
   restores import tied events in a different order. The honors module's restore
-  claim now states the export requirement. Local implementation complete;
-  deployment remains pending. See the [recovery notes](docs/runbooks/recovery.md).
+  claim now states the export requirement. Included in v0.19.0. See the [recovery notes](docs/runbooks/recovery.md).
 
 - **2026-10-29 — Make selfie reservations idempotent across writer deadlines.**
   Durable reservation identities pair each attempt with at most one refund.
   The worker and the next capture reconcile interrupted work, including after
   restart, while preserving committed photos, live captures and the ten/30/90
-  rolling limits. Server rollout remains pending. See the
+  rolling limits. Included in v0.19.0. See the
   [reservation lifecycle](docs/runbooks/capacity.md#durable-selfie-reservations).
 
 - **Completed: v0.18.0 (2026-10-29) — Complete Thai copy on whole-screen refusals.**

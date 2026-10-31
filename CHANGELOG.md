@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.19.0 — Certificate checks and private-space foundations (2026-10-30)
+
+- Check printed certificates by number or saved-name history from Staff progress. Admins can search the whole current roster; readers retain name corrections, and incomplete restored history is clearly marked.
+- Preserve joined names and shorten suggested names at complete words or graphemes. Certificate checks show retryable feedback, and newly saved names remain current after clock corrections without extending the daily correction limit.
+- Recover interrupted selfie reservations across writer deadlines and restarts without duplicate refunds or losing retained photos.
+- Rehearse private Posterns with PostgreSQL storage, quarantined imports, account-bound resource access, operator-approved space creation, invitations, membership management and ownership transfer requiring recipient acceptance. These features require separate service configuration and remain disabled in the existing production installation. See the [private-space guide](docs/private-spaces.md).
+
 ## 0.18.0 — Hosted Terms and launch readiness (2026-10-29)
 
 - Read the approved hosted account [Terms of Service](https://postern.fyi/legal/terms/2026-10-29.html) without signing in or running JavaScript. The account interface supports explicit acceptance of each revision, recovery when Terms are unavailable, and account deletion without accepting. Registration and private-service activation remain separate launch gates.
