@@ -88,8 +88,8 @@ resource token. Invitation controls use that token, never the global account tok
 Only owners may offer `admin`; owners and administrators may offer `member`.
 Ordinary invitations cannot offer `owner`. Administrators cannot create or cancel
 administrator invitations, and their pending list contains only member invitations.
-Existing active members must use a future explicit role-management flow; invitations
-cannot promote or demote them.
+Existing active members use the explicit [membership role controls](membership-management.md);
+invitations cannot promote or demote them.
 
 The recipient shares their own `account_reference` from My Posterns. The issuer
 chooses that exact existing, active account. **Email invitations, address aliasing,

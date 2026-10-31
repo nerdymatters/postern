@@ -39,7 +39,7 @@ described in [Architecture](docs/architecture.md).
 | M0 Launch preparation | In progress; parallel with M1 | Current deployment baseline |
 | M1 Accounts and profiles | Production pilot passed; registration closed | M0 launch checks before release |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
-| M2 Private spaces and resource catalog | Design contract defined; implementation planned | M1 identity and access boundaries |
+| M2 Private spaces and resource catalog | Isolated metadata/onboarding implemented; content integration and hosting pending | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
 | M4 Rust folder client | Later | M2 resource API and permissions |
 | M5 Screen sharing | Research, then implementation | M2 permissions and a validated integration |

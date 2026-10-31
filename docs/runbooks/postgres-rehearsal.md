@@ -45,7 +45,7 @@ migration version, not edits to version 1. This first version has not been deplo
 | --- | --- |
 | Authority and principals | Quarantine/generation and namespaced immutable account references; deleted identities cannot reactivate |
 | Owners, spaces, memberships | Responsible ownership, scoped roles, one active membership per account/space; deferred active-owner constraint; revoked membership IDs never reactivate |
-| Invitations and audiences | Bounded fields, hashed invitation secret, same-space inviter/accepted-member/group references; acceptance workflow remains M2-02 |
+| Invitations and audiences | Bounded fields, hashed invitation secret, same-space inviter/accepted-member/group references; later migrations add [isolated acceptance](space-onboarding.md) |
 | Resources, child relationships, grants | Immutable resource scope, explicit actions/publication, same-space foreign keys; no implicit child inheritance |
 | Objects | Immutable resource/revision/hash/length manifest and generated private object key |
 | Activity, operations and outbox | Append-only audit, actor-bound idempotency and transactional delivery intent; dispatch/lease worker remains to be implemented |
@@ -164,10 +164,10 @@ Provision trusted cluster roles first; do not run arbitrary untrusted SQL dumps.
 
 Before migration is ready for real data:
 
-- Implement account and resource repository adapters against this schema, with
-  pooled-connection context reset, required audit, service authentication, and
-  existing agreement/enrollment/training behavior. Complete invitation, owner
-  bootstrap/transfer and outbox processing with their own tests.
+- The [native adapters](service-integration.md), [onboarding](space-onboarding.md)
+  and [ownership transfer](ownership-transfer.md) are verified in isolation.
+  Complete legacy agreement/enrollment/training and content integration, outbox
+  processing and hosted service checks before cutover.
 - Select provider/region/budget, recovery objectives and retention; require
   pgvector support for a later semantic-search evaluation, without enabling
   embeddings now. Measure the production schema at the selected workload.

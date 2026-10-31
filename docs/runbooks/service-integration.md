@@ -7,9 +7,9 @@ entrypoints still use D1 accounts and the SQLite resource service.
 
 This round connects account creation, Terms acceptance, profiles, login/logout
 and deletion to the private account schema; it connects space sessions, catalog
-listing/search, resource metadata and membership revocation to the core schema. The next
-[onboarding round](space-onboarding.md) adds operator-approved creation and
-account-bound invitations.
+listing/search, resource metadata and membership revocation to the core schema.
+[Onboarding](space-onboarding.md) now adds operator-approved creation and
+account-bound invitations, verified in isolation.
 It does **not** expose document/video bytes, imported legacy content, object keys,
 training, exports or background processing through the new API. Those require the
 legacy agreement/enrollment/training gates and private object adapter first.
@@ -75,8 +75,8 @@ Terms validation and public profile disclosure reuse the existing account helper
 The production Worker still constructs its D1 store. The synthetic verifier is
 injected only by a separate rehearsal entrypoint.
 
-Apply core migrations in order (currently `001`–`003`), then private account
-migrations in order (currently `001`–`003`), using the migration
+Apply core migrations in order (currently `001`–`006`), then private account
+migrations in order (currently `001`–`006`), using the migration
 operator. Core `apply_schema` verifies each applied version's SHA-256, holds one
 installer lock/transaction and rejects unknown versions. Version 1 is unchanged.
 The private SQL is not bundled into this public project; its deployment migration

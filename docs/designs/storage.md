@@ -230,8 +230,9 @@ the remaining integration and deployment gates:
 
 - The [native account/resource adapters](../runbooks/service-integration.md) now
   verify lifecycle transactions, pooled metadata requests and disclosure audit
-  in isolation. Complete legacy content/object adapters, ownership bootstrap/transfer,
-  invitation flows, outbox/cleanup scheduling and hosted connection-pool checks. The new
+  in isolation. [Onboarding](../runbooks/space-onboarding.md) and
+  [ownership transfer](../runbooks/ownership-transfer.md) are also verified in isolation.
+  Complete legacy content/object adapters, outbox/cleanup scheduling and hosted connection-pool checks. The new
   migration uses opaque identities; the integer-ID experiment stays separate.
 - Choose hosted PostgreSQL/object services, region, operational owner and budget;
   verify connection pooling, cold/warm latency, mixed reads/writes, contention,

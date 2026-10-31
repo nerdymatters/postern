@@ -33,11 +33,13 @@ this open-source repository. Leaving the account API setting unset retains the
 standalone reading-room flow. See [Accounts and profiles](accounts.md) for the
 interface, configuration and rollout checks.
 
-## Planned private Posterns
+## Private Postern foundation
 
 The [M2 design contract](private-spaces.md) defines responsible owners,
-space-scoped roles, memberships, audience groups and resource grants. It is a
-future contract, not behavior enforced by the current single-space host.
+space-scoped roles, memberships, audience groups and resource grants. Native
+metadata/session, onboarding, membership and ownership APIs are implemented and
+verified in isolation; see the [service integration guide](runbooks/service-integration.md).
+They are not enabled in production, and full content integration remains pending.
 Restaurant/location groups remain reporting metadata. The
 [implementation plan](designs/private-spaces.md) preserves the account/resource
 boundary and legacy attribution, selects storage before catalog migration, and

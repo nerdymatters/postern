@@ -57,7 +57,7 @@ For separate web hosting, set `VITE_POSTERN_API` to your HTTPS API origin in you
 - [Optional independent status service](docs/runbooks/status.md)
 - [Account isolation](docs/runbooks/account-isolation.md)
 - [Optional accounts and profiles](docs/accounts.md)
-- [Private Posterns: M2 design contract](docs/private-spaces.md) (not yet implemented)
+- [Private Posterns: M2 contract](docs/private-spaces.md) (isolated metadata/onboarding implemented; content integration and hosting pending)
 - [Multi-Postern storage evaluation](docs/designs/storage.md) (local experiment; migration pending)
 - [Ownership transfer](docs/runbooks/ownership-transfer.md) (explicit recipient acceptance; verified in isolation)
 - [Membership management](docs/runbooks/membership-management.md) (isolated APIs and browser controls; not deployed)

@@ -105,6 +105,9 @@ then shows an email box instead of the Google button, which is what the Playwrig
 | `src/api.ts` | private resource routes, the space session bearer token, and the mapping of the server's refusal states |
 | `src/accounts-api.ts` | account/profile API requests, account token storage and change notifications, and verified identity matching |
 | `src/accounts.tsx` | My Posterns, profile editing/publication, public profiles, account privacy/deletion, and the account-to-space entry gate |
+| `src/spaces-api.ts`, `src/spaces-ui.tsx` | opt-in native account/resource requests, invitation codes and shared space controls |
+| `src/spaces.tsx` | native My Posterns, creation, invitation review/acceptance and metadata catalog |
+| `src/memberships.tsx`, `src/ownership.tsx` | membership directory, role/removal/departure controls and recipient-accepted ownership transfer |
 | `src/app.tsx` | config/session gate, the refusal states, the shell and the routes |
 | `src/theme.tsx`, `index.html` | day/night preference, system-theme updates, header toggle, and early theme application before React renders |
 | `src/PosternWordmark.tsx`, `src/PosternIcons.tsx` | outlined logo and 22 decorative action/format icons; see the [logo kit](../../docs/brand/logo/README.md) |
@@ -460,6 +463,9 @@ and missing restored records can leave an older printed name unaccounted for.
 `before` for the first page; otherwise use the returned event-id cursor. Each page
 consumes at most 50 name events, ordered by timestamp then id descending; malformed
 records are omitted and mark that page incomplete. Valid original spelling is kept.
+New events report their actual save time in `saved_at`, separately from the timestamp
+used to keep the latest choice first after clock corrections. Older events use their
+original timestamp. Unrepresentable event dates are skipped and mark history incomplete.
 The cursor must belong to the same person's name events (`422 invalid_cursor`).
 The endpoint requires a current admin session, current agreements, a fresh roster
 and verified recovery (`409 history_restoring`); missing roster membership or a
