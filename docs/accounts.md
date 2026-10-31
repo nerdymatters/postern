@@ -105,9 +105,10 @@ account, never an email or account ID supplied by the request body.
 The owner approved [Terms version 2026-10-29](terms/2026-10-29.md), effective
 October 29, 2026, using Nerdy Matters LLC, nerd@nerdymatters.com, and
 Massachusetts, USA. Freemium is one planned tier; prices, limits and paid
-purchase terms remain separate. The public page is prepared; live publication
-verification and private-service activation remain pending, with registration
-closed. See the [launch checklist](runbooks/launch-readiness.md) for
+purchase terms remain separate. The public page was published and verified with
+v0.18.0 on October 29 ([publication evidence](reports/launch-readiness.md#publication-round)).
+Private-service activation and hosted acceptance/revision verification remain
+pending, with registration closed. See the [launch checklist](runbooks/launch-readiness.md) for
 publication, activation and rollback checks.
 
 ## Profile behavior
@@ -177,3 +178,10 @@ criteria and [the security follow-up](https://github.com/nerdymatters/postern/is
 for separately tracked dependency/workflow work. Opening registration also waits
 for [M0 launch preparation](../ROADMAP.md#m0-launch-preparation), including
 published Terms of Service with a built and verified acceptance flow.
+
+The next space model is defined in the [M2 private-space contract](private-spaces.md).
+The default account bridge still checks the single legacy host. An explicitly
+enabled [native onboarding flow](runbooks/space-onboarding.md) now lists real
+memberships, creates approved spaces and previews/accepts account-bound invitations
+against the isolated PostgreSQL services. This has not been deployed; it does not
+move legacy content or change its access requirements.

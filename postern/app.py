@@ -1,8 +1,9 @@
 """The HTTP surface.
 
-Every protected handler goes through Service.execute, which authorizes and commits the audit row
+Legacy protected handlers go through Service.execute, which authorizes and commits the audit row
 inside one transaction before the handler can produce a body. Images use the reader's bearer token;
 native video uses a short-lived, view-scoped ticket with the same live session checks.
+An optional M2 router uses its own PostgreSQL authorization/audit transaction.
 """
 from __future__ import annotations
 import asyncio
@@ -11,7 +12,7 @@ from pathlib import Path
 import re
 import shutil
 
-from fastapi import FastAPI, Request, UploadFile, Form
+from fastapi import FastAPI, Request, UploadFile, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -139,17 +140,26 @@ class CertificateName(BaseModel):
     name: str = Field(max_length=200)
 
 
-def create_app(config, store=None, service=None):
+def create_app(config, store=None, service=None, *, spaces=None):
     @asynccontextmanager
     async def lifespan(app):
         app.state.service = service if service is not None else Service(config, store=store)
-        await app.state.service.start()
         try:
+            await app.state.service.start()
+            if spaces is not None:
+                await spaces.start()
             yield
         finally:
-            await app.state.service.close()
+            try:
+                if spaces is not None:
+                    await spaces.close()
+            finally:
+                await app.state.service.close()
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    if spaces is not None:
+        from postern.spaces import install
+        install(app, spaces)
     app.add_middleware(UploadBoundary)
     app.add_middleware(CORSMiddleware, allow_origins=config.origins, allow_credentials=False,
                        allow_methods=['GET', 'POST'], allow_headers=['authorization', 'content-type', 'x-postern-client', 'x-postern-device'],
@@ -361,6 +371,11 @@ def create_app(config, store=None, service=None):
     @app.get('/api/admin/progress')
     async def training_progress(request: Request):
         return await current(request).training_progress(request)
+
+    @app.get('/api/admin/certificate-history')
+    async def certificate_history(request: Request, email: str = Query(min_length=1, max_length=254),
+                                  before: str | None = Query(default=None, min_length=1, max_length=256)):
+        return await current(request).certificate_history(request, email, before)
 
     @app.get('/api/admin/health')
     async def admin_health(request: Request):

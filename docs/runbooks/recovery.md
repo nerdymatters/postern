@@ -101,6 +101,19 @@ recovery mode      on — reader content stays hidden until an operator verifies
   earliest restored pass gives the certificate a new number and date; with no restored pass, the person
   must pass the Final Exam again. A name change in neither tier is lost, so the previous saved name, or
   the suggested one, prints instead. Certificates stay hidden until the restored catalog is verified.
+  Timestamp ties use the event id (ascending for the first pass, descending for the latest name), so
+  importing the same events in a different order no longer changes the result. On upgrade, an existing
+  exact tie may resolve to a different number or name than the former local-sequence ordering; events
+  themselves are not rewritten. New name saves are stamped at least one second after that account's
+  latest usable name event if needed, so a clock correction or future-dated restore cannot make an accepted
+  save lose to the older name. Dates outside the summary export's supported range are skipped without
+  rewriting the restored records. New saves record their actual time separately for the twenty-per-day
+  cap and saved-name history; older events without it retain their original timestamp.
+  Admin saved-name history reads these same imported events, preserving valid original spelling
+  and timestamps; it needs no separate backup. Missing history or malformed records produce an
+  incomplete-history notice. Suggested names that were never saved have no historical record,
+  so an absent name is not proof that a printed certificate was invalid. Lookup covers the
+  current roster only and stays blocked until recovery verification is complete.
 
 ## Enrollment photo recovery (0.4.0)
 

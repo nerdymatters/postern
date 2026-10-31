@@ -10,6 +10,27 @@ import { IconArrowRight, IconAward, IconCheck, IconPrint, IconQuiz, IconRename, 
 /** The longest printed name the server saves (postern/honors.py NAME_LIMIT). */
 export const NAME_LIMIT = 80
 
+// Match honors.tidy(): Python counts Unicode code points after cleaning, not UTF-16 input units.
+const NAME_INVISIBLE = /[\u115f\u1160\u3164\uffa0\u2800\u034f\u17b4\u17b5\u180b\u180c\u180d\u180f\u{13441}\u{13442}\ufe00-\ufe0f\u{e0100}-\u{e01ef}]/u
+const NAME_SPACE = /[\p{White_Space}\u001c-\u001f]/u
+const NAME_JOINERS = new Set(['\u200c', '\u200d'])
+const NAME_NEIGHBOR = /[\p{L}\p{M}]/u
+
+export function tidyCertificateName(value: string): string {
+  const kept: string[] = []
+  let marks = 0
+  for (const c of value.normalize('NFC')) {
+    if (NAME_INVISIBLE.test(c) || (/\p{C}/u.test(c) && !NAME_SPACE.test(c) && !NAME_JOINERS.has(c))) continue
+    // Ahom medial ra became a spacing mark in Unicode 16; match the server even on older browsers.
+    if (!NAME_JOINERS.has(c)) marks = /[\p{Mn}\p{Me}]/u.test(c) && c !== '\u{1171e}' ? marks + 1 : 0
+    if (NAME_JOINERS.has(c) || marks <= 3) kept.push(c)
+  }
+  return kept.filter((c, i) => !NAME_JOINERS.has(c) || (i > 0 && i < kept.length - 1 && NAME_NEIGHBOR.test(kept[i - 1]) && NAME_NEIGHBOR.test(kept[i + 1])))
+    .join('').replace(/[\p{White_Space}\u001c-\u001f]+/gu, ' ').trim().normalize('NFC')
+}
+
+const legibleName = (name: string) => /[\p{L}\p{N}]/u.test(name)
+
 /** One badge on the shelf. Every one is a pass the server already records: badges keep no state of their own. */
 export interface Badge {
   key: string
@@ -170,10 +191,12 @@ export function CertificateReady() {
   </div>
 }
 
+type Refresh = () => void | Promise<boolean | void>
+
 /** Every badge with its date or what earns it, the next one to aim for, and the certificate. */
 export function BadgesPage({ quizzes, finalExam, certificate, loading = false, onQuiz, onRefresh, onBack }: {
   quizzes: QuizStanding[]; finalExam?: QuizStanding | null; certificate?: Certificate | null; loading?: boolean
-  onQuiz: (chapter: number) => void; onRefresh: () => void; onBack: () => void
+  onQuiz: (chapter: number) => void; onRefresh: Refresh; onBack: () => void
 }) {
   const list = badges(quizzes, finalExam, certificate)
   const earned = list.filter(badge => badge.earned).length
@@ -236,34 +259,67 @@ function NotEarned({ finalExam, onQuiz }: { finalExam?: QuizStanding | null; onQ
   </div>
 }
 
+/** A manual check reports its outcome without clearing existing progress or dropping button focus. */
+function CheckProgress({ onRefresh }: { onRefresh: Refresh }) {
+  const [state, setState] = useState<'idle' | 'checking' | 'checked'>('idle')
+  const [error, setError] = useState('')
+  const busy = useRef(false)
+  const mounted = useRef(true)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  async function check() {
+    if (busy.current) return
+    busy.current = true
+    setState('checking'); setError('')
+    const identity = currentToken()
+    try {
+      const refreshed = onRefresh()
+      const applied = refreshed === undefined ? undefined : await refreshed
+      if (!mounted.current || currentToken() !== identity) return
+      if (applied === false) throw new Error('Check superseded')
+      setState('checked')
+    } catch (failure) {
+      if (!mounted.current || currentToken() !== identity) return
+      setState('idle')
+      const message = inline(failure) || 'Your progress could not be checked. Please try again.'
+      setError(/[\u0E00-\u0E7F]/.test(message) ? message : `${message} / ตรวจสอบความคืบหน้าไม่สำเร็จ กรุณาลองใหม่อีกครั้ง`)
+    } finally { busy.current = false }
+  }
+  return <div className="flex flex-col items-start gap-3">
+    <Button variant="secondary" aria-busy={state === 'checking'} aria-disabled={state === 'checking'} onClick={() => void check()}><IconRetake className="size-5" />{state === 'checking'
+      ? <Label en="Checking…" th="กำลังตรวจ…" /> : <Label en="Check again" th="ตรวจอีกครั้ง" />}</Button>
+    <Message text={error} />
+    <p role="status" className="text-sm text-neutral-700 empty:sr-only dark:text-neutral-200">{state === 'checked' ? <>Checked just now.<Thai>ตรวจเมื่อสักครู่</Thai></> : null}</p>
+  </div>
+}
+
 /** No Final Exam standing to go by: the reading room did not load, a restore is being checked, or the exam is not
  *  published. A holder's certificate is hidden then too, so nothing here says it is still to earn. */
-function Unavailable({ onRefresh }: { onRefresh: () => void }) {
+function Unavailable({ onRefresh }: { onRefresh: Refresh }) {
   return <div className="space-y-3">
     <p>Certificate details are not available right now. Please check again in a moment.<Thai className="mt-1">ยังแสดงข้อมูลประกาศนียบัตรไม่ได้ในขณะนี้ กรุณาตรวจอีกครั้งในอีกสักครู่</Thai></p>
-    <Button variant="secondary" onClick={onRefresh}><IconRetake className="size-5" /><Label en="Check again" th="ตรวจอีกครั้ง" /></Button>
+    <CheckProgress onRefresh={onRefresh} />
   </div>
 }
 
 /** A pass the reading room has not brought a certificate for yet: recorded a moment ago, or answered by an
  *  API from before certificates while a deployment is in progress. */
-function Preparing({ onRefresh }: { onRefresh: () => void }) {
+function Preparing({ onRefresh }: { onRefresh: Refresh }) {
   return <div className="space-y-3">
     <p role="status">Your certificate is being prepared. It will appear here soon.<Thai className="mt-1">กำลังเตรียมประกาศนียบัตรของคุณ จะแสดงที่นี่เร็ว ๆ นี้</Thai></p>
-    <Button variant="secondary" onClick={onRefresh}><IconRetake className="size-5" /><Label en="Check again" th="ตรวจอีกครั้ง" /></Button>
+    <CheckProgress onRefresh={onRefresh} />
   </div>
 }
 
 /** The full certificate page: the certificate, the name on it, and printing. */
-export function CertificatePage({ certificate, finalExam, loading, onSaved, onRefresh, onQuiz, onBack }: {
+export function CertificatePage({ certificate, finalExam, loading, onSaved, onRefresh, onPending, onQuiz, onBack }: {
   certificate?: Certificate | null; finalExam?: QuizStanding | null; loading: boolean
-  onSaved: (certificate: Certificate) => void; onRefresh: () => void; onQuiz: (chapter: number) => void; onBack: () => void
+  onSaved: (certificate: Certificate) => void; onRefresh: Refresh; onPending?: () => void; onQuiz: (chapter: number) => void; onBack: () => void
 }) {
   // A pass recorded a moment ago, or on another screen, before the reading room caught up: ask again.
   const pending = !certificate && !!finalExam?.passed
-  const onRefreshRef = useRef(onRefresh)
-  onRefreshRef.current = onRefresh
-  useEffect(() => { if (pending) onRefreshRef.current() }, [pending])
+  const onRefreshRef = useRef(onPending ?? onRefresh)
+  onRefreshRef.current = onPending ?? onRefresh
+  useEffect(() => { if (pending) void Promise.resolve(onRefreshRef.current()).catch(() => { /* The manual check can retry. */ }) }, [pending])
   // Printing while the name is being changed would print the saved name, not the one on screen.
   const [editing, setEditing] = useState(false)
   // A certificate that goes away (a restore being checked) and comes back opens on its name, not an old edit.
@@ -300,6 +356,10 @@ function CertificateName({ certificate, onSaved, editing, onEditing }: {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
+  const nameHint = useId()
+  const cleaned = tidyCertificateName(value)
+  const length = [...cleaned].length
+  const valid = length <= NAME_LIMIT && legibleName(cleaned)
   const field = useRef<HTMLInputElement>(null)
   const change = useRef<HTMLButtonElement>(null)
   const returning = useRef(false)
@@ -314,11 +374,17 @@ function CertificateName({ certificate, onSaved, editing, onEditing }: {
 
   /** Saves the name typed in the form, or with Keep this name the suggested one as it is. */
   async function save(name: string) {
-    if (busy || !name.trim()) return
+    if (busy) return
+    const cleanedName = tidyCertificateName(name)
+    if (!legibleName(cleanedName) || [...cleanedName].length > NAME_LIMIT) {
+      setError(`Enter your name in 1 to ${NAME_LIMIT} characters, with at least one letter or number. / กรุณาใส่ชื่อความยาว 1 ถึง ${NAME_LIMIT} ตัวอักษร และมีตัวอักษรหรือตัวเลขอย่างน้อยหนึ่งตัว`)
+      field.current?.focus()
+      return
+    }
     setBusy(true); setError(''); setSaved(false)
     const identity = currentToken()
     try {
-      const updated = await api.nameCertificate(name)
+      const updated = await api.nameCertificate(cleanedName)
       // A late answer must not land on the next person's session.
       if (currentToken() !== identity) return
       onSaved(updated); setSaved(true)
@@ -336,12 +402,13 @@ function CertificateName({ certificate, onSaved, editing, onEditing }: {
       <label className="block space-y-2">
         <span className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">Name on your certificate<span lang="th" className="block font-normal">ชื่อบนประกาศนียบัตร</span></span>
         {/* No autofill: on a shared tablet it would offer the device owner's name. */}
-        <input ref={field} className={input} value={value} maxLength={NAME_LIMIT} autoComplete="off" onChange={event => setValue(event.target.value)} />
+        <input ref={field} className={input} value={value} aria-describedby={nameHint} aria-invalid={!!value && !valid} autoComplete="off" onChange={event => { setValue(event.target.value); setError('') }} />
       </label>
+      <p id={nameHint} className={`text-sm ${valid ? 'text-neutral-600 dark:text-neutral-300' : 'text-amber-900 dark:text-amber-200'}`}><span>{length} / {NAME_LIMIT} characters</span><Thai tone="inherit">{`${length} / ${NAME_LIMIT} ตัวอักษร`}</Thai></p>
       <Message text={error} />
       <div className="flex flex-col gap-3 sm:flex-row">
         {/* Not disabled while saving, which would drop keyboard focus; save() ignores a second press. */}
-        <Button type="submit" disabled={!value.trim()} aria-disabled={busy}>{busy ? <Label en="Saving…" th="กำลังบันทึก…" /> : <Label en="Save name" th="บันทึกชื่อ" />}</Button>
+        <Button type="submit" disabled={!valid} aria-disabled={busy}>{busy ? <Label en="Saving…" th="กำลังบันทึก…" /> : <Label en="Save name" th="บันทึกชื่อ" />}</Button>
         <Button type="button" variant="secondary" aria-disabled={busy} onClick={cancel}><Label en="Cancel" th="ยกเลิก" /></Button>
       </div>
     </form> : <div className="flex flex-wrap items-center justify-between gap-3">

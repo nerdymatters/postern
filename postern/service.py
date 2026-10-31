@@ -635,6 +635,25 @@ class Service:
         await self.execute(request, ready, admin=True, event_name='training_progress_viewed')
         return result
 
+    async def certificate_history(self, request, email, before=None):
+        try:
+            email = canonical_email(email)
+        except ValueError:
+            raise Refusal(422, 'invalid_email', 'Enter a valid staff email address. / กรุณาใส่อีเมลพนักงานที่ถูกต้อง')
+        def ready(db, ctx):
+            honors.history_ready(db, email)
+        await self.execute(request, ready, admin=True, event_name=None)
+        def query(db):
+            db.execute('BEGIN')
+            return honors.name_history(db, email, before, prefix=self.config.branding.certificate_prefix)
+        result = await asyncio.to_thread(self.db.read, query)
+        def disclose(db, ctx):
+            ready(db, ctx)
+            event(db, 'certificate_history_viewed', ctx,
+                  detail={'email': email, 'number': result['certificate']['number']}, summary=False)
+        await self.execute(request, disclose, admin=True, event_name=None)
+        return result
+
     async def completed(self, request):
         """Chapter items the caller has finished, from a read snapshot: history replay must not occupy
         the writer. Events only accumulate, so a stale answer can only keep a quiz closed."""

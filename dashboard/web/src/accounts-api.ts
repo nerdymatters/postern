@@ -71,3 +71,6 @@ export function sameIdentity(a: Identity | undefined, b: Identity | undefined) {
 }
 
 export function accountMessage(error: unknown) { return error instanceof Error ? error.message : 'Something went wrong. Please try again.' }
+
+// Native onboarding reuses the account boundary with an explicitly captured credential.
+export { request as accountRequest }

@@ -39,7 +39,7 @@ described in [Architecture](docs/architecture.md).
 | M0 Launch preparation | In progress; parallel with M1 | Current deployment baseline |
 | M1 Accounts and profiles | Production pilot passed; registration closed | M0 launch checks before release |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
-| M2 Private spaces and resource catalog | Planned | M1 identity and access boundaries |
+| M2 Private spaces and resource catalog | Isolated metadata/onboarding implemented; content integration and hosting pending | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
 | M4 Rust folder client | Later | M2 resource API and permissions |
 | M5 Screen sharing | Research, then implementation | M2 permissions and a validated integration |
@@ -78,9 +78,11 @@ outputs guide implementation in this repository. This track runs alongside M1.
 - [ ] **M0-02** Review the [security follow-up](https://github.com/nerdymatters/postern/issues/1),
   resolve and verify auth-relevant findings before opening registration, and
   record the disposition of remaining findings in that issue.
-  Dependency and CI remediation is implemented and checked locally in the
-  [launch-readiness report](docs/reports/launch-readiness.md); issue disposition
-  and deployed-version/behavior verification remain before release.
+  Dependency and CI source remediation shipped in v0.18.0
+  ([PR #8](https://github.com/nerdymatters/postern/pull/8)); the
+  [launch-readiness report](docs/reports/launch-readiness.md) records checks.
+  Issue disposition and resource/status runtime version/behavior verification
+  remain before opening registration.
 - [x] **M0-03** Define account-service hosting, data storage, Google OAuth
   configuration, backups and operating ownership. Keep managed account secrets
   and private resource data outside the public repository.
@@ -94,9 +96,10 @@ outputs guide implementation in this repository. This track runs alongside M1.
   created before the terms existed and later revisions. Keep them separate from
   each private space's own agreements.
   The owner approved [Terms version 2026-10-29](docs/terms/2026-10-29.md) for
-  publication. The static page and versioned acceptance implementation are
-  prepared; live publication, private-service activation and a hosted
-  acceptance/revision check remain. Registration is still closed.
+  publication. The static page was published and its exact bytes verified with
+  v0.18.0 ([publication evidence](docs/reports/launch-readiness.md#publication-round)).
+  Private-service activation and a hosted acceptance/revision check remain.
+  Registration is still closed.
 
 **Ready when:** the launch has a verified compatibility baseline, documented
 security dispositions, a usable deployment/recovery plan, and published Terms
@@ -158,11 +161,28 @@ availability or acceptance of a space's agreements.
 **Outcome:** owners manage separate private spaces and explicitly share resources
 with chosen audiences.
 
-- [ ] **M2-01** Define owners, spaces, memberships, audience groups, resource IDs
+- [x] **M2-01** Define owners, spaces, memberships, audience groups, resource IDs
   and supported actions. Scope roles to a space. Treat current roster groups as
   reporting metadata until real isolation is implemented.
+  Defined in the [private-space contract](docs/private-spaces.md) and
+  [source-grounded implementation plan](docs/designs/private-spaces.md) on Oct 29,
+  2026. This completes the design-definition task. An opt-in metadata/session
+  runtime is now verified in isolation; complete content isolation is still pending.
+  M2-06's provider selection and migration remain open.
 - [ ] **M2-02** Build invitations, acceptance, membership management and
   revocation. Decide who may create spaces and under what limits.
+  The owner selected operator-approved creators with configurable per-account
+  limits. [Isolated onboarding APIs](docs/runbooks/space-onboarding.md) now create
+  personal spaces/owner memberships, issue/revoke account-bound invitations,
+  accept them atomically and list My Posterns. Retry, race and readmission checks
+  preserve the permission boundary. On Oct 30, the opt-in browser flow added My
+  Posterns, creation, invitation issue/revoke and recipient-only preview/acceptance,
+  verified against both isolated services. [Membership management](docs/runbooks/membership-management.md)
+  now adds scoped directory, role/removal confirmations, optimistic revision checks
+  and retryable self-departure with last-owner protection. [Ownership transfer](docs/runbooks/ownership-transfer.md)
+  now requires exact recipient acceptance and atomically changes responsibility
+  and roles, with cancellation, decline, expiry and retry/race checks. Hosted
+  rollout remains; this task is not complete.
 - [ ] **M2-03** Adapt existing documents, videos and training to the resource
   catalog. Preserve existing links and historical attribution; handle legacy
   identity conflicts explicitly during migration.
@@ -177,6 +197,17 @@ with chosen audiences.
   existing resources into the catalog and before M2-04 and M3-02. Migrate from
   today's SQLite, Drive and Sheets storage once, without losing training
   history, certificates or audit events.
+  The owner approved PostgreSQL plus private object storage following the Oct 29
+  [storage evaluation](docs/designs/storage.md). A local synthetic probe passed at the owner's
+  chosen 100-space / 10,000-account / 100,000-resource workload, with one million
+  activity events. These are evaluation inputs, not quotas or hosted capacity
+  claims. The [versioned schema and migration rehearsal](docs/runbooks/postgres-rehearsal.md)
+  now verify scoped privileges, transactional lifecycle changes, quarantined
+  imports and synthetic history/file preservation. The [isolated service integration](docs/runbooks/service-integration.md)
+  now connects native account/profile/session operations and scoped resource
+  metadata/search/revocation, including signed handoff and audit-before-disclosure.
+  Legacy content/object adapters, provider/region/budget, real account-store cutover
+  and complete hosted/object recovery verification remain; this task is not complete.
 
 **Done when:** owners can invite/revoke audiences, resources are consistently
 scoped, two-space isolation is demonstrated beyond the interface, and existing

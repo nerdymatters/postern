@@ -21,6 +21,163 @@ from conftest import ADMIN, READER, create_post, events, open_view, ready_post
 REAL_LOOP = selfie.loop
 
 
+def test_late_reservation_commit_is_refunded_once_by_the_worker(client, service, monkeypatch):
+    """A 503 before COMMIT must not spend a capture that never reached the converter."""
+    headers = login(client)
+    entered, commit = threading.Event(), threading.Event()
+    original = selfie.event
+    def held(db, kind, *args, **kwargs):
+        result = original(db, kind, *args, **kwargs)
+        if kind == 'selfie_capture_attempt':
+            entered.set()
+            assert commit.wait(10), 'test did not release the writer'
+        return result
+    monkeypatch.setattr(selfie, 'event', held)
+    converted = []
+    monkeypatch.setattr(service.deriver, 'run', lambda *args: converted.append(True))
+    with concurrent.futures.ThreadPoolExecutor(1) as pool:
+        pending = pool.submit(capture, client, headers)
+        try:
+            assert entered.wait(5)
+            response = pending.result(5)  # Real request deadline expires while the writer is held.
+            assert (response.status_code, response.json()['error']) == (503, 'audit_unavailable')
+        finally:
+            commit.set()
+    service.db.submit(lambda db: None).result(timeout=5)  # Fence the late COMMIT.
+    attempt, = events(service, 'selfie_capture_attempt')
+    assert converted == []
+    for _ in range(2):
+        client.portal.call(selfie.process, service)
+    released, = events(service, 'selfie_capture_released')
+    assert released['ts'] == attempt['ts']
+    assert json.loads(released['payload'])['detail']['fault'] == 'server'
+    assert not list((service.config.data_dir/'selfies').iterdir())
+
+
+def test_failed_refund_survives_writer_restart_and_session_revocation(client, service, monkeypatch):
+    """A durable unfinished reservation can be reconciled without a still-valid login."""
+    from postern.db import AuditUnavailable, Database
+    headers = login(client)
+    monkeypatch.setattr(service.deriver, 'run', failing('face_too_small'))
+    original = selfie.event
+    def fail_refund(db, kind, *args, **kwargs):
+        if kind == 'selfie_capture_released':
+            raise AuditUnavailable('Synthetic refund storage failure')
+        return original(db, kind, *args, **kwargs)
+    monkeypatch.setattr(selfie, 'event', fail_refund)
+    assert capture(client, headers).json()['error'] == 'face_too_small'
+    assert events(service, 'selfie_capture_released') == []
+    service.db.submit(lambda db: db.execute('UPDATE sessions SET revoked=1')).result()
+    service.db.close()
+    service.db = Database(service.config.data_dir/'postern.sqlite3')
+    monkeypatch.setattr(selfie, 'event', original)
+    for _ in range(2):
+        client.portal.call(selfie.process, service)
+    attempt, = events(service, 'selfie_capture_attempt')
+    released, = events(service, 'selfie_capture_released')
+    assert (released['email'], released['ts']) == (attempt['email'], attempt['ts'])
+
+
+@pytest.mark.parametrize('kind', ['selfie_capture_released', 'selfie_consent_accepted'])
+def test_late_settlement_commit_is_not_repeated_or_refunded(client, service, monkeypatch, kind):
+    """The response may time out while a refund or a retained photo still commits."""
+    headers = login(client)
+    entered, commit = threading.Event(), threading.Event()
+    original = selfie.event
+    def held(db, event_kind, *args, **kwargs):
+        result = original(db, event_kind, *args, **kwargs)
+        if event_kind == kind:
+            entered.set()
+            assert commit.wait(10), 'test did not release the writer'
+        return result
+    monkeypatch.setattr(selfie, 'event', held)
+    monkeypatch.setattr(service.deriver, 'run', failing('face_required') if kind == 'selfie_capture_released' else converted)
+    with concurrent.futures.ThreadPoolExecutor(1) as pool:
+        pending = pool.submit(capture, client, headers)
+        try:
+            assert entered.wait(5)
+            response = pending.result(5)
+            assert response.json()['error'] == ('face_required' if kind == 'selfie_capture_released' else 'audit_unavailable')
+        finally:
+            commit.set()
+    service.db.submit(lambda db: None).result(timeout=5)
+    monkeypatch.setattr(selfie, 'event', original)
+    for _ in range(2):
+        client.portal.call(selfie.process, service)
+    released = events(service, 'selfie_capture_released')
+    if kind == 'selfie_capture_released':
+        assert len(released) == 1
+        assert json.loads(released[0]['payload'])['detail']['fault'] == 'photo'
+    else:
+        assert released == []
+        state = client.get('/api/selfie', headers=headers).json()
+        assert state['required'] is False
+        assert (service.config.data_dir/'selfies'/(state['id']+'.jpg')).is_file()
+
+
+def test_worker_skips_live_capture_and_duplicate_settlements_are_noops(client, service, monkeypatch):
+    """Eight retries of an old refund cannot credit a different, active capture."""
+    headers = login(client)
+    monkeypatch.setattr(service.deriver, 'run', failing('face_required'))
+    assert capture(client, headers).status_code == 422
+    old = service.db.read(lambda db: dict(db.execute('SELECT * FROM selfie_reservations').fetchone()))
+    entered, proceed = threading.Event(), threading.Event()
+    def held(*args):
+        entered.set()
+        assert proceed.wait(10)
+        return converted(*args)
+    monkeypatch.setattr(service.deriver, 'run', held)
+    with concurrent.futures.ThreadPoolExecutor(1) as pool:
+        pending = pool.submit(capture, client, headers)
+        try:
+            assert entered.wait(5)
+            client.portal.call(selfie.process, service)
+            retries = [service.db.submit(lambda db: selfie.settle_reservation(db, old['id'], 'server', 'retry')) for _ in range(8)]
+            for retry in retries:
+                retry.result(timeout=5)
+            assert len(events(service, 'selfie_capture_released')) == 1
+            assert service.db.read(lambda db: db.execute('SELECT count(*) FROM selfie_reservations WHERE outcome IS NULL').fetchone()[0]) == 1
+        finally:
+            proceed.set()
+        assert pending.result(5).status_code == 202
+    client.portal.call(selfie.process, service)
+    assert len(events(service, 'selfie_capture_released')) == 1
+    assert len(events(service, 'selfie_capture_attempt')) == 2
+
+
+def test_new_capture_reconciles_an_abandoned_reservation_before_checking_budget(client, service, monkeypatch):
+    from postern.db import AuditUnavailable
+    headers = login(client)
+    monkeypatch.setattr(service.deriver, 'run', failing('face_required'))
+    original = selfie.event
+    def fail_refund(db, kind, *args, **kwargs):
+        if kind == 'selfie_capture_released':
+            raise AuditUnavailable('Synthetic refund storage failure')
+        return original(db, kind, *args, **kwargs)
+    # One unfinished reservation plus nine genuine invalid uploads consumes the
+    # apparent ten-capture budget. A retry must reconcile before applying it.
+    monkeypatch.setattr(selfie, 'event', fail_refund)
+    assert capture(client, headers).status_code == 422
+    monkeypatch.setattr(selfie, 'event', original)
+    service.db.submit(lambda db: [original(db, 'selfie_capture_attempt', email=READER, summary=False)
+                                  for _ in range(selfie.CAPTURES_PER_DAY-1)]).result()
+    monkeypatch.setattr(service.deriver, 'run', converted)
+    assert capture(client, headers).status_code == 202
+    released, = events(service, 'selfie_capture_released')
+    assert json.loads(released['payload'])['detail']['fault'] == 'server'
+    assert capture(client, login(client)).status_code == 429
+
+
+def test_settled_reservations_expire_without_erasing_budget_events(client, service, monkeypatch):
+    headers = login(client)
+    monkeypatch.setattr(service.deriver, 'run', failing('face_required'))
+    assert capture(client, headers).status_code == 422
+    service.db.submit(lambda db: db.execute('UPDATE selfie_reservations SET ts=ts-86401')).result()
+    client.portal.call(selfie.process, service)
+    assert service.db.read(lambda db: db.execute('SELECT count(*) FROM selfie_reservations').fetchone()[0]) == 0
+    assert len(events(service, 'selfie_capture_attempt')) == len(events(service, 'selfie_capture_released')) == 1
+
+
 def test_enrollment_admission_keeps_a_burst_out_of_the_audit_queue(client, service, monkeypatch):
     """Only eight upload preflights may be waiting on the durable writer."""
     import httpx
@@ -588,7 +745,7 @@ def test_a_face_refusal_is_still_shown_when_its_release_cannot_be_recorded(clien
     monkeypatch.setattr(selfie, 'event', unrecorded)
     result = capture(client, headers)
     assert (result.status_code, result.json()) == (422, {'error': 'face_too_small', 'message': selfie.FACE_REFUSALS['face_too_small'][1]})
-    # Unrecorded, the attempt keeps counting.
+    # It counts until the worker can reconcile the durable unfinished reservation.
     assert events(service, 'selfie_capture_released') == []
 
 

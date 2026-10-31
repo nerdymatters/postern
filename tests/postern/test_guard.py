@@ -30,6 +30,7 @@ CONTRACT = PUBLIC | {
     ('POST', '/api/admin/posts/{post_id}/archive'), ('GET', '/api/admin/posts/{post_id}/report'),
     ('GET', '/api/admin/operations/{operation_id}'), ('GET', '/api/admin/signin-denials'),
     ('GET', '/api/admin/health'), ('GET', '/api/admin/progress'), ('POST', '/api/admin/posts/{post_id}/videos'),
+    ('GET', '/api/admin/certificate-history'),
     ('POST', '/api/views/{view_id}/video'), ('POST', '/api/views/{view_id}/video-progress'),
     ('GET', '/api/video/{ticket}'),
     ('GET', '/api/selfie'), ('POST', '/api/selfie'),
@@ -40,7 +41,7 @@ CONTRACT = PUBLIC | {
 FAMILIES = ('api', 'thumbnail', 'page')
 # 'version' is the current notice version so /api/consent reaches the guard instead of 409ing first.
 SAMPLES = {'version': '1', 'title': 'Probe', 'ranges': [], 'ip_version': 'ip-1', 'monitoring_accepted': True, 'ip_accepted': True,
-           'answers': {}}
+           'answers': {}, 'email': READER}
 
 
 def inventory(app):
@@ -50,7 +51,7 @@ def inventory(app):
 
 
 def call(client, method, path, headers=None, values=None):
-    """Drive a registered route with a body its own signature accepts, so the guard is what answers."""
+    """Supply valid body/query inputs so the guard, rather than request validation, answers."""
     route = next(r for r in client.app.routes if r.path == path and method in r.methods)
     values = {'page': 0, 'chapter': 1, **(values or {})}
 
@@ -72,7 +73,12 @@ def call(client, method, path, headers=None, values=None):
             body = {field: SAMPLES.get(field, 'x') for field in annotation.model_fields}
             if 'attempt_id' in body:
                 body['attempt_id'] = str(uuid.uuid4())
-    return client.request(method, url, headers=headers, json=body, files=files, data=data or None)
+    query = {}
+    for parameter in route.dependant.query_params:
+        if parameter.field_info.is_required():
+            assert parameter.name in values or parameter.name in SAMPLES, f'missing query sample on {path}'
+            query[parameter.name] = values.get(parameter.name, SAMPLES.get(parameter.name))
+    return client.request(method, url, headers=headers, params=query, json=body, files=files, data=data or None)
 
 
 def refusals(client, headers, urls):
@@ -181,7 +187,7 @@ def test_another_signed_in_member_cannot_use_a_readers_view(client):
 def test_a_reader_cannot_reach_any_admin_route(client):
     room = reading_room(client)
     admin_routes = {(method, path) for method, path in inventory(client.app) if path.startswith('/api/admin/')}
-    assert len(admin_routes) == 14
+    assert len(admin_routes) == 15
     for method, path in sorted(admin_routes):
         response = call(client, method, path, headers=room['reader'],
                         values={'post_id': room['post']['id'], 'item_id': room['item_id']})

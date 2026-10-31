@@ -91,8 +91,9 @@ pilot.
 
 - Resolve and verify the auth-relevant findings in the
   [security follow-up](https://github.com/nerdymatters/postern/issues/1) (M0-02).
-- Verify live publication of the owner-approved [Terms version 2026-10-29](../terms/2026-10-29.md),
-  effective October 29, 2026. Separately activate its version and hash, keeping
+- The owner-approved [Terms version 2026-10-29](../terms/2026-10-29.md), effective
+  October 29, 2026, were published and verified in v0.18.0; see the
+  [publication evidence](launch-readiness.md#publication-round). Activate its version and hash, keeping
   registration closed, and verify the implemented acceptance flow on the hosted pilot,
   including existing accounts and later revisions (M0-04). Local implementation
   evidence is in the [launch-readiness report](launch-readiness.md).

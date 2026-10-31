@@ -57,6 +57,13 @@ For separate web hosting, set `VITE_POSTERN_API` to your HTTPS API origin in you
 - [Optional independent status service](docs/runbooks/status.md)
 - [Account isolation](docs/runbooks/account-isolation.md)
 - [Optional accounts and profiles](docs/accounts.md)
+- [Private Posterns: M2 contract](docs/private-spaces.md) (isolated metadata/onboarding implemented; content integration and hosting pending)
+- [Multi-Postern storage evaluation](docs/designs/storage.md) (local experiment; migration pending)
+- [Ownership transfer](docs/runbooks/ownership-transfer.md) (explicit recipient acceptance; verified in isolation)
+- [Membership management](docs/runbooks/membership-management.md) (isolated APIs and browser controls; not deployed)
+- [Space creation and invitation acceptance](docs/runbooks/space-onboarding.md) (isolated APIs and browser flow; not deployed)
+- [Isolated account/resource service integration](docs/runbooks/service-integration.md) (local; not deployed)
+- [PostgreSQL schema and migration rehearsal](docs/runbooks/postgres-rehearsal.md) (local; not deployed)
 - [Product roadmap](ROADMAP.md)
 - [Known follow-up work](TODOS.md)
 - [Release notes](CHANGELOG.md)
@@ -64,7 +71,10 @@ For separate web hosting, set `VITE_POSTERN_API` to your HTTPS API origin in you
 ## Development
 
 ```sh
-.venv/bin/python -m pip install -e '.[test]' psutil
+.venv/bin/python -m pip install -e '.[test,postgres]' psutil
+# PostgreSQL 17+ CLI tools are required by tests/storage; use Homebrew on macOS.
+brew install postgresql@17
+export PATH="$(brew --prefix postgresql@17)/bin:$PATH"
 .venv/bin/python -m pytest tests -q
 bun run --cwd dashboard/web test
 bun run --cwd dashboard/web build

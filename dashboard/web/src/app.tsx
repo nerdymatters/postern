@@ -51,6 +51,15 @@ export function App({ expectedIdentity, onSessionLost, onAccountSignOut }: { exp
   const selfieSaved = useCallback(() => { setRenewing(false); forgetViews(); releaseAll(); reload() }, [reload])
   const [progressVersion, setProgressVersion] = useState(0)
   const refreshProgress = useCallback(() => { wallGeneration.current++; setProgressVersion(value => value + 1) }, [])
+  // An explicit check needs its real outcome; background refreshes remain debounced.
+  const checkProgress = useCallback(async () => {
+    const identity = currentToken()
+    const generation = ++wallGeneration.current
+    const result = await api.posts()
+    if (currentToken() !== identity || generation !== wallGeneration.current) return false
+    show(result)
+    return true
+  }, [show])
 
   useEffect(() => {
     if (!progressVersion || !session || session.consent_required || session.selfie?.required) return
@@ -214,8 +223,8 @@ export function App({ expectedIdentity, onSessionLost, onAccountSignOut }: { exp
 
       {session.selfie?.expires_at && session.selfie.expires_at < Date.now()/1000 + 5*86400 ? <p className="mx-auto max-w-2xl px-4 pt-4 text-sm text-amber-800 dark:text-amber-200">Your selfie expires soon. <button className="underline" onClick={() => setRenewing(true)}>Update it now</button> to keep reading without interruption.</p> : null}
       {route.name === 'grid' ? <Grid posts={posts} quizzes={quizzes} finalExam={finalExam} certificate={certificate} exempt={exempt} onQuiz={takeQuiz} onOpen={(chosen, item) => navigate(`/post/${chosen.id}${item ? `/item/${item.id}` : ''}`)} /> : null}
-      {route.name === 'badges' ? <BadgesPage quizzes={quizzes} finalExam={finalExam} certificate={certificate} loading={loading} onQuiz={takeQuiz} onRefresh={refreshProgress} onBack={() => navigate('/')} /> : null}
-      {route.name === 'certificate' ? <CertificatePage certificate={certificate} finalExam={finalExam} loading={loading} onSaved={saved => { setCertificate(saved); refreshProgress() }} onRefresh={refreshProgress} onQuiz={takeQuiz} onBack={() => navigate('/')} /> : null}
+      {route.name === 'badges' ? <BadgesPage quizzes={quizzes} finalExam={finalExam} certificate={certificate} loading={loading} onQuiz={takeQuiz} onRefresh={checkProgress} onBack={() => navigate('/')} /> : null}
+      {route.name === 'certificate' ? <CertificatePage certificate={certificate} finalExam={finalExam} loading={loading} onSaved={saved => { setCertificate(saved); refreshProgress() }} onRefresh={checkProgress} onPending={refreshProgress} onQuiz={takeQuiz} onBack={() => navigate('/')} /> : null}
       {route.name === 'quiz' ? <QuizPage key={route.chapter} chapter={route.chapter} posts={posts} exempt={route.chapter === 0 ? finalExam?.optional ?? false : exempt} onQuiz={takeQuiz} onFinished={finished} onStale={refreshProgress} onOpen={(chosen, item) => navigate(`/post/${chosen.id}${item ? `/item/${item.id}` : ''}`)} onBack={() => navigate('/')} /> : null}
       {route.name === 'post' ? (
         post

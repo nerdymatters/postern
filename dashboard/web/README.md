@@ -40,6 +40,51 @@ private membership, training results and enrollment photographs are not public
 profile fields. Profile names do not change certificate names. The account
 privacy page explains publication, deletion and separately retained space data.
 
+## Native private Posterns (isolated)
+
+Also set `VITE_POSTERN_SPACES_API` to the native resource API to enable the
+multi-space home. Both services must use the PostgreSQL adapters and migrations
+through `006`; the default D1 Worker does not expose these onboarding routes.
+This path is verified locally with synthetic identities, not deployed.
+
+My Posterns lists memberships and operator-approved creation availability.
+**Create a Postern** opens `/spaces/new`. Owners/admins can issue and revoke
+account-bound invitations from `/s/{uuid}`. The recipient shares their invitation
+address from My Posterns, then pastes the owner's code at **Have an invitation?**
+(`/invitations/join`) to review the name, role, account and expiry before joining.
+Codes are shared manually, without automatic email. They stay out of URLs and
+browser storage. Failed copy operations show selectable text.
+
+Resource sessions are held only in memory, bound to the current account and space,
+and revoked on SPA route/account changes when reachable. Reloading discards the
+local session; remaining server sessions expire. Account switches discard late results;
+resource denials preserve the Postern account. Creation and invitation retries keep
+the original operation ID. Metadata listing/search is available; content previews,
+playback and legacy training migration are still pending. See the
+[onboarding runbook](../../docs/runbooks/space-onboarding.md) for limits and recovery.
+
+Owners and administrators can open **Manage members** from a native Postern.
+The directory uses immutable invitation addresses and pages through active
+memberships; it does not expose global account profiles or email. Owners can
+promote/demote administrators; administrators can remove ordinary members.
+Role changes/removal require a confirmation and a current list revision. A stale
+list must be reloaded; uncertain responses can retry the exact original operation.
+
+**Leave Postern** preserves the global account and other memberships. The last
+owner cannot leave until another active owner is in place. Leaving uses the
+account credential so retries still work after resource access ends, and an old
+retry cannot remove a new membership after readmission. See the
+[membership runbook](../../docs/runbooks/membership-management.md) for the API,
+permission matrix and transaction/recovery behavior.
+
+**Ownership transfer** lets an owner choose an existing member and their own
+remaining administrator/member role. The recipient must separately review and
+accept responsibility and the role changes. Proposals expire after seven days;
+owners can cancel and recipients can decline. The selected Postern changes
+atomically; sibling spaces and shared owner records stay intact. Requests keep
+their original IDs on retry, including after acceptance revokes space sessions.
+See the [ownership runbook](../../docs/runbooks/ownership-transfer.md).
+
 ## Commands
 
 ```bash
@@ -60,6 +105,9 @@ then shows an email box instead of the Google button, which is what the Playwrig
 | `src/api.ts` | private resource routes, the space session bearer token, and the mapping of the server's refusal states |
 | `src/accounts-api.ts` | account/profile API requests, account token storage and change notifications, and verified identity matching |
 | `src/accounts.tsx` | My Posterns, profile editing/publication, public profiles, account privacy/deletion, and the account-to-space entry gate |
+| `src/spaces-api.ts`, `src/spaces-ui.tsx` | opt-in native account/resource requests, invitation codes and shared space controls |
+| `src/spaces.tsx` | native My Posterns, creation, invitation review/acceptance and metadata catalog |
+| `src/memberships.tsx`, `src/ownership.tsx` | membership directory, role/removal/departure controls and recipient-accepted ownership transfer |
 | `src/app.tsx` | config/session gate, the refusal states, the shell and the routes |
 | `src/theme.tsx`, `index.html` | day/night preference, system-theme updates, header toggle, and early theme application before React renders |
 | `src/PosternWordmark.tsx`, `src/PosternIcons.tsx` | outlined logo and 22 decorative action/format icons; see the [logo kit](../../docs/brand/logo/README.md) |
@@ -76,7 +124,7 @@ then shows an email box instead of the Google button, which is what the Playwrig
 | `src/video.tsx` | native MP4 player, personal overlay, fullscreen wrapper, continuous-playback interval reporting that re-sends unsaved intervals, watched time ("Watched m:ss of m:ss"; skipped parts do not count), a warning after a skipped part in place of the quiz, and English subtitle controls kept in sync with native CC |
 | `src/admin.tsx`, `src/post-status.tsx`, `src/report.tsx` | post search/status filters, separate archive, upload/publish, who opened it, denied sign-ins |
 | `src/honors.tsx` | badges (one per chapter quiz passed, All chapters, the Final Exam) and their medal art, the home-page shelf, `/badges` with the next badge to earn, the first-pass celebration on a quiz result (medal and confetti, skipped for reduced motion), and the certificate: `/certificate` with its printed name and printing, and the print-only copy `index.css` prints alone |
-| `src/training-progress.tsx` | searchable staff dashboard, overall/module/file progress, chapter quiz standing, a separate Final Exam result with its certificate (number, printed name, view and print), incomplete-history indicators |
+| `src/training-progress.tsx` | searchable staff dashboard with location/all-location tabs, overall/module/file progress, chapter quiz standing, a separate Final Exam result with its certificate (number/printed-name lookup, view and print, paginated saved-name history), incomplete-history indicators |
 | `src/categories.tsx`, `src/post-title.tsx` | category and post-title renaming, validation, and pending backup feedback |
 | `src/blobs.ts` | every object URL, so sign-out can revoke all of them |
 | `src/views.ts` | the per-item reading attempt id, stable across remount and refresh |
@@ -357,11 +405,23 @@ The result screen celebrates only when the standing before the attempt was not p
 after a pass earns nothing new. Medal faces follow the topics
 of the nine SOP chapters by number; any other number gets a plain award.
 
+On the reading-room home page, **Your certificate is ready** links to `/certificate`
+when the API returns a certificate and no required next step takes priority. The card
+comes before optional reading, including new material in a chapter already passed;
+for quiz-exempt roles, it can also lead unopened chapter material. Any chapter-completion
+message comes before the card, whether optional Modules remain or nothing remains.
+Required chapter work or an unpassed required Final Exam takes priority and hides
+this home-page card. With no
+published posts, the card remains beside **Nothing has been posted yet**. A passing
+exam standing alone does not show it: the API must supply the certificate. The
+[logo kit](../../docs/brand/logo/README.md#medals-and-certificate-seal) describes its related award art.
+
 `GET /api/posts` adds `certificate`: `{number, name, awarded_at, name_confirmed}` once the person has
 passed the Final Exam, `null` before that and while a restore is unverified. `number` is
-`PG-<year>-<8 hex digits>`, derived from the event id of the first passing Final Exam attempt, and
+`<certificate_prefix>-<year>-<8 hex digits>` (`PT` by default), derived from the event id of the first passing Final Exam attempt, and
 `awarded_at` is that attempt's time. The year, like every badge and certificate date, is in Eastern time
-(`America/New_York`, the restaurants' zone), so all copies agree wherever they are opened. Retakes change
+(`America/New_York`), so all copies agree wherever they are opened. Preserve the prefix when migrating;
+see [installation branding](../../docs/branding.md). Retakes change
 neither, and a restore brings back the same certificate as long as that attempt reached either export
 tier; if it reached neither, the earliest restored pass sets the number and date. `name` comes from the
 person's latest `certificate_name` event. Otherwise it is the fuller of their staff Sheet name and the
@@ -372,14 +432,49 @@ Google name is known. If neither has a letter or digit, it is the part of the em
 name. `name_confirmed` says whether the person saved it: **Keep this name** saves the suggestion as it
 is, and **Change name** saves another.
 
-`POST /api/certificate/name` with `{name}` saves a name. The server drops control and invisible
-characters, keeps at most three combining marks on one letter and collapses spaces. The result must be
-1–80 characters with at least one letter or digit (`422 invalid_name`). It refuses before a pass
+`POST /api/certificate/name` with `{name}` saves a name. The server normalizes to NFC,
+drops control and invisible characters except U+200C/U+200D between letters or marks,
+limits consecutive nonspacing/enclosing marks to three and collapses whitespace.
+The form counts the cleaned name in Unicode code points and sends that value while
+preserving the text during editing. The result must be 1–80 code points with at least
+one letter or digit (`422 invalid_name`). Overlong suggestions stop at a whole word
+or complete character cluster; names submitted for saving are rejected rather than cut.
+It refuses before a pass
 (`404 certificate_not_found`), after 20 changes a day (`429 rate_limited`) and during a restore
 (`409 history_restoring`). A `200` returns the updated `certificate`, in the same shape as on
 `GET /api/posts`, with `name_confirmed: true`. The `certificate_name` event is in both export tiers.
 `GET /api/admin/progress` adds each person's `certificate`; Staff progress shows its number and printed
-name, and can view and print it.
+name, and can view and print it even when no content is currently published.
+
+For a printed-certificate check, search its number in **Admin → Staff progress**,
+choose **All locations** if there are several location tabs, and set **Progress status**
+to **All progress**. Open the matching person's **Details → Show name history**.
+The panel lists saved names and save times, newest first, with **Load older names**
+and **Refresh name history**. Loading history also refreshes the certificate shown
+and printed in that person's details. Name corrections remain available to the holder.
+Search uses the current roster and current printed name; older names are visible
+inside history. All matching people remain visible if a short certificate number collides.
+This is an admin evidence check, not a public validity verdict: a person who has left
+the roster will not appear, suggested names that were never saved have no history,
+and missing restored records can leave an older printed name unaccounted for.
+
+`GET /api/admin/certificate-history?email=...&before=...` returns `certificate`,
+`entries` (`id`, `name`, `saved_at`), `next_cursor` and `history_incomplete`. Omit
+`before` for the first page; otherwise use the returned event-id cursor. Each page
+consumes at most 50 name events, ordered by timestamp then id descending; malformed
+records are omitted and mark that page incomplete. Valid original spelling is kept.
+New events report their actual save time in `saved_at`, separately from the timestamp
+used to keep the latest choice first after clock corrections. Older events use their
+original timestamp. Unrepresentable event dates are skipped and mark history incomplete.
+The cursor must belong to the same person's name events (`422 invalid_cursor`).
+The endpoint requires a current admin session, current agreements, a fresh roster
+and verified recovery (`409 history_restoring`); missing roster membership or a
+missing certificate returns `404 certificate_not_found`. A consistent read runs
+outside the audit writer, then access and target membership are rechecked and
+`certificate_history_viewed` commits before disclosure. Responses are `no-store`.
+The additive `events_name_history` index is created automatically at server startup;
+existing events and certificate identities are unchanged. See the
+[recovery notes](../../docs/runbooks/recovery.md) for gaps and preserved event order.
 
 The certificate is laid out in container units: the screen copy scales with its width, and the printed
 copy fills the page. Printing, from the button or the browser's own Print, shows only the certificate.
@@ -406,12 +501,15 @@ archive matches opens it automatically and shows the matching count. Archiving k
 its existing immediate effect on reader access.
 
 Open **Admin → Staff progress** for the current staff list, including admins, against
-currently published attachments. Search by person, filter by progress state, or sort
+currently published attachments. Search by name, email, current printed name or
+certificate number (case-insensitive), filter by progress state, or sort
 by progress, recent activity or fewest quizzes passed. **Details** expands chapter quiz
 attempts (a **Not ready** badge marks a quiz the person cannot take until they finish that
 chapter), module and individual file coverage.
 Choose a restaurant tab to scope the staff count, average, completion cards, search,
-filters and details to that location. The first returned roster group is selected initially. Tabs support
+filters and details to that location. **All locations**, available when there is more
+than one group, includes each current person once. The first returned roster group
+is selected initially. Tabs support
 Left/Right, Home and End keys and horizontal scrolling on phones. A person in several
 tabs has one canonical email and shared activity; repeated rows do not duplicate their
 progress. Changing tabs clears person/status filters and expanded details.

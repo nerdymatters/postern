@@ -109,11 +109,43 @@ background jobs, in-memory limits, and the single SQLite writer.
 - Restoring a portrait no longer waits for anyone's face check. It still shares one
   lock with other uncached portrait restores and the selfie worker's private-storage
   upload and cleanup. Cached portraits bypass that lock.
-- Known limitation: a capture's attempt reservation that commits after the writer's
-  1.5-second deadline still counts toward that person's ten daily captures while
-  they see the audit-paused screen. A best-effort release that cannot be recorded also
-  leaves the attempt counted. The admission bound reduces writer crowding; reliable
-  reconciliation needs idempotent reservations and refunds, which are a follow-up design.
+
+## Durable selfie reservations
+
+The October 29 implementation adds a local `selfie_reservations` ledger. The
+writer creates its table and index when opening an existing database; no manual
+data rewrite is required. Server rollout is separate from this code change.
+
+- Each capture gets one server-generated identity. Its reservation and attempt
+  event commit together. A refund and the reservation's terminal state also
+  commit together, so retrying settlement cannot refund the attempt twice.
+- The selfie worker reconciles unfinished reservations after acquiring the
+  account's capture lock. It skips live captures. The next capture also
+  reconciles that account's unfinished reservations before applying rate limits.
+  A request that times out before its reservation commits therefore receives
+  a refund once the writer recovers, including after a server restart.
+- A retained photo and its settled reservation commit together. An ambiguous
+  photo insert still retains the prepared image for the existing upload and
+  cleanup worker; reconciliation does not refund a committed capture.
+- Refunds use the saved authorized context and the attempt's original timestamp.
+  Expired or revoked login sessions cannot prevent compensation. If a capture
+  or its settlement was interrupted before a terminal outcome committed, the
+  worker treats that interruption as a server fault. Until reconciliation can
+  commit, the reservation conservatively remains charged.
+- The existing event-based rolling limits remain: ten retained/invalid captures,
+  30 attempts excluding server faults, and 90 total reservations per 24 hours.
+  Face-check rejections refund only the ten-capture budget; server faults refund
+  the ten- and 30-attempt budgets. The 90-reservation ceiling is never refunded.
+  Legacy attempts without ledger rows retain their existing accounting; there
+  is no retroactive inference or repair of old outcomes.
+- Settled ledger rows are removed after 24 hours during maintenance; audit events
+  remain intact. Cloud recovery still restores its exported events and portrait
+  metadata, not unfinished local capture work. Returning to an older server
+  version leaves the new table unused and restores its old refund limitations.
+
+This relies on the existing single-process server and single durable writer.
+Neither the 1.5-second writer deadline nor the eight-slot selfie admission bound
+has changed.
 
 ## External acceptance still required
 
