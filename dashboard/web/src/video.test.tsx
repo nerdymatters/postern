@@ -184,7 +184,8 @@ test('English captions start on, follow both toggles, and revoke their private b
   const mounted = render(<Video item={item} nextLabel="" onNext={() => {}} />)
   const toggle = await screen.findByRole('button', { name: /English subtitles: On/ })
   expect(toggle.getAttribute('aria-pressed')).toBe('true')
-  expect(english.mode).toBe('showing')
+  // The button can render before the effect updates the text track.
+  await waitFor(() => expect(english.mode).toBe('showing'))
   const track = mounted.container.querySelector('track')!
   expect(track.default).toBe(true)
   expect(track.srclang).toBe('en')
