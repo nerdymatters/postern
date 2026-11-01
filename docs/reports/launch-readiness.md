@@ -162,3 +162,126 @@ office Python runtime and status-worker rollout remain separate. No real Google
 sign-in or account acceptance/deletion was performed by this publication check.
 Security issue #1 remains open for its remaining dispositions and deployment
 verification. Public Terms publication is complete; M0-04 as a whole is not.
+
+## Security follow-up — November 1, 2026
+
+The office installation was verified at v0.19.0 (`e4d3713`), with all 50 pilot
+lock pins matching its installed Python environment and `pip check` passing.
+This included certifi 2026.10.23, Pillow 13.0.0, pillow-heif 1.7.0,
+google-auth 2.58.0, google-auth-oauthlib 1.5.0, OAuthlib 4.0.0 and
+opentelemetry-api 1.45.1. The image restrictions and workflow hardening described
+above were already released in v0.18.0.
+
+The installed Requests stack fetched Google's OAuth certificate endpoint with
+normal TLS verification and the installed certifi bundle. No process or launch
+configuration override for Requests/cURL/OpenSSL certificate paths was present.
+An existing staff account completed a fresh Google sign-in at the production
+site, and the operator confirmed that **Continue to admin without a selfie**
+opened admin successfully. This verifies sign-in/admin access; it does not claim
+selfie enrollment or a reading flow that requires enrollment was exercised.
+Consent settings were unchanged.
+
+Synthetic images passed through the installed converter and its real macOS
+sandbox: JPEG, PNG and HEIF converted successfully; GIF bytes named `.jpg` and
+HEIF bytes named `.jpg` were rejected. No staff content was uploaded or altered.
+This is compatibility/admission evidence, not exploitation of a parser advisory.
+
+A fresh source/history scan at v0.19.0 found zero Gitleaks findings and zero
+offline zizmor findings. The current OSV database no longer matched the original
+76 advisory identities, but reported four newer pyasn1 0.6.4 decoder advisories:
+[GHSA-2qm8-x737-gmw5](https://github.com/advisories/GHSA-2qm8-x737-gmw5),
+[GHSA-9m75-vc3g-4x39](https://github.com/advisories/GHSA-9m75-vc3g-4x39),
+[GHSA-fm9c-5rcf-2q5p](https://github.com/advisories/GHSA-fm9c-5rcf-2q5p) and
+[GHSA-mm57-4v3p-rchx](https://github.com/advisories/GHSA-mm57-4v3p-rchx).
+The v0.19.1 candidate pins [pyasn1 0.6.5](https://github.com/pyasn1/pyasn1/releases/tag/v0.6.5).
+Its online OSV scan assessed 325 exact package occurrences with zero affected
+matches: pilot 50, day-one 20, frontend 164 and status 91. All four lockfiles
+were explicit inputs; the pilot copy named `requirements.txt` was byte-identical.
+Scanning used no advisory suppressions or resolution of unpinned ranges.
+
+Tools were Gitleaks 8.30.1, OSV-Scanner 2.7.0 (SCALIBR 0.5.3) and zizmor 1.31.1.
+Exact commands, input digests, binary digests and raw results are retained in
+private verification artifacts. Gitleaks covered the current public files and
+public Git history; zizmor remained offline. Dependency compatibility checks
+included valid DER decoding and rejection of truncated DER. Static inspection
+found the application's Google public-key verification uses cryptography; the
+optional `rsa` package required by its pyasn1-based backend was not installed.
+This observation is not a claim that every transitive path is unreachable.
+
+The status Worker still runs an earlier deployment, version
+`f8918d43-744c-41fe-aacb-71a1b46bef6d`. Its retrieved JavaScript bundle contains
+only first-party modules, with no external imports or CommonJS requires; its
+SHA-256 is `7fe43cddf6899b99573bb7ab5917c483fe900364171573a4a69303527330bb58`.
+The affected status packages are build tooling, not dependencies in that deployed
+application bundle. The updated status lock passed all 14 tests and a Node 24
+Wrangler dry build. This check does not imply a new status deployment.
+
+The candidate suite exposed a separate test whose overlong assertion expiry was
+computed during collection. In a long run it became valid before the request.
+The test now computes that expiry at request time; the production 60-second
+lifetime cap and refusal assertions are unchanged. Simulated collection aging
+fails the old case and passes the corrected case; all 17 service API tests pass.
+
+The new pyasn1 pin still requires release and office rollout at the time this
+candidate record is written. Final commit-bound scanner results, full checks,
+deployed versions and closure are recorded in
+[issue #1](https://github.com/nerdymatters/postern/issues/1).
+The assessment remains partial: no runtime exploit reproduction, complete native
+dependency inventory, exhaustive transitive reachability or GitHub API-dependent
+zizmor checks are claimed.
+
+## Quiz-test follow-up — November 1, 2026
+
+The v0.19.1 publication check reproduced [issue #4](https://github.com/nerdymatters/postern/issues/4)
+after the earlier v0.18.0 label-query improvement: the chapter quiz journey and
+a reader-guide test exceeded their five-second deadlines on the busy office Mac.
+The selected Python checks passed; the frontend result was 333 passed and two
+failed. This failed run was retained and did not authorize publication.
+
+The follow-up reduces lookup and rendering work while preserving the checks:
+
+- Option labels are resolved within their question. Buttons are first located by
+  their unique label/text, then checked by role and accessible name within the
+  containing element, retaining visibility checks. Waiting for an end-card label
+  avoids repeatedly resolving names across the entire contents list while its
+  mocked image is loading.
+- CI explicitly installs Node 24, and the frontend pretest refuses Bun runtime
+  fallback. Vitest defaults to one worker, matching the diagnostic command and
+  keeping local/CI file concurrency consistent. The office shell had no Node on `PATH`; the original tests also
+  failed under Node, so correcting the runtime alone was insufficient.
+- Explicit async React `act` waits for mocked API updates. Independent answer
+  clicks use synchronous `act`; the chapter journey additionally checks that
+  one answer still leaves submission disabled. The submitted answer map, failed
+  score, retry, pass, explanations, badge and unlocked reader destination remain
+  asserted.
+- Reading-room entry/lock assertions have their own test. The attempt journey
+  starts at the real quiz route in `App` and still fails, retries, passes and
+  opens the unlocked chapter. The guide's seven independent reader states each
+  receive fresh fixtures. This adds seven cases overall rather than assigning
+  all seven guide scenarios one shared deadline.
+
+The default remains five seconds and the final-exam deadline remains fifteen.
+The complete chapter journey now has a ten-second completion budget. Keeping
+its five-second limit produced two timeouts in each of two ten-run Bun batches,
+even after the lookup/async refinements. The Node 24 batch passed nine of ten
+complete repeats; its remaining chapter timeout was 6.28 seconds.
+These measurements changed the initial plan to preserve every deadline. The
+journey remains continuous, including the real App-to-Reader transition, rather
+than replacing that integration with separate mocked callbacks. This is a
+functional completion bound, not a claim about browser performance. No retries,
+skipped cases, increased individual DOM waits or score-assertion removals were
+added.
+
+A focused run passed all ten affected cases before the budget adjustment. In
+disposable checkouts, changing the displayed score to `score + 1` made the
+original final-exam score assertion fail (one of one probes). With the current
+ten-second candidate under Node 24, both chapter and final-exam score assertions
+failed on that same mutation (one of one probes each). Both failed on the expected score text; neither failure was a test timeout. These are observed diagnostic
+outcomes, not a statistical reliability guarantee. The initial 25-file stress
+diagnostic completed none of its ten planned repeats within its cap; it is not
+counted as a passing measurement.
+
+The ten-second candidate subsequently passed ten of ten repeated runs under
+Node 24, each exercising all ten affected cases with one worker. The full
+candidate/CI result will be recorded in issue #4 after verification. Publication and closure remain conditional on those checks; a focused
+pass alone does not clear the earlier failed suite.

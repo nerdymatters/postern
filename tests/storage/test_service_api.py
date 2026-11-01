@@ -83,10 +83,18 @@ def test_native_catalog_and_private_boundaries(api, runtime):
 
 
 @pytest.mark.parametrize('changes', [dict(aud='elsewhere'),dict(iss='elsewhere'),dict(exp=1),
-    dict(exp=int(time.time())+600),dict(account_id='wrong'),dict(generation=str(uuid.uuid4())),dict(sub=str(uuid.uuid4()))])
+    dict(account_id='wrong'),dict(generation=str(uuid.uuid4())),dict(sub=str(uuid.uuid4()))])
 def test_handoff_rejects_bad_claims(api,changes):
     response=api.client.post(api.url+'/session/exchange',json={'assertion':api.assertion(changes=changes)})
     assert response.status_code==401
+    assert 'token' not in response.json()
+
+
+def test_handoff_rejects_overlong_lifetime(api):
+    # Compute at the request: a collection-time expiry can become valid in a long suite.
+    assertion = api.assertion(changes={'exp': int(time.time()) + 600})
+    response = api.client.post(api.url+'/session/exchange', json={'assertion': assertion})
+    assert response.status_code == 401
     assert 'token' not in response.json()
 
 

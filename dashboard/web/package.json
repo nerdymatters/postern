@@ -1,12 +1,13 @@
 {
   "name": "postern-web",
   "private": true,
-  "version": "0.19.0",
+  "version": "0.19.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --force",
+    "pretest": "node -e \"if (process.versions.bun) throw new Error('Vitest needs Node.js on PATH. Use Node 24; see README.md#commands.')\"",
     "test": "vitest run",
     "preview": "vite preview"
   },

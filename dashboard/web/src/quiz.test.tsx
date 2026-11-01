@@ -59,9 +59,25 @@ function journey(): World {
 }
 
 function answer(question: number, option: string) {
-  // The label is unique. Resolving every radio's accessible name and computed
-  // styles for each click makes the 80-option exam quadratic in jsdom.
-  fireEvent.click(screen.getByLabelText(new RegExp(`Choice ${question}${option}`)))
+  // Keep each lookup within one question instead of scanning all exam labels.
+  const fieldset = screen.getByText(`Prompt ${question}`, { selector: 'legend span' }).closest('fieldset')!
+  fireEvent.click(within(fieldset).getByLabelText(new RegExp(`Choice ${question}${option}`)))
+}
+
+// Find the unique label first, then retain the role, accessible-name and
+// visibility checks without computing every other button's accessible name.
+function namedButton(name: string | RegExp, button = screen.getByText(name).closest('button')) {
+  expect(button).not.toBeNull()
+  return within(button!.parentElement!).getByRole('button', { name })
+}
+
+function labelledButton(name: string) {
+  return namedButton(name, screen.getByLabelText<HTMLButtonElement>(name, { selector: 'button' }))
+}
+
+async function findNamedButton(name: string | RegExp) {
+  const label = await screen.findByText(name)
+  return namedButton(name, label.closest('button'))
 }
 
 test('the earliest unpassed earlier quiz locks a chapter, never for exempt roles or modules', () => {
@@ -74,32 +90,52 @@ test('the earliest unpassed earlier quiz locks a chapter, never for exempt roles
   expect(parse('/quiz/three')).toEqual({ name: 'grid' })
 })
 
+test('the reading room explains the lock and opens the first chapter quiz', async () => {
+  const state = journey()
+  installApi(state)
+  setToken('session-token')
+  await act(async () => { render(<App />) })
+
+  await screen.findByText('0 of 2 passed')
+  expect(labelledButton('Chapter 2 quiz: Locked')).toHaveProperty('disabled', true)
+  screen.getByText('Finish Chapter 1 and pass its quiz to unlock')
+  const locked = labelledButton('Chapter 2 handout, locked until the Chapter 1 quiz is passed')
+  within(locked).getByText('Locked')
+
+  await act(async () => { fireEvent.click(labelledButton('Chapter 1 quiz: Not taken')) })
+  const heading = await screen.findByText(category(1), { selector: 'h1' })
+  within(heading.parentElement!).getByRole('heading', { name: category(1) })
+})
+
 // Value: protects=only a pass earns a badge: a failed first attempt shows no new badge or burst, and the pass after it does;
 //   fails_when=QuizPage's earned check stops requiring result.passed, celebrating a failed attempt;
 //   why_new=failure tests never looked for a badge, and the badge tests always graded a pass;
 //   seam=none
+// This functional App journey spans two submissions, a retry and Reader navigation.
+// Loaded-host measurements still exceeded 5s after query reductions; keep a finite
+// 10s completion budget, while the score/unlock assertions detect regressions.
 test('a reader fails, retries and passes a chapter quiz, then continues into the unlocked chapter', async () => {
   const state = journey()
   installApi(state)
   setToken('session-token')
-  render(<App />)
+  window.history.replaceState(null, '', '/quiz/1')
+  await act(async () => { render(<App />) })
 
-  await screen.findByText('0 of 2 passed')
-  expect(screen.getByRole('button', { name: 'Chapter 2 quiz: Locked' })).toHaveProperty('disabled', true)
-  screen.getByText('Finish Chapter 1 and pass its quiz to unlock')
-  const locked = screen.getByRole('button', { name: 'Chapter 2 handout, locked until the Chapter 1 quiz is passed' })
-  within(locked).getByText('Locked')
-
-  fireEvent.click(screen.getByRole('button', { name: 'Chapter 1 quiz: Not taken' }))
-  await screen.findByRole('heading', { name: category(1) })
+  const heading = await screen.findByText(category(1), { selector: 'h1' })
+  within(heading.parentElement!).getByRole('heading', { name: category(1) })
   screen.getByText('5 questions · Answer 4 correctly (80%) to pass and unlock the next chapter.')
   screen.getByText('คำถาม 1')
-  const send = screen.getByRole('button', { name: /^Answer\ all\ 5\ questions\ \(0\ of\ 5\)/ })
+  const send = namedButton(/^Answer\ all\ 5\ questions\ \(0\ of\ 5\)/)
   expect(send).toHaveProperty('disabled', true)
 
-  for (const n of [1, 2, 3]) answer(n, 'a')
-  for (const n of [4, 5]) answer(n, 'b')
-  fireEvent.click(screen.getByRole('button', { name: /^Submit\ answers/ }))
+  answer(1, 'a')
+  expect(namedButton(/^Answer all 5 questions \(1 of 5\)/)).toHaveProperty('disabled', true)
+  // Radio changes are synchronous; only API transitions need an async drain.
+  act(() => {
+    for (const n of [2, 3]) answer(n, 'a')
+    for (const n of [4, 5]) answer(n, 'b')
+  })
+  await act(async () => { fireEvent.click(namedButton(/^Submit\ answers/)) })
   await screen.findByText('Not passed yet')
   screen.getByText('3 of 5 correct. You need 4 to pass. Review the chapter, then try again.')
   screen.getByText('Correct answers and explanations appear after you pass.')
@@ -110,19 +146,19 @@ test('a reader fails, retries and passes a chapter quiz, then continues into the
   const sent = JSON.parse(calls.filter(call => call.url.endsWith('/api/quizzes/1/attempts'))[0].body)
   expect(sent).toEqual({ version: 'v1', answers: { c1q1: 'a', c1q2: 'a', c1q3: 'a', c1q4: 'b', c1q5: 'b' } })
 
-  fireEvent.click(screen.getByRole('button', { name: /^Try\ again/ }))
-  await screen.findByRole('button', { name: /^Answer\ all\ 5\ questions\ \(0\ of\ 5\)/ })
-  for (const n of [1, 2, 3, 4, 5]) answer(n, 'a')
-  fireEvent.click(screen.getByRole('button', { name: /^Submit\ answers/ }))
+  await act(async () => { fireEvent.click(namedButton(/^Try\ again/)) })
+  await findNamedButton(/^Answer all 5 questions \(0 of 5\)/)
+  act(() => { for (const n of [1, 2, 3, 4, 5]) answer(n, 'a') })
+  await act(async () => { fireEvent.click(namedButton(/^Submit\ answers/)) })
   await screen.findByText('You passed!')
   screen.getByText('Chapter 2 is unlocked. It works the same way: read every page, watch every video, then pass its quiz.')
   screen.getByText('New badge: Chapter 1')
   expect(screen.getAllByText('Guests come first.')).toHaveLength(5)
 
-  fireEvent.click(screen.getByRole('button', { name: /Continue to Chapter 2/ }))
+  await act(async () => { fireEvent.click(namedButton(/Continue to Chapter 2/)) })
   await waitFor(() => expect(viewPosts().map(call => call.url)).toEqual([expect.stringContaining('/api/items/item-c2/views')]))
   expect(screen.queryByText('This chapter is locked')).toBeNull()
-})
+}, 10_000)
 
 test('a stale quiz asks the reader to start again with the updated questions', async () => {
   const state = journey()
@@ -144,7 +180,7 @@ test('the end of a chapter leads to its quiz, and a locked chapter shows how to 
   const onQuiz = vi.fn()
   const first = chapterPost(1, null, 1)
   const view = render(<Reader post={first} posts={[first, chapterPost(2, 1)]} quizzes={state.quizzes} onQuiz={onQuiz} onBack={() => {}} onOpen={() => {}} />)
-  fireEvent.click(await screen.findByRole('button', { name: /Take the Chapter 1 quiz/ }))
+  fireEvent.click(await findNamedButton(/Take the Chapter 1 quiz/))
   expect(onQuiz).toHaveBeenCalledWith(1)
   view.unmount()
 
@@ -162,18 +198,20 @@ test('admins, managers and C-suite see quizzes as optional and can skip ahead', 
   state.quizzes = [standing(1), standing(2)]
   state.posts = state.posts.map(candidate => ({ ...candidate, locked_by: null }))
   installApi(state)
-  render(<Grid posts={state.posts} quizzes={state.quizzes} exempt onQuiz={() => {}} onOpen={() => {}} />)
+  const grid = render(<Grid posts={state.posts} quizzes={state.quizzes} exempt onQuiz={() => {}} onOpen={() => {}} />)
   screen.getByText('Quizzes are optional for your role, so every chapter is open. You can still take them, and your results are recorded. Staff must read every page and watch every video in a chapter, then pass its quiz, before the next chapter opens.')
   screen.getByRole('button', { name: 'Chapter 2 quiz: Optional' })
   // Every chapter is open for exempt roles: no lock lines, and the heading says the quizzes are optional.
   expect(screen.queryByText(/pass its quiz to unlock|Opens after Chapter/)).toBeNull()
   screen.getByText('Optional for your role.')
 
+  grid.unmount()
   const onQuiz = vi.fn()
   const first = chapterPost(1, null, 1)
-  render(<Reader post={first} posts={[first, chapterPost(2)]} quizzes={state.quizzes} exempt onQuiz={onQuiz} onBack={() => {}} onOpen={() => {}} />)
-  await screen.findByRole('button', { name: /Take the Chapter 1 quiz \(optional\)/ })
+  const reader = render(<Reader post={first} posts={[first, chapterPost(2)]} quizzes={state.quizzes} exempt onQuiz={onQuiz} onBack={() => {}} onOpen={() => {}} />)
+  await findNamedButton(/Take the Chapter 1 quiz \(optional\)/)
 
+  reader.unmount()
   const onOpen = vi.fn()
   state.quizBank = { 1: quiz(1, true) }
   render(<QuizPage chapter={1} posts={state.posts} exempt onFinished={() => {}} onOpen={onOpen} onBack={() => {}} />)
@@ -873,12 +911,13 @@ test('the final exam shows twenty bilingual questions, grades at 16, and preserv
     passed: false, results: [], quizzes: [], next_chapter: null,
     final_exam: standing(0, { passed: true, best_score: 16, total: 20, pass_mark: 16 }) })
   installApi(state)
-  render(<QuizPage chapter={0} posts={[]} exempt={false} onFinished={() => {}} onOpen={() => {}} onBack={() => {}} />)
-  await screen.findByRole('heading', { name: 'Final Exam' })
+  await act(async () => { render(<QuizPage chapter={0} posts={[]} exempt={false} onFinished={() => {}} onOpen={() => {}} onBack={() => {}} />) })
+  const heading = await screen.findByText('Final Exam', { selector: 'h1' })
+  within(heading.parentElement!).getByRole('heading', { name: 'Final Exam' })
   await screen.findByText('คำถาม 20')
   screen.getByText('20 questions · Answer 16 correctly (80%) to pass.')
-  for (let n = 1; n <= 20; n++) answer(n, n <= 15 ? 'a' : 'b')
-  fireEvent.click(screen.getByRole('button', { name: /^Submit answers/ }))
+  act(() => { for (let n = 1; n <= 20; n++) answer(n, n <= 15 ? 'a' : 'b') })
+  await act(async () => { fireEvent.click(namedButton(/^Submit answers/)) })
   await screen.findByText(/Your earlier pass still counts/)
   screen.getByText(/15 of 20 correct this time/)
   expect(screen.queryByText(/next chapter is unlocked/i)).toBeNull()

@@ -87,6 +87,19 @@ See the [ownership runbook](../../docs/runbooks/ownership-transfer.md).
 
 ## Commands
 
+Use Bun for package management and scripts, with Node 24 on `PATH` for Vitest.
+CI installs Node 24 explicitly. Vitest runs one test file at a time, keeping
+DOM-heavy integration files from competing for the same CPU budget. Without Node, Bun can run Node-shebang tools
+with its own runtime; the `pretest` check refuses that fallback so local tests
+use the same engine as CI. Node 24 is supported by the installed Vitest package.
+
+On an Apple Silicon Mac without Node on `PATH`, the same Node 24 fallback used
+for the status worker can run Vitest directly after installing dependencies:
+
+```sh
+bunx --package=node-bin-darwin-arm64@24 node node_modules/vitest/vitest.mjs run
+```
+
 ```bash
 bun install
 bun run dev        # http://localhost:5173, proxying /api to 127.0.0.1:8790
