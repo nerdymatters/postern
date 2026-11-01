@@ -44,6 +44,22 @@ function short(n: number): Post {
 const video = (watched: number, duration = 300): Item => ({ ...post('v', 'Video').items[0], kind: 'video', pages: 0, duration_seconds: duration,
   progress: { opened_pages: [], watched_seconds: watched, history_incomplete: false } })
 
+// Keep accessible-name and visibility checks within the question being answered.
+// Scanning all radios for every choice makes these integration tests quadratic.
+function answer(n: number) {
+  const question = screen.getByText(`Prompt ${n}`, { selector: 'legend span' }).closest('fieldset')!
+  fireEvent.click(within(question).getByRole('radio', { name: new RegExp(`Choice ${n}a`) }))
+}
+
+// End-card labels arrive after the image callback. Find the label first, then
+// check its button role/name without rescanning the entire reader on each poll.
+async function findReaderButton(name: RegExp) {
+  const label = await screen.findByText(name)
+  const button = label.closest('button')!
+  expect(button).not.toBeNull()
+  return within(button.parentElement!).getByRole('button', { name })
+}
+
 // --- What counts as finished, and the next step ---
 
 test('an item is finished by the server’s rule: every page, the photo, or the video to within 2 s or 2% of its end', () => {
@@ -250,20 +266,20 @@ test('the end of the last SOP chapter, once passed, leads on to the optional Mod
   installApi(world({ posts: [lesson, last] }))
   const onOpen = vi.fn()
   const view = render(<Reader post={last} posts={[lesson, last]} quizzes={[standing(1, { passed: true })]} onQuiz={() => {}} onBack={() => {}} onOpen={onOpen} />)
-  const next = await screen.findByRole('button', { name: /^Next: Module 1 \(optional\)/ })
+  const next = await findReaderButton(/^Next: Module 1 \(optional\)/)
   within(next).getByText('ถัดไป: Module 1 (ไม่บังคับ)')
   fireEvent.click(next)
   expect(onOpen).toHaveBeenCalledWith(lesson)
   view.unmount()
   // Exempt roles browse on in reading order, and are told the same.
   const browsing = render(<Reader post={last} posts={[lesson, last]} quizzes={[standing(1, { passed: true })]} exempt onQuiz={() => {}} onBack={() => {}} onOpen={onOpen} />)
-  fireEvent.click(await screen.findByRole('button', { name: /^Next: Module 1 \(optional\)/ }))
+  fireEvent.click(await findReaderButton(/^Next: Module 1 \(optional\)/))
   expect(onOpen).toHaveBeenLastCalledWith(lesson)
   browsing.unmount()
   // With the Modules read too, reading order still goes on to them.
   const read = module('m1', [0, 1])
   render(<Reader post={last} posts={[read, last]} quizzes={[standing(1, { passed: true })]} onQuiz={() => {}} onBack={() => {}} onOpen={onOpen} />)
-  fireEvent.click(await screen.findByRole('button', { name: /^Next: Module 1 \(optional\)/ }))
+  fireEvent.click(await findReaderButton(/^Next: Module 1 \(optional\)/))
   expect(onOpen).toHaveBeenLastCalledWith(read)
 })
 
@@ -274,71 +290,75 @@ test('the end of a chapter leads on to the next chapter in reading order, with a
   installApi(world({ posts }))
   const onOpen = vi.fn()
   const view = render(<Reader post={posts[1]} posts={posts} quizzes={passed} onQuiz={() => {}} onBack={() => {}} onOpen={onOpen} />)
-  const next = await screen.findByRole('button', { name: /^Continue SOP Chapter 3: Topic 3/ })
+  const next = await findReaderButton(/^Continue SOP Chapter 3: Topic 3/)
   within(next).getByText('เรียนบทที่ 3 ต่อ')
   fireEvent.click(next)
   expect(onOpen).toHaveBeenCalledWith(posts[2])
   view.unmount()
   posts[3] = module('m1', [0, 1])
   render(<Reader post={posts[1]} posts={posts} quizzes={passed} onQuiz={() => {}} onBack={() => {}} onOpen={onOpen} />)
-  fireEvent.click(await screen.findByRole('button', { name: /^Continue SOP Chapter 3: Topic 3/ }))
+  fireEvent.click(await findReaderButton(/^Continue SOP Chapter 3: Topic 3/))
   expect(onOpen).toHaveBeenLastCalledWith(posts[2])
 })
 
-test('the end of the last Module leads to the reader’s real next step, never back to a chapter already passed', async () => {
+test.each(['new', 'unopened', 'begun', 'quiz', 'added', 'optional', 'complete'] as const)(
+  'the end of the last Module follows the reader’s %s chapter state', async stage => {
   // Value: protects=a Module read out of order hands staff back to where they are in the chapters; fails_when=the hand-off follows reading order or names Chapter 1 to someone who passed it; why_new=the Modules now come last, so their end needs a destination; seam=none
   const last = module('m1')
   last.items[0].pages = 1
   const onOpen = vi.fn()
   const onQuiz = vi.fn()
-  const show = (posts: Post[], quizzes: QuizStanding[]) => render(<Reader post={last} posts={posts} quizzes={quizzes} onQuiz={onQuiz} onBack={() => {}} onOpen={onOpen} />)
-  // New staff: Chapter 1, which ends with a quiz.
-  const fresh = [chapter(1), chapter(2, 1), last]
-  installApi(world({ posts: fresh }))
-  let view = show(fresh, [standing(1, { unfinished: ['item-c1', 'video-c1'] }), standing(2, { locked_by: 1, unfinished: ['item-c2', 'video-c2'] })])
-  const start = await screen.findByRole('button', { name: /^Start SOP Chapter 1: Topic 1 \(ends with a quiz\)/ })
-  within(start).getByText('เริ่มบทที่ 1 (มีแบบทดสอบท้ายบท)')
-  fireEvent.click(start)
-  expect(onOpen).toHaveBeenCalledWith(fresh[0], fresh[0].items[0])
-  view.unmount()
-  // Chapters 1 to 3 passed: Chapter 4, and nothing about Chapter 1.
   const posts = [chapter(1), chapter(2), chapter(3), chapter(4), last]
   const passed = [1, 2, 3].map(n => standing(n, { passed: true, attempts: 1, best_score: 5 }))
-  view = show(posts, [...passed, standing(4, { unfinished: ['item-c4', 'video-c4'] })])
-  fireEvent.click(await screen.findByRole('button', { name: /^Start SOP Chapter 4: Topic 4 \(ends with a quiz\)/ }))
-  expect(onOpen).toHaveBeenLastCalledWith(posts[3], posts[3].items[0])
-  expect(screen.queryByRole('button', { name: /^(Start|Continue) SOP Chapter [1-3]/ })).toBeNull()
-  view.unmount()
-  // Begun: continue it, at the item still left.
-  posts[3].items[0].progress = { opened_pages: [0, 1], history_incomplete: false }
-  view = show(posts, [...passed, standing(4, { unfinished: ['video-c4'] })])
-  const resume = await screen.findByRole('button', { name: /^Continue SOP Chapter 4: Topic 4/ })
-  within(resume).getByText('เรียนบทที่ 4 ต่อ')
-  fireEvent.click(resume)
-  expect(onOpen).toHaveBeenLastCalledWith(posts[3], posts[3].items[1])
-  view.unmount()
-  // Finished: its quiz.
-  view = show(posts, [...passed, standing(4)])
-  fireEvent.click(await screen.findByRole('button', { name: /^Take the Chapter 4 quiz/ }))
-  expect(onQuiz).toHaveBeenCalledWith(4)
-  view.unmount()
-  // Value: protects=material added to a passed chapter never comes before the chapter in the way; fails_when=nextStep takes the server's unfinished list of a passed chapter before the first unpassed one; why_new=the passed-chapter case had no new material; seam=none
-  const added = [standing(1, { passed: true, attempts: 1, best_score: 5, unfinished: ['video-c1'] }), ...passed.slice(1)]
-  expect(nextStep(posts, [...added, standing(4, { unfinished: ['video-c4'] })], false)).toMatchObject({ kind: 'item', item: { id: 'video-c4' }, required: true })
-  view = show(posts, [...added, standing(4, { unfinished: ['video-c4'] })])
-  fireEvent.click(await screen.findByRole('button', { name: /^Continue SOP Chapter 4: Topic 4/ }))
-  expect(onOpen).toHaveBeenLastCalledWith(posts[3], posts[3].items[1])
-  expect(screen.queryByRole('button', { name: /^(Start|Continue) SOP Chapter [1-3]/ })).toBeNull()
-  view.unmount()
-  // Once every chapter is passed, the new material is an optional step after the last section.
-  view = show(posts, [...added, standing(4, { passed: true })])
-  fireEvent.click(await screen.findByRole('button', { name: /^Continue SOP Chapter 1: Topic 1/ }))
-  expect(onOpen).toHaveBeenLastCalledWith(posts[0], posts[0].items[1])
-  view.unmount()
-  // With nothing left, that is the end.
-  show(posts, [...passed, standing(4, { passed: true })])
-  await screen.findByText('You’ve reached the end of the available content.')
-  screen.getByText('นี่คือเนื้อหาส่วนสุดท้ายที่มีในตอนนี้')
+  let quizzes = [...passed, standing(4, { unfinished: ['item-c4', 'video-c4'] })]
+  if (stage === 'new') {
+    posts.splice(0, posts.length, chapter(1), chapter(2, 1), last)
+    quizzes = [standing(1, { unfinished: ['item-c1', 'video-c1'] }), standing(2, { locked_by: 1, unfinished: ['item-c2', 'video-c2'] })]
+  } else if (stage !== 'unopened') {
+    posts[3].items[0].progress = { opened_pages: [0, 1], history_incomplete: false }
+    quizzes[3] = standing(4, { unfinished: ['video-c4'] })
+    if (stage === 'quiz') quizzes[3] = standing(4)
+    if (stage === 'added' || stage === 'optional') quizzes[0] = { ...passed[0], unfinished: ['video-c1'] }
+    if (stage === 'optional' || stage === 'complete') quizzes[3] = standing(4, { passed: true })
+  }
+  installApi(world({ posts }))
+  // Each independent state gets a fresh render and the usual per-test deadline.
+  // No case depends on the calls or mounted tree left by an earlier scenario.
+  await act(async () => { render(<Reader post={last} posts={posts} quizzes={quizzes} onQuiz={onQuiz} onBack={() => {}} onOpen={onOpen} />) })
+  const action = async (name: RegExp) => {
+    const label = await screen.findByText(name)
+    const button = label.closest('button')!
+    // Wait for the label before computing accessible names. Searching every
+    // contents button on each poll can itself exhaust waitFor's deadline.
+    expect(button).not.toBeNull()
+    return within(button.parentElement!).getByRole('button', { name })
+  }
+  if (stage === 'new' || stage === 'unopened') {
+    const chapter = stage === 'new' ? 1 : 4
+    const start = await action(new RegExp(`^Start SOP Chapter ${chapter}: Topic ${chapter} \\(ends with a quiz\\)`))
+    if (stage === 'new') within(start).getByText('เริ่มบทที่ 1 (มีแบบทดสอบท้ายบท)')
+    fireEvent.click(start)
+    expect(onOpen).toHaveBeenCalledWith(posts[chapter - 1], posts[chapter - 1].items[0])
+  } else if (stage === 'quiz') {
+    fireEvent.click(await action(/^Take the Chapter 4 quiz/))
+    expect(onQuiz).toHaveBeenCalledWith(4)
+  } else if (stage === 'complete') {
+    await screen.findByText('You’ve reached the end of the available content.')
+    screen.getByText('นี่คือเนื้อหาส่วนสุดท้ายที่มีในตอนนี้')
+  } else {
+    const chapter = stage === 'optional' ? 1 : 4
+    if (stage === 'added') {
+      // New material in a passed chapter must not precede the required chapter.
+      expect(nextStep(posts, quizzes, false)).toMatchObject({ kind: 'item', item: { id: 'video-c4' }, required: true })
+    }
+    const resume = await action(new RegExp(`^Continue SOP Chapter ${chapter}: Topic ${chapter}`))
+    if (stage === 'begun') within(resume).getByText('เรียนบทที่ 4 ต่อ')
+    fireEvent.click(resume)
+    expect(onOpen).toHaveBeenCalledWith(posts[chapter - 1], posts[chapter - 1].items[1])
+  }
+  if (stage === 'unopened' || stage === 'added') {
+    expect(screen.queryByRole('button', { name: /^(Start|Continue) SOP Chapter [1-3]/ })).toBeNull()
+  }
 })
 
 test('the end of the last Module leads exempt roles, and staff on a site without quizzes, to the chapters left unopened', async () => {
@@ -350,7 +370,7 @@ test('the end of the last Module leads exempt roles, and staff on a site without
   const onOpen = vi.fn()
   // Exempt: Chapter 1, with no quiz to mention.
   let view = render(<Reader post={last} posts={posts} quizzes={[standing(1), standing(2)]} exempt onQuiz={() => {}} onBack={() => {}} onOpen={onOpen} />)
-  let start = await screen.findByRole('button', { name: /^Start SOP Chapter 1: Topic 1/ })
+  let start = await findReaderButton(/^Start SOP Chapter 1: Topic 1/)
   within(start).getByText('Start SOP Chapter 1: Topic 1')
   within(start).getByText('เริ่มบทที่ 1')
   expect(screen.queryByText('You’ve reached the end of the available content.')).toBeNull()
@@ -359,7 +379,7 @@ test('the end of the last Module leads exempt roles, and staff on a site without
   view.unmount()
   // No quizzes at all: the same.
   view = render(<Reader post={last} posts={posts} onBack={() => {}} onOpen={onOpen} />)
-  start = await screen.findByRole('button', { name: /^Start SOP Chapter 1: Topic 1/ })
+  start = await findReaderButton(/^Start SOP Chapter 1: Topic 1/)
   within(start).getByText('Start SOP Chapter 1: Topic 1')
   within(start).getByText('เริ่มบทที่ 1')
   fireEvent.click(start)
@@ -383,12 +403,12 @@ test('the end of a Module leads to the next Module, and the end of the last one 
   const onOpen = vi.fn()
   // Chapter 1 is still to do, but the Modules go on in order.
   const view = render(<Reader post={first} posts={posts} quizzes={[standing(1, { unfinished: ['item-c1', 'video-c1'] })]} onQuiz={() => {}} onBack={() => {}} onOpen={onOpen} />)
-  fireEvent.click(await screen.findByRole('button', { name: /^Next: Module 2 \(optional\)/ }))
+  fireEvent.click(await findReaderButton(/^Next: Module 2 \(optional\)/))
   expect(onOpen).toHaveBeenCalledWith(second)
   view.unmount()
   // Chapter 1 passed: the end of Module 2 offers Module 1, still unread.
   render(<Reader post={second} posts={posts} quizzes={[standing(1, { passed: true })]} onQuiz={() => {}} onBack={() => {}} onOpen={onOpen} />)
-  fireEvent.click(await screen.findByRole('button', { name: /^Next: Module 1 \(optional\)/ }))
+  fireEvent.click(await findReaderButton(/^Next: Module 1 \(optional\)/))
   expect(onOpen).toHaveBeenLastCalledWith(first, first.items[0])
 })
 
@@ -638,7 +658,7 @@ test('a reload after a check never claims it checked just now', async () => {
   state.quizBank = { 1: { ...notReady, ready: true, unfinished: [], questions } }
   view.rerender(page([...state.posts]))
   await screen.findByText('Prompt 1')
-  for (const n of [1, 2, 3, 4, 5]) fireEvent.click(screen.getByRole('radio', { name: new RegExp(`Choice ${n}a`) }))
+  for (const n of [1, 2, 3, 4, 5]) answer(n)
   fireEvent.click(screen.getByRole('button', { name: /^Submit answers/ }))
   await screen.findByText('Not passed yet')
   state.quizBank = { 1: notReady }
@@ -657,7 +677,7 @@ test('after a fail, reviewing the chapter comes first, and trying again asks for
   const onOpen = vi.fn()
   render(<QuizPage chapter={1} posts={state.posts} exempt={false} onFinished={() => {}} onOpen={onOpen} onBack={() => {}} />)
   await screen.findByText('คำถาม 1')
-  for (const n of [1, 2, 3, 4, 5]) fireEvent.click(screen.getByRole('radio', { name: new RegExp(`Choice ${n}a`) }))
+  for (const n of [1, 2, 3, 4, 5]) answer(n)
   fireEvent.click(screen.getByRole('button', { name: /^Submit\ answers/ }))
   await screen.findByText('Not passed yet')
   const actions = within(screen.getByText('Not passed yet').closest('section')!).getAllByRole('button').map(button => button.getAttribute('class')?.includes('border') ? 'secondary' : 'primary')
@@ -681,7 +701,7 @@ test('a hand answered elsewhere asks for a fresh reading room, so a recorded pas
   const onStale = vi.fn()
   render(<QuizPage chapter={1} posts={state.posts} exempt={false} onFinished={() => {}} onOpen={() => {}} onBack={() => {}} onStale={onStale} />)
   await screen.findByText('คำถาม 1')
-  for (const n of [1, 2, 3, 4, 5]) fireEvent.click(screen.getByRole('radio', { name: new RegExp(`Choice ${n}a`) }))
+  for (const n of [1, 2, 3, 4, 5]) answer(n)
   fireEvent.click(screen.getByRole('button', { name: /^Submit\ answers/ }))
   await screen.findByRole('button', { name: /^Start\ again/ })
   expect(onStale).toHaveBeenCalled()
@@ -704,7 +724,7 @@ test('a passing retake after a pass shows its answers, and a passed quiz promise
   // The pool is larger than an attempt, but once passed there is no new set to promise.
   screen.getByText('5 questions · Answer 4 correctly (80%) to pass and unlock the next chapter.')
   expect(screen.queryByText(/new set of questions|คำถามชุดใหม่/)).toBeNull()
-  for (const n of [1, 2, 3, 4, 5]) fireEvent.click(screen.getByRole('radio', { name: new RegExp(`Choice ${n}a`) }))
+  for (const n of [1, 2, 3, 4, 5]) answer(n)
   fireEvent.click(screen.getByRole('button', { name: /^Submit answers/ }))
   await screen.findByRole('heading', { name: 'Your answers' })
   expect(screen.getAllByText('Correct')).toHaveLength(5)

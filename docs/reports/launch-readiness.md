@@ -229,3 +229,59 @@ deployed versions and closure are recorded in
 The assessment remains partial: no runtime exploit reproduction, complete native
 dependency inventory, exhaustive transitive reachability or GitHub API-dependent
 zizmor checks are claimed.
+
+## Quiz-test follow-up — November 1, 2026
+
+The v0.19.1 publication check reproduced [issue #4](https://github.com/nerdymatters/postern/issues/4)
+after the earlier v0.18.0 label-query improvement: the chapter quiz journey and
+a reader-guide test exceeded their five-second deadlines on the busy office Mac.
+The selected Python checks passed; the frontend result was 333 passed and two
+failed. This failed run was retained and did not authorize publication.
+
+The follow-up reduces lookup and rendering work while preserving the checks:
+
+- Option labels are resolved within their question. Buttons are first located by
+  their unique label/text, then checked by role and accessible name within the
+  containing element, retaining visibility checks. Waiting for an end-card label
+  avoids repeatedly resolving names across the entire contents list while its
+  mocked image is loading.
+- CI explicitly installs Node 24, and the frontend pretest refuses Bun runtime
+  fallback. Vitest defaults to one worker, matching the diagnostic command and
+  keeping local/CI file concurrency consistent. The office shell had no Node on `PATH`; the original tests also
+  failed under Node, so correcting the runtime alone was insufficient.
+- Explicit async React `act` waits for mocked API updates. Independent answer
+  clicks use synchronous `act`; the chapter journey additionally checks that
+  one answer still leaves submission disabled. The submitted answer map, failed
+  score, retry, pass, explanations, badge and unlocked reader destination remain
+  asserted.
+- Reading-room entry/lock assertions have their own test. The attempt journey
+  starts at the real quiz route in `App` and still fails, retries, passes and
+  opens the unlocked chapter. The guide's seven independent reader states each
+  receive fresh fixtures. This adds seven cases overall rather than assigning
+  all seven guide scenarios one shared deadline.
+
+The default remains five seconds and the final-exam deadline remains fifteen.
+The complete chapter journey now has a ten-second completion budget. Keeping
+its five-second limit produced two timeouts in each of two ten-run Bun batches,
+even after the lookup/async refinements. The Node 24 batch passed nine of ten
+complete repeats; its remaining chapter timeout was 6.28 seconds.
+These measurements changed the initial plan to preserve every deadline. The
+journey remains continuous, including the real App-to-Reader transition, rather
+than replacing that integration with separate mocked callbacks. This is a
+functional completion bound, not a claim about browser performance. No retries,
+skipped cases, increased individual DOM waits or score-assertion removals were
+added.
+
+A focused run passed all ten affected cases before the budget adjustment. In
+disposable checkouts, changing the displayed score to `score + 1` made the
+original final-exam score assertion fail (one of one probes). With the current
+ten-second candidate under Node 24, both chapter and final-exam score assertions
+failed on that same mutation (one of one probes each). Both failed on the expected score text; neither failure was a test timeout. These are observed diagnostic
+outcomes, not a statistical reliability guarantee. The initial 25-file stress
+diagnostic completed none of its ten planned repeats within its cap; it is not
+counted as a passing measurement.
+
+The ten-second candidate subsequently passed ten of ten repeated runs under
+Node 24, each exercising all ten affected cases with one worker. The full
+candidate/CI result will be recorded in issue #4 after verification. Publication and closure remain conditional on those checks; a focused
+pass alone does not clear the earlier failed suite.

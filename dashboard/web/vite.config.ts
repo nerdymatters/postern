@@ -13,6 +13,8 @@ export default defineConfig({
   build: { outDir: 'dist', sourcemap: false },
   test: {
     environment: 'jsdom',
+    // Keep DOM-heavy integration files serial, consistently in local runs and CI.
+    maxWorkers: 1,
     setupFiles: ['src/test-setup.ts'],
     include: ['src/**/*.test.tsx', 'src/**/*.test.ts'],
   },

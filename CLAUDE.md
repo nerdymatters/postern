@@ -33,6 +33,6 @@ Key routing rules:
 ## Testing
 
 - Python: `.venv/bin/python -m pytest tests -q` (pytest; `tests/postern/` is the application suite, `tests/day1/` the measurement harness). Always `.venv/bin/python`, never bare `python3`.
-- SPA: `cd dashboard/web && bun run test` (Vitest) and `bun run build` (type-check + Vite build). Use Bun for the frontend.
+- SPA: Node 24 must be on `PATH` for Vitest (see `dashboard/web/README.md#commands` for the office Mac fallback). `cd dashboard/web && bun run test` (Vitest) and `bun run build` (type-check + Vite build). Use Bun for the frontend.
 - Status Worker: `cd status && bun install --frozen-lockfile && bun test`. Wrangler requires Node 24; see [local status checks](docs/runbooks/status.md#local-checks) for the office Mac runtime fallback.
 - CI runs Python, SPA and status Worker checks in `.github/workflows/tests.yml` (pytest on macOS because the converter needs `sandbox-exec`; the status job also runs a Wrangler deployment dry run).
