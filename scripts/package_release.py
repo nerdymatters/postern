@@ -13,7 +13,7 @@ import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
 # Explicit product directories keep private workspace data and developer tools out.
-RELEASE_ROOTS = {'postern', 'config', 'ops', 'scripts', 'tests', 'docs', 'dashboard', 'status', '.github'}
+RELEASE_ROOTS = {'postern', 'native', 'config', 'ops', 'scripts', 'tests', 'docs', 'dashboard', 'status', '.github'}
 RELEASE_FILES = {'.gitignore', 'README.md', 'CHANGELOG.md', 'ROADMAP.md', 'TODOS.md', 'VERSION', 'pyproject.toml', 'requirements-pilot.lock',
                  'vercel.json', 'LICENSE', 'LICENSE-MIT', 'LICENSE-APACHE', 'NOTICE', 'CONTRIBUTING.md', 'SECURITY.md'}
 

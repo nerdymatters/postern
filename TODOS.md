@@ -8,15 +8,45 @@ Rust folder client, screen sharing and computing resources.
 
 ### Migrate the server from Python to Rust
 
-**What:** Evaluate rewriting the Python resource API in Rust for better performance and storage use.
+**What:** Start an incremental migration of the Python resource server to Rust,
+with a measured baseline and one bounded server path as the first deliverable.
+Track implementation in the [Rust server migration](ROADMAP.md#rust-server-migration)
+workstream.
 
-**Why:** The owner wants a faster, leaner server as usage grows.
+**Why:** The office Mac's overload remains a performance problem after the
+v0.19.1 security rollout. Reducing server CPU, memory and request cost is now a
+priority before further feature expansion.
 
-**Context:** Owner request, Oct 28, 2026; low priority. The server is the Python package in `postern/`; the roadmap's M4 Rust folder client is separate work. Start by profiling where time and storage go before choosing a full rewrite or a targeted Rust component, and keep the existing API contract and tests as the compatibility bar.
+**Context:** Requested Oct 28, 2026; promoted by the owner on Nov 1, 2026 from P3
+to P1 and the next engineering priority. This is the server in `postern/`, separate
+from the roadmap's M4 Rust folder client. Existing audience/grant work remains
+tracked; new feature expansion follows the first migration slice.
 
-**Effort:** XL
-**Priority:** P3
-**Depends on:** None
+**First steps:** Attribute CPU, memory, disk I/O and request latency to the API,
+background workers, database queries and development/build processes. Separate
+shared-host contention from server cost; a language change alone does not remove
+expensive queries or competing development jobs. Use the existing isolated
+[capacity rehearsal](docs/runbooks/capacity.md), with comparable workloads and
+numeric acceptance targets recorded before implementing the first Rust slice.
+
+**First-slice status (Nov 1):** load attribution and a bounded, optional Rust
+training-history reducer are implemented locally. See the [measurements and
+rollback runbook](docs/runbooks/rust-server.md). The default remains Python;
+full CI, broader capacity attribution and production staging remain open.
+Address the measured health/audit history scan and competing development jobs
+before widening the migration. The server migration as a whole is not complete.
+
+**Compatibility:** Preserve API responses, authorization/revocation, durable
+audit admission, single-writer/job ownership, training progress and certificate
+attribution. Use existing tests as the behavior baseline and HTTP parity tests
+for each migrated path. Require measured improvement and a rehearsed rollback
+before production cutover.
+
+**Effort:** XL, delivered in bounded slices
+**Priority:** P1 — next engineering workstream
+**Depends on:** v0.19.1 compatibility baseline (available); workload attribution
+and acceptance targets precede the first implementation. Urgent production and
+security fixes still take precedence.
 
 ### Verify concentrated native catalog workloads before production enablement
 

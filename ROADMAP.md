@@ -27,6 +27,12 @@ described in [Architecture](docs/architecture.md).
   service passed a controlled pilot on Oct 28, 2026 from a separate pilot
   frontend; registration stays closed outside watched pilot windows. Opening
   registration waits for M0 launch preparation, which runs alongside it.
+- **Next engineering priority:** migrate the Python resource server to Rust,
+  promoted to P1 by the owner on Nov 1, 2026 because office-Mac overload remains
+  after the v0.19.1 security rollout. Start with workload attribution and the
+  first bounded migration slice before further M2 content integration and
+  M3–M6 implementation. Urgent production/security fixes and required launch
+  checks retain precedence; existing M2 work remains tracked.
 - **Later milestones:** ordered proposals, with implementation details to settle
   at each milestone. Their order is not a release-date commitment.
 - **Tracking:** task IDs remain stable. Check a task only after its outcome is
@@ -38,6 +44,7 @@ described in [Architecture](docs/architecture.md).
 |---|---|---|
 | M0 Launch preparation | In progress; parallel with M1 | Current deployment baseline |
 | M1 Accounts and profiles | Production pilot passed; registration closed | M0 launch checks before release |
+| Rust server migration | P1; first reducer implemented locally | Performance/parity validation and production pilot in the [runbook](docs/runbooks/rust-server.md) |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
 | M2 Private spaces and resource catalog | Isolated metadata/onboarding implemented; content integration and hosting pending | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
@@ -47,6 +54,56 @@ described in [Architecture](docs/architecture.md).
 
 M3 and M4 can proceed independently after M2. Screen-sharing research can run
 earlier; it does not require rewriting the upstream application in Rust.
+
+## Rust server migration
+
+**Outcome:** reduce the office resource server's measured operating cost while
+preserving its API and durable behavior. This workstream migrates the Python
+server in `postern/`; M4 remains a separate Rust folder client.
+
+- [ ] **RS-01** Establish the v0.19.1 baseline: per-process CPU and memory,
+  disk I/O, request p50/p95 and error rates, database query cost, audit queue
+  latency and background-job load. Distinguish the API from development/build
+  processes and whole-host contention. Use short read-only production sampling
+  and isolated synthetic workloads; run heavy rehearsals away from the serving
+  Mac or in an agreed quiet window. Start with the existing
+  [capacity harness](docs/runbooks/capacity.md) and record its client/server
+  measurement limits. Include the health/audit-query path observed during the
+  rollout; its dominant cost still needs profiling.
+  **Partial evidence, Nov 1:** API/PostgreSQL/development CPU and RSS, disk I/O,
+  bounded SQLite aggregates, health timings and synthetic reducer profiling are
+  recorded in the [first-slice runbook](docs/runbooks/rust-server.md). Representative
+  request p95/error rates, audit queue latency and job attribution remain open.
+- [x] **RS-02** Select one bounded server path for the first Rust implementation
+  from that evidence. Record the API/storage boundary, numeric CPU/memory/latency
+  acceptance targets and rollback route before coding. Address query or
+  scheduling costs revealed by the baseline. Keep a single owner for database
+  writes, audit ordering and background jobs during coexistence.
+  **Selected:** read-only training history reduction. Targets: at least 30%
+  lower roster wall/CPU, reader regression no more than max(10%, 2 ms), and
+  peak RSS within Python +32 MiB. Health-query and development-load work remain
+  explicit follow-ups; neither is solved by changing the reducer language.
+- [x] **RS-03** Implement that slice and compare Python and Rust on the same
+  fixtures and workload. Add HTTP parity coverage for authorization, revocation,
+  audit-before-disclosure, recovery and the migrated path's durable effects.
+  Preserve training progress, certificate attribution and existing refusal
+  behavior; retain the existing regression assertions and test deadlines.
+  **Implemented locally:** optional PyO3 wheel, Python default/rollback,
+  differential fixtures and HTTP disclosure/restart checks. Roster replay wall
+  and CPU both fell 49.9%; all resource gates and 87 focused tests passed.
+  Full CI and release validation remain required before enabling Rust in production.
+- [ ] **RS-04** Rehearse cutover and rollback with disposable data, then stage
+  the verified slice on the office Mac with backups and health checks. Preserve
+  current activity, private training and configuration. Plan the next migration
+  slice from measured results before expanding feature work.
+  **Disposable rehearsal passed:** Python → Rust → Python restarts preserve
+  newly recorded progress, first-pass certificate identity/name, event bytes
+  and schema. Production staging remains open.
+
+**First deliverable:** an attributed baseline, one selected Rust migration slice
+and explicit performance/compatibility acceptance criteria. The first slice is
+complete only after parity, measured improvement and rollback are verified.
+The remaining server migration stays open until its responsibilities have moved.
 
 ## UI design and marketing
 
