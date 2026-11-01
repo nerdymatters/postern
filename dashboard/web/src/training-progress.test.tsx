@@ -112,6 +112,52 @@ test('switching people discards the pending history and an initial failure can b
   screen.getByText('Ben Corrected', { selector: 'li p' })
 })
 
+test('required progress precedes overall in cards and rows, and averages only the active location', async () => {
+  const data = report()
+  data.groups = ['Pattana', 'Restaurant']
+  data.people[0] = { ...data.people[0], groups: ['Pattana', 'Restaurant'], required_progress: { fraction: 1 / 3, total_steps: 3 } }
+  data.people[1] = { ...data.people[1], groups: ['Restaurant'], required_progress: { fraction: 2 / 3, total_steps: 3 } }
+  vi.spyOn(api, 'trainingProgress').mockResolvedValue(data)
+  render(<TrainingDashboard />)
+  await screen.findByText('Asha')
+  const requiredCard = screen.getAllByText('Required progress')[0].parentElement!
+  within(requiredCard).getByText('33%')
+  expect(requiredCard.nextElementSibling?.textContent).toContain('Overall progress')
+  expect(screen.getAllByRole('columnheader').slice(0, 3).map(header => header.textContent)).toEqual(['Person', 'Required progress', 'Overall progress'])
+  const row = screen.getByText('Asha').closest('tr')!
+  expect(within(row).getAllByRole('progressbar').map(bar => [bar.getAttribute('aria-label'), bar.getAttribute('aria-valuenow')])).toEqual([
+    ['Asha: required progress', '33'], ['Asha: overall progress', '25'],
+  ])
+  fireEvent.click(screen.getByRole('button', { name: 'View progress for Asha' }))
+  expect(screen.getByText('Content progress for Asha').closest('td')?.colSpan).toBe(screen.getAllByRole('columnheader').length)
+  fireEvent.click(screen.getByRole('tab', { name: 'Restaurant' }))
+  within(requiredCard).getByText('50%') // Average the fractions before rounding.
+  fireEvent.change(screen.getByRole('searchbox', { name: 'Find a person or certificate' }), { target: { value: 'Asha' } })
+  within(requiredCard).getByText('50%') // Search narrows rows, not the location's average.
+})
+
+test('required progress retains unknown history, unavailable coverage and no-content states', async () => {
+  const data = report()
+  data.history_incomplete = true
+  data.people[0] = { ...data.people[0], required_progress: { fraction: .35, total_steps: 5 } }
+  data.people[1] = { ...data.people[1], required_progress: { fraction: 0, total_steps: 5 } }
+  const load = vi.spyOn(api, 'trainingProgress').mockResolvedValueOnce(data)
+  render(<TrainingDashboard />)
+  await screen.findByText('Asha')
+  within(screen.getByText('Asha').closest('tr')!).getByText('At least 35%')
+  expect(screen.queryByRole('progressbar', { name: 'Ben: required progress' })).toBeNull()
+  within(within(screen.getByText('Ben').closest('tr')!).getAllByRole('cell')[0]).getByText('Unknown')
+  const next = report()
+  next.people[0] = { ...next.people[0], required_progress: { fraction: null, total_steps: 5 } }
+  next.people[1] = { ...next.people[1], required_progress: { fraction: null, total_steps: 0 } }
+  load.mockResolvedValueOnce(next)
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+  await screen.findByText('No required content')
+  within(screen.getByText('Asha').closest('tr')!).getByText('Unavailable')
+  within(screen.getAllByText('Required progress')[0].parentElement!).getByText('Unavailable')
+  expect(screen.queryByRole('progressbar', { name: 'Asha: required progress' })).toBeNull()
+})
+
 test('location tabs scope counts, progress and filters while sharing a person’s history', async () => {
   const data = report()
   data.groups = ['Team One', 'Restaurant', 'Empty']
