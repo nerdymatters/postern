@@ -4,6 +4,8 @@ __pycache__/
 .pytest_cache/
 .venv/
 reports/day1/
+native/**/target/
+native/**/dist/
 *.egg-info/
 
 # Machine-local tooling and deployment configuration

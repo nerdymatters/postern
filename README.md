@@ -54,6 +54,7 @@ For separate web hosting, set `VITE_POSTERN_API` to your HTTPS API origin in you
 - [Web behavior and development](dashboard/web/README.md)
 - [Enrollment and privacy](docs/runbooks/selfie-preview.md)
 - [Capacity rehearsal and known limits](docs/runbooks/capacity.md)
+- [First Rust server slice, measurements and rollback](docs/runbooks/rust-server.md)
 - [Optional independent status service](docs/runbooks/status.md)
 - [Account isolation](docs/runbooks/account-isolation.md)
 - [Optional accounts and profiles](docs/accounts.md)

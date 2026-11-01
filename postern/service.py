@@ -22,11 +22,12 @@ from .derive import Deriver, DeriveError
 from .storage import FakeStore, GoogleStore
 from .progress import annotate, dashboard, finished_items, unfinished
 from .categories import category_key, category_name
-from . import branding, exam, honors, quiz, selfie, training
+from . import branding, exam, honors, quiz, selfie, training, progress_backend
 
 
 class Service:
     def __init__(self, config, store=None, clock=time.monotonic):
+        progress_backend.selected()  # Refuse a broken opt-in before starting the writer.
         self.config = config.validate()
         bank, final, tracks = training.load(training.resolve(config.data_dir, config.mode))
         config.branding = branding.load(config.data_dir, required=config.mode == 'google')

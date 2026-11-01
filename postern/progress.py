@@ -9,7 +9,7 @@ from .db import meta, rows
 from .video import intervals
 from .categories import category_name
 from .quiz import EXEMPT, chapter_number, finished, published, records, summary
-from . import exam, honors
+from . import exam, honors, progress_backend
 
 
 def history(db, items, email=None, coverage=False):
@@ -18,7 +18,6 @@ def history(db, items, email=None, coverage=False):
     coverage=True reads only page and playback evidence for the given items, which is all
     that completion needs, through the (email, type, item_id) index.
     """
-    result = {}
     sql = "SELECT e.email,e.item_id,e.type,e.ts,e.payload FROM events e "
     # Recovery can annotate an individual reader before the roster is restored.
     # Only the all-staff dashboard limits its scan to current members.
@@ -32,7 +31,35 @@ def history(db, items, email=None, coverage=False):
     if email is not None:
         sql += ' AND e.email=?'
         values.append(email)
-    for row in db.execute(sql, values):
+    cursor = db.execute(sql, values)
+    if progress_backend.selected() == 'rust':
+        metadata = progress_backend.metadata(items)
+        if metadata is not None:
+            return progress_backend.native().reduce(metadata, cursor, _evidence)
+    return _reduce_python(items, cursor)
+
+
+def _evidence(kind, payload, item_kind, pages, duration):
+    """Reference semantics, also used for unusual JSON by the native reducer."""
+    detail = json.loads(payload).get('detail', {})
+    valid_pages, valid_ranges = set(), []
+    recorded = kind == 'item_open'
+    if kind == 'video_progress' and item_kind == 'video':
+        pairs = [pair for pair in detail.get('ranges', []) if isinstance(pair, list)
+                 and len(pair) == 2 and all(type(v) in (int, float) for v in pair)]
+        valid_ranges = intervals(pairs, duration)
+        recorded = bool(valid_ranges)
+    elif kind in ('page_served', 'item_summary') and item_kind != 'video':
+        candidates = [detail.get('page')] if kind == 'page_served' else detail.get('pages', [])
+        total = 1 if item_kind == 'photo' else pages
+        valid_pages = {page for page in candidates if type(page) is int and 0 <= page < total}
+        recorded = bool(valid_pages) and kind == 'page_served'
+    return sorted(valid_pages), valid_ranges, recorded
+
+
+def _reduce_python(items, cursor):
+    result = {}
+    for row in cursor:
         identity = row['item_id']
         if identity not in items:
             continue
@@ -44,6 +71,8 @@ def history(db, items, email=None, coverage=False):
         if kind == 'view_requested':
             state['attempts'] += 1
             continue
+        # Keep the original Python hot loop for rollback; _evidence is only the
+        # native compatibility path for exceptional historical JSON.
         detail = json.loads(row['payload']).get('detail', {})
         recorded = kind == 'item_open'
         if kind == 'item_open':
