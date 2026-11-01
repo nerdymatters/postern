@@ -13,7 +13,9 @@ installation's configuration or database.
 
 Follow the [README](README.md) for setup. The converter uses macOS sandboxing;
 its complete test suite must run on a supported Mac with the documented native
-tools. Use the project's virtual environment and Bun:
+tools. Use the project's virtual environment and Bun, with Node 24 on `PATH` for
+frontend tests. The [web commands](dashboard/web/README.md#commands) include an
+Apple Silicon fallback when Node is not on `PATH`.
 
 ```sh
 .venv/bin/python -m pytest tests -q

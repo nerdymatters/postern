@@ -70,6 +70,9 @@ For separate web hosting, set `VITE_POSTERN_API` to your HTTPS API origin in you
 
 ## Development
 
+Frontend tests require Node 24 on `PATH` alongside Bun. See the
+[web commands](dashboard/web/README.md#commands) for the Apple Silicon fallback.
+
 ```sh
 .venv/bin/python -m pip install -e '.[test,postgres]' psutil
 # PostgreSQL 17+ CLI tools are required by tests/storage; use Homebrew on macOS.
