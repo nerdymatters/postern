@@ -44,7 +44,7 @@ described in [Architecture](docs/architecture.md).
 |---|---|---|
 | M0 Launch preparation | In progress; parallel with M1 | Current deployment baseline |
 | M1 Accounts and profiles | Production pilot passed; registration closed | M0 launch checks before release |
-| Rust server migration | P1; first reducer implemented locally | Performance/parity validation and production pilot in the [runbook](docs/runbooks/rust-server.md) |
+| Rust server migration | P1; first reducer passed candidate CI | Final release validation and production pilot in the [runbook](docs/runbooks/rust-server.md) |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
 | M2 Private spaces and resource catalog | Isolated metadata/onboarding implemented; content integration and hosting pending | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
@@ -91,7 +91,8 @@ server in `postern/`; M4 remains a separate Rust folder client.
   **Implemented locally:** optional PyO3 wheel, Python default/rollback,
   differential fixtures and HTTP disclosure/restart checks. Roster replay wall
   and CPU both fell 49.9%; all resource gates and 87 focused tests passed.
-  Full CI and release validation remain required before enabling Rust in production.
+  Candidate macOS Python/Rust and Linux native CI passed; final release validation
+  and the controlled production pilot remain required before accepting Rust in production.
 - [ ] **RS-04** Rehearse cutover and rollback with disposable data, then stage
   the verified slice on the office Mac with backups and health checks. Preserve
   current activity, private training and configuration. Plan the next migration

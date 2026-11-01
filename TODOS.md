@@ -32,7 +32,8 @@ numeric acceptance targets recorded before implementing the first Rust slice.
 **First-slice status (Nov 1):** load attribution and a bounded, optional Rust
 training-history reducer are implemented locally. See the [measurements and
 rollback runbook](docs/runbooks/rust-server.md). The default remains Python;
-full CI, broader capacity attribution and production staging remain open.
+candidate CI passed; final release checks, broader capacity attribution and
+production staging remain open.
 Address the measured health/audit history scan and competing development jobs
 before widening the migration. The server migration as a whole is not complete.
 

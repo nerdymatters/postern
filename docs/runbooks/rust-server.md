@@ -141,6 +141,13 @@ checks when host CPU reserve falls below 30% or production health degrades;
 the reducer benchmark itself does not monitor production health. Use the
 [capacity harness](capacity.md) for separately guarded HTTP/load rehearsals.
 
+The workload flags are `--readers` (default 50, range 1–500),
+`--events-per-reader` (default 2,160, range 1–2,880) and `--runs`
+(default 7, range 3–30 measured runs, plus one discarded warm-up).
+The product of readers and events per reader must not exceed 1,000,000.
+Keep these inputs identical when comparing backends; changing the fixture
+requires a fresh baseline. `--output` is required and must not already exist.
+
 Native checks (run from `native/progress`, with the workspace Python selected
 through `PYO3_PYTHON` if needed):
 
@@ -152,6 +159,11 @@ CARGO_BUILD_JOBS=1 cargo test --locked
 
 CI runs the complete macOS suite with both backends, and the differential native
 suite on Linux with Python 3.11 and 3.13. A configured CI job is not a passed run.
+The Rust macOS job retains the exact wheel it installed and tested as
+`progress-native-macos-arm64` for fourteen days. Download it only from a successful
+run bound to the intended release commit, verify its filename/platform and
+SHA-256, and retain that provenance with the release. This lets the serving Mac
+install a tested wheel without compiling it locally.
 Linux reducer portability does not make the macOS converter sandbox portable;
 production Linux hosting still requires a separately verified isolation and recovery plan.
 
@@ -178,14 +190,15 @@ production Linux hosting still requires a separately verified isolation and reco
   precision suggestion was also applied and tested. This was an in-host review,
   not an independent-model review.
 
-Full macOS and Linux CI remain **pending**. A broad local run was deliberately
-interrupted when whole-host CPU reached 82.5%; it had reached 549 passes and two
-failures. One failure was an incorrect new refusal-code expectation (corrected
-and retested); the other was release-link discovery omitting pre-existing
-untracked documents (the candidate-index packaging check passes). A subsequent
-broader release-overlay run also stopped for host contention, after 11 passes.
-Neither interrupted run counts as a passed full suite. Two existing dependency
-deprecation warnings remain in the focused runs.
+Candidate `d2a08d4318d6106358d460c747ab8a2b76b10d48` passed
+[hosted run 41357469563](https://github.com/nerdymatters/postern/actions/runs/41357469563):
+892 tests with default Python (six expected native-wheel skips), all 967 tests
+with Rust enabled, 70 native tests on each Linux Python version, all 372 frontend
+tests and the status-worker checks/build. Rust format, Clippy and three unit
+tests also passed. The final release must have checks bound to its own revision.
+Broad local runs were stopped for host contention and do not count as full-suite
+passes; the latest stopped after 515 passes with no failure. Existing dependency
+deprecation warnings remain.
 
 ## Cutover and rollback
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.20.0 — Optional Rust progress replay (2026-11-01)
+
+- Enable faster training-history replay with an optional Rust component. The paired synthetic workload used about half the CPU while preserving page coverage, quiz completion and certificate behavior. Python remains the default and rollback option; production activation requires the [controlled pilot checks](docs/runbooks/rust-server.md#cutover-and-rollback).
+- Build the optional component from locked sources and check compatibility on macOS and Linux. The release includes its source and build metadata; Python continues to own database access, authorization, audit admission and durable writes.
+
 ## 0.19.2 — Required training progress (2026-11-01)
 
 - See Required progress before Overall progress in Staff progress. It measures published Chapter 1–9 content, chapter quiz passes and the Final Exam, excluding optional modules. Each location's summary and each person's row show the new measure, with missing history and unavailable coverage clearly marked.

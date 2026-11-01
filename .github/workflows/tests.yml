@@ -50,9 +50,18 @@ jobs:
           cargo fmt --check
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked
-          python -m pip install --no-deps .
+          python -m pip wheel --no-deps . --wheel-dir "$RUNNER_TEMP/native-wheels"
+          python -m pip install --no-deps "$RUNNER_TEMP"/native-wheels/*.whl
       - name: Run the test suite
         run: python -m pytest tests -q
+      - name: Retain the tested macOS native wheel
+        if: matrix.progress-backend == 'rust'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: progress-native-macos-arm64
+          path: ${{ runner.temp }}/native-wheels/*.whl
+          if-no-files-found: error
+          retention-days: 14
 
   rust-progress-linux:
     runs-on: ubuntu-latest
