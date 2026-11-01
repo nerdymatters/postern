@@ -137,6 +137,22 @@ def summarize(items, incomplete):
             'last_activity_at': max((item['last_activity_at'] for item in items if item['last_activity_at'] is not None), default=None)}
 
 
+def required_progress(items, quizzes, final):
+    """Equal-weight coverage of Chapters 1–9, their quizzes and the Final Exam.
+
+    Use the chapter completion allowance for videos, so finishing the required course
+    can reach 100%. Role exemptions do not invent assessment passes.
+    """
+    fractions = [1 if item['fraction'] is not None and finished(item, item['opened_pages'], item['watched_seconds'])
+                 else item['fraction'] for item in items
+                 if 1 <= (chapter_number(item['category']) or 0) <= exam.PREREQUISITE]
+    fractions.extend(int(quiz['passed']) for quiz in quizzes if 1 <= quiz['chapter'] <= exam.PREREQUISITE)
+    if final is not None:
+        fractions.append(int(final['passed']))
+    return {'fraction': sum(fractions) / len(fractions) if fractions and all(value is not None for value in fractions) else None,
+            'total_steps': len(fractions)}
+
+
 def dashboard(db, bank=None, final_exam=None, *, default_group='Staff', certificate_prefix='PT'):
     """Current published material and current members; no hidden-post denominator."""
     bank = bank or {}
@@ -174,10 +190,12 @@ def dashboard(db, bank=None, final_exam=None, *, default_group='Staff', certific
             if ids:
                 left[number] = ids
         quizzes = summary(bank, chapters, mine.get(member['email'], {}), member['email'], member['role'], left)
+        final = exam.summary(final_exam, chapters, mine.get(member['email'], {}), member['email'], member['role']) if final_exam else None
         people.append({**member, 'groups': membership.get(member['email'], [default_group]),
                        **summarize(activity, incomplete), 'items': activity, 'quizzes': quizzes,
+                       'required_progress': required_progress(activity, quizzes, final),
                        'quizzes_passed': sum(quiz['passed'] for quiz in quizzes), 'quiz_exempt': member['role'] in EXEMPT,
-                       'final_exam': exam.summary(final_exam, chapters, mine.get(member['email'], {}), member['email'], member['role']) if final_exam else None,
+                       'final_exam': final,
                        'certificate': certificates.get(member['email'])})
     return {'people': people, 'total_items': len(catalog), 'history_incomplete': incomplete,
             'groups': meta(db, 'staff_groups', [default_group]), 'roster_warnings': meta(db, 'allowlist_warnings', []),

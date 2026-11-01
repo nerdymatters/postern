@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.19.2 — Required training progress (2026-11-01)
+
+- See Required progress before Overall progress in Staff progress. It measures published Chapter 1–9 content, chapter quiz passes and the Final Exam, excluding optional modules. Each location's summary and each person's row show the new measure, with missing history and unavailable coverage clearly marked.
+
 ## 0.19.1 — Security and test reliability (2026-11-01)
 
 - Run Vitest with an explicit Node 24 runtime and one worker, reduce quiz-test DOM lookup work, await mocked React updates, and give independent reading scenarios fresh fixtures. Preserve scoring and unlock assertions, and give the complete chapter journey a measured ten-second completion budget; see the [reliability record](docs/reports/launch-readiness.md#quiz-test-follow-up--november-1-2026).

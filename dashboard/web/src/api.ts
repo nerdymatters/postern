@@ -83,6 +83,7 @@ export interface TrainingItem {
 }
 export interface TrainingPerson {
   groups?: string[]
+  required_progress?: { fraction: number | null; total_steps: number }
   final_exam?: QuizStanding | null
   certificate?: Certificate | null
   email: string; name: string; role: string; percent: number | null

@@ -137,7 +137,7 @@ then shows an email box instead of the Google button, which is what the Playwrig
 | `src/video.tsx` | native MP4 player, personal overlay, fullscreen wrapper, continuous-playback interval reporting that re-sends unsaved intervals, watched time ("Watched m:ss of m:ss"; skipped parts do not count), a warning after a skipped part in place of the quiz, and English subtitle controls kept in sync with native CC |
 | `src/admin.tsx`, `src/post-status.tsx`, `src/report.tsx` | post search/status filters, separate archive, upload/publish, who opened it, denied sign-ins |
 | `src/honors.tsx` | badges (one per chapter quiz passed, All chapters, the Final Exam) and their medal art, the home-page shelf, `/badges` with the next badge to earn, the first-pass celebration on a quiz result (medal and confetti, skipped for reduced motion), and the certificate: `/certificate` with its printed name and printing, and the print-only copy `index.css` prints alone |
-| `src/training-progress.tsx` | searchable staff dashboard with location/all-location tabs, overall/module/file progress, chapter quiz standing, a separate Final Exam result with its certificate (number/printed-name lookup, view and print, paginated saved-name history), incomplete-history indicators |
+| `src/training-progress.tsx` | searchable staff dashboard with location/all-location tabs, required/overall/module/file progress, chapter quiz standing, a separate Final Exam result with its certificate (number/printed-name lookup, view and print, paginated saved-name history), incomplete-history indicators |
 | `src/categories.tsx`, `src/post-title.tsx` | category and post-title renaming, validation, and pending backup feedback |
 | `src/blobs.ts` | every object URL, so sign-out can revoke all of them |
 | `src/views.ts` | the per-item reading attempt id, stable across remount and refresh |
@@ -532,7 +532,18 @@ membership automatically; **Refresh** reloads the latest report in an open brows
 Use **Refresh** for newly recorded activity. Draft and archived items do not contribute
 to these totals; their historical per-post reports remain available in Admin.
 
-Each attachment has equal weight. Documents count unique valid pages opened, photos
+**Required progress** appears before **Overall progress** in the summary cards and
+each person's row. It covers published Chapter 1–9 attachments, their chapter quizzes
+and the available Final Exam, excluding optional modules and other content. Each
+attachment and assessment has equal weight; assessments count only once passed,
+including after a failed retake. Videos use the same completion allowance as the
+chapter quiz gate. The same course measure applies to every role; quiz exemptions
+do not count as passes. The card averages unrounded per-person fractions for the
+selected location or All locations tab. No required content shows a dash in the
+card and “No required content” in the row; missing coverage stays Unavailable and
+missing history keeps the existing Unknown/lower-bound presentation.
+
+For **Overall progress**, each attachment has equal weight. Documents count unique valid pages opened, photos
 count once, and videos count the union of recorded playback intervals, so rewatching
 a segment does not inflate progress. The overall card averages these per-person
 fractions. Completed means every current item's recorded coverage is 100%; it does
@@ -544,7 +555,9 @@ changes the current denominator.
 The progress data comes from admin-only `GET /api/admin/progress`, which returns
 `people`, `total_items`, `quiz_total`, `history_incomplete`, ordered `groups` and
 `roster_warnings` (`group`, worksheet `row`, `message`). Each person includes `groups`, completion
-counts, last activity, per-item coverage and chapter quiz standing; no sessions or media tickets are returned.
+counts, last activity, per-item coverage, chapter quiz standing and `required_progress`
+(`fraction`, nullable when coverage is unavailable or there are no required steps;
+`total_steps`, counting chapter attachments and assessments); no sessions or media tickets are returned.
 Older responses without grouping fields are displayed under the generic Staff group. Group metadata is
 derived from the current roster and replaced in the same transaction as membership;
 it does not partition training content or confer administrative rights.

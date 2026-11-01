@@ -18,11 +18,11 @@ def pause_worker(monkeypatch):
     monkeypatch.setattr(Service, 'background_loop', paused)
 
 
-def seed_item(service, kind='pdf', status='published', pages=4, duration=100):
+def seed_item(service, kind='pdf', status='published', pages=4, duration=100, category='Module 1'):
     post, item = str(uuid.uuid4()), str(uuid.uuid4())
     def write(db):
-        db.execute("INSERT INTO posts(id,title,body,category,status,created_at,created_by,published_at) VALUES (?,?,'','Module 1',?,1,?,2)",
-                   (post, kind + ' training', status, ADMIN))
+        db.execute("INSERT INTO posts(id,title,body,category,status,created_at,created_by,published_at) VALUES (?,?,'',?,?,1,?,2)",
+                   (post, kind + ' training', category, status, ADMIN))
         db.execute("INSERT INTO items(id,post_id,filename,kind,sha256,bytes,pages,derive_status,sort) VALUES (?,?,?,?,?,1,?,'ready',0)",
                    (item, post, kind + '.file', kind, 'x' * 64, 0 if kind == 'video' else pages))
         if kind == 'video' and duration is not None:
@@ -35,6 +35,76 @@ def fetch(client, admin):
     response = client.get('/api/admin/progress', headers=admin)
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def test_required_progress_counts_chapters_quiz_passes_and_final_without_optional_modules(client, service):
+    admin = sign_in(client, ADMIN)
+    first = seed_item(service, category='SOP Chapter 1: Introduction')
+    last = seed_item(service, kind='video', category='บทที่ ๙: Safety')
+    optional = seed_item(service, pages=1)
+    seed_item(service, category='SOP Chapter 3', status='archived')
+    seed_item(service, category='SOP Chapter 10: Extra')
+
+    def record(db):
+        for page in (0, 1):
+            event(db, 'page_served', email=READER, post_id=first[0], item_id=first[1], detail={'page': page})
+        event(db, 'video_progress', email=READER, post_id=last[0], item_id=last[1], detail={'ranges': [[0, 25]]})
+        event(db, 'page_served', email=READER, post_id=optional[0], item_id=optional[1], detail={'page': 0})
+        import_events(db, [
+            {'event_id': 'chapter-pass', 'event': 'quiz_attempt', 'ts': 10, 'email': READER,
+             'detail': {'chapter': 1, 'score': 4, 'total': 5, 'passed': True}},
+            {'event_id': 'final-fail', 'event': 'quiz_attempt', 'ts': 20, 'email': READER,
+             'detail': {'chapter': 0, 'score': 15, 'total': 20, 'passed': False}},
+        ])
+    service.db.submit(record).result()
+    people = {person['email']: person for person in fetch(client, admin)['people']}
+    # Two chapter items, two chapter quizzes and the Final Exam: (.5 + .25 + 1 + 0 + 0) / 5.
+    assert people[READER]['required_progress'] == {'fraction': .35, 'total_steps': 5}
+    assert people[READER]['percent'] == 43  # Overall still includes optional material, without assessments.
+    assert people[ADMIN]['required_progress'] == {'fraction': 0, 'total_steps': 5}
+
+    def finish(db):
+        for page in (2, 3):
+            event(db, 'page_served', email=READER, post_id=first[0], item_id=first[1], detail={'page': page})
+        # Required completion follows the same playback allowance as the chapter's quiz gate.
+        event(db, 'video_progress', email=READER, post_id=last[0], item_id=last[1], detail={'ranges': [[0, 98]]})
+        import_events(db, [
+            {'event_id': 'last-chapter-pass', 'event': 'quiz_attempt', 'ts': 30, 'email': READER,
+             'detail': {'chapter': 9, 'score': 4, 'total': 5, 'passed': True}},
+        ])
+    service.db.submit(finish).result()
+    person = next(p for p in fetch(client, admin)['people'] if p['email'] == READER)
+    assert person['required_progress']['fraction'] == .8  # A failed Final Exam cannot complete the course.
+    service.db.submit(lambda db: import_events(db, [
+        {'event_id': 'final-pass', 'event': 'quiz_attempt', 'ts': 40, 'email': READER,
+         'detail': {'chapter': 0, 'score': 16, 'total': 20, 'passed': True}},
+        {'event_id': 'final-retake-fail', 'event': 'quiz_attempt', 'ts': 50, 'email': READER,
+         'detail': {'chapter': 0, 'score': 0, 'total': 20, 'passed': False}},
+    ])).result()
+    person = next(p for p in fetch(client, admin)['people'] if p['email'] == READER)
+    assert person['required_progress']['fraction'] == 1
+    assert person['percent'] == 74
+
+
+def test_required_progress_preserves_unavailable_and_incomplete_history(client, service):
+    admin = sign_in(client, ADMIN)
+    seed_item(service, kind='video', duration=None)  # Optional unknown duration cannot affect required progress.
+    assert all(p['required_progress'] == {'fraction': None, 'total_steps': 0} for p in fetch(client, admin)['people'])
+    post, _ = seed_item(service, kind='video', duration=None, category='SOP Chapter 1')
+    assert all(p['required_progress'] == {'fraction': None, 'total_steps': 2} for p in fetch(client, admin)['people'])
+    service.db.submit(lambda db: db.execute("UPDATE posts SET status='archived' WHERE id=?", (post,))).result()
+    post, item = seed_item(service, category='SOP Chapter 1')
+    def restore(db):
+        set_meta(db, 'history_incomplete', True)
+        import_events(db, [{'event_id': 'partial-required', 'event': 'item_summary', 'ts': 10, 'email': READER,
+                            'post_id': post, 'item_id': item, 'detail': {'pages': [0, 1]}}])
+    service.db.submit(restore).result()
+    report = fetch(client, admin)
+    assert report['history_incomplete'] is True
+    people = {p['email']: p for p in report['people']}
+    assert people[READER]['required_progress'] == {'fraction': .25, 'total_steps': 2}
+    assert people[ADMIN]['required_progress'] == {'fraction': 0, 'total_steps': 2}
+    assert people[READER]['percent'] is None
 
 
 def test_shared_page_and_video_evidence_roster_and_published_scope(client, service):
