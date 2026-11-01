@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.19.1 — Security follow-up (2026-11-01)
+
+- Update the pilot's pyasn1 dependency to 0.6.5, which fixes four ASN.1 decoder denial-of-service advisories. See the [verification record](docs/reports/launch-readiness.md#security-follow-up--november-1-2026) for the scan scope and deployment checks.
+
 ## 0.19.0 — Certificate checks and private-space foundations (2026-10-30)
 
 - Check printed certificates by number or saved-name history from Staff progress. Admins can search the whole current roster; readers retain name corrections, and incomplete restored history is clearly marked.
