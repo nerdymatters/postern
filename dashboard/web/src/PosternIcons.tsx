@@ -131,6 +131,16 @@ export const IconAward = (props: IconProps) => (
   <Icon {...props}><circle cx="12" cy="9" r="6" /><path d="M8.5 13.9 7 21.5l5-2.8 5 2.8-1.5-7.6" /></Icon>
 )
 
+/** Export report */
+export const IconExport = (props: IconProps) => (
+  <Icon {...props}><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M4 20h16" /></Icon>
+)
+
+/** A table column that can be sorted */
+export const IconSort = (props: IconProps) => (
+  <Icon {...props}><path d="m8 9 4-4 4 4M8 15l4 4 4-4" /></Icon>
+)
+
 /** Print or save as PDF */
 export const IconPrint = (props: IconProps) => (
   <Icon {...props}><path d="M7 9V3.5h10V9M7 17.5H5a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4.5a2 2 0 0 1-2 2h-2" /><rect x="7" y="14" width="10" height="7" rx="1" /></Icon>

@@ -123,7 +123,7 @@ then shows an email box instead of the Google button, which is what the Playwrig
 | `src/memberships.tsx`, `src/ownership.tsx` | membership directory, role/removal/departure controls and recipient-accepted ownership transfer |
 | `src/app.tsx` | config/session gate, the refusal states, the shell and the routes |
 | `src/theme.tsx`, `index.html` | day/night preference, system-theme updates, header toggle, and early theme application before React renders |
-| `src/PosternWordmark.tsx`, `src/PosternIcons.tsx` | outlined logo and 22 decorative action/format icons; see the [logo kit](../../docs/brand/logo/README.md) |
+| `src/PosternWordmark.tsx`, `src/PosternIcons.tsx` | outlined logo and 24 decorative action/format icons; see the [logo kit](../../docs/brand/logo/README.md) |
 | `src/ui.tsx`, `src/index.css` | shared controls, surfaces, dark styles, and the responsive `header-action` style; `Label` (English with its Thai line under it on buttons, both read by screen readers), `Thai`, and `Message`, which shows an "English / ไทย" server message as two lines |
 | `public/` | browser/home-screen icons, manifest, and third-party icon licenses |
 | `src/landing.tsx` | Google Identity Services, the demo email box, the in-app browser page |
@@ -137,7 +137,8 @@ then shows an email box instead of the Google button, which is what the Playwrig
 | `src/video.tsx` | native MP4 player, personal overlay, fullscreen wrapper, continuous-playback interval reporting that re-sends unsaved intervals, watched time ("Watched m:ss of m:ss"; skipped parts do not count), a warning after a skipped part in place of the quiz, and English subtitle controls kept in sync with native CC |
 | `src/admin.tsx`, `src/post-status.tsx`, `src/report.tsx` | post search/status filters, separate archive, upload/publish, who opened it, denied sign-ins |
 | `src/honors.tsx` | badges (one per chapter quiz passed, All chapters, the Final Exam) and their medal art, the home-page shelf, `/badges` with the next badge to earn, the first-pass celebration on a quiz result (medal and confetti, skipped for reduced motion), and the certificate: `/certificate` with its printed name and printing, and the print-only copy `index.css` prints alone |
-| `src/training-progress.tsx` | searchable staff dashboard with location/all-location tabs, required/overall/module/file progress, chapter quiz standing, a separate Final Exam result with its certificate (number/printed-name lookup, view and print, paginated saved-name history), incomplete-history indicators |
+| `src/training-progress.tsx` | searchable staff dashboard with location/all-location tabs, required/overall/module/file progress, sortable columns, chapter quiz standing, a separate Final Exam result with its certificate (number/printed-name lookup, view and print, paginated saved-name history), incomplete-history indicators |
+| `src/table-export.tsx` | spreadsheet-safe CSV files and the printable report behind **Export report** |
 | `src/categories.tsx`, `src/post-title.tsx` | category and post-title renaming, validation, and pending backup feedback |
 | `src/blobs.ts` | every object URL, so sign-out can revoke all of them |
 | `src/views.ts` | the per-item reading attempt id, stable across remount and refresh |
@@ -515,8 +516,10 @@ its existing immediate effect on reader access.
 
 Open **Admin → Staff progress** for the current staff list, including admins, against
 currently published attachments. Search by name, email, current printed name or
-certificate number (case-insensitive), filter by progress state, or sort
-by progress, recent activity or fewest quizzes passed. **Details** expands chapter quiz
+certificate number (case-insensitive) or filter by progress state. Select any column
+heading to sort by it, and again to reverse; **Sort by** offers the same orders, and is
+the way to sort on a phone, where the headings are hidden. Rows that tie sort by name.
+**Details** expands chapter quiz
 attempts (a **Not ready** badge marks a quiz the person cannot take until they finish that
 chapter), module and individual file coverage.
 Choose a restaurant tab to scope the staff count, average, completion cards, search,
@@ -542,6 +545,29 @@ do not count as passes. The card averages unrounded per-person fractions for the
 selected location or All locations tab. No required content shows a dash in the
 card and “No required content” in the row; missing coverage stays Unavailable and
 missing history keeps the existing Unknown/lower-bound presentation.
+
+**Incomplete required progress**, under **Progress status**, lists everyone with
+required content who is short of a confirmed 100%. That includes Unknown, lower-bound and
+Unavailable rows, so a gap in the records never reads as finished, and admins, whose
+quiz exemption does not count as a pass. People with no required content are left out.
+
+**Export report** saves the people shown, in their current order: the selected tab with
+its search, filter and sort applied. A filtered file says so in its name, for example
+`Staff progress - Team One - Nov 3, 2026 (12 of 31 people).csv`. Values use the table's
+words, including Unknown and “At least”, and times are in Eastern with the year.
+
+- **CSV file** downloads directly, as UTF-8 with a byte-order mark so Excel keeps Thai names.
+  Cells that start like a spreadsheet formula get a leading apostrophe, as names come
+  from a Sheet and from Google accounts.
+- **PDF file** opens the browser's print window with a landscape report, including the
+  tab's summary, what the numbers mean and any missing-history warning. Choose **Save as
+  PDF** there, or on an iPhone or iPad **Share**, then **Save to Files**. Printing rather
+  than generating a file lets the browser shape Thai names, with no added dependency.
+  Open details close first, as an open certificate prints alone.
+
+Exports run in the browser from the report already loaded. They add no API route and
+record no audit event of their own; loading the report records `training_progress_viewed`.
+A file leaves Postern's access controls once saved, so keep it with the same care as the staff list.
 
 For **Overall progress**, each attachment has equal weight. Documents count unique valid pages opened, photos
 count once, and videos count the union of recorded playback intervals, so rewatching
