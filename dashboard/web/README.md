@@ -494,7 +494,7 @@ The certificate is laid out in container units: the screen copy scales with its 
 copy fills the page. Printing, from the button or the browser's own Print, shows only the certificate.
 It is rendered a second time directly into `document.body`, and `index.css` hides everything else for
 print, with its colours kept. The landscape page rule is part of that copy, so it applies only while a
-certificate is on screen; other screens print with the browser's own settings. The page has no margin,
+certificate is on screen; the Staff progress report has its own page rule, and other screens print with the browser's own settings. The page has no margin,
 so Chrome prints no headers or footers, and `index.css` insets the copy by 0.3 in instead. While the
 copy is mounted the page title is "the configured certificate title", the name browsers give a saved PDF; it holds
 no name or number, because a shared tablet keeps its history. Dates use the
@@ -548,8 +548,8 @@ missing history keeps the existing Unknown/lower-bound presentation.
 
 **Incomplete required progress**, under **Progress status**, lists everyone with
 required content who is short of a confirmed 100%. That includes Unknown, lower-bound and
-Unavailable rows, so a gap in the records never reads as finished, and admins, whose
-quiz exemption does not count as a pass. People with no required content are left out.
+Unavailable rows, so a gap in the records never reads as finished, and quiz-exempt roles,
+as an exemption does not count as a pass. People with no required content are left out.
 
 **Export report** saves the people shown, in their current order: the selected tab with
 its search, filter and sort applied. A filtered file says so in its name, for example
