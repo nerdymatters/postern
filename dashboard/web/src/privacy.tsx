@@ -34,7 +34,8 @@ export function Privacy() {
         <Section title="Where it is kept">
           On a computer in the company's office and in the company's own Google Drive. It is not sold, not used
           for advertising, and not shared outside the company. {organization || 'Your organization'} decides how long these records are
-          kept.
+          kept. Company administrators can also save staff progress reports, including names, email addresses and
+          training progress, as files on their own devices.
         </Section>
         <Section title="Questions">
           {contact ? <>Ask your manager, or write to{' '}<a className="underline" href={`mailto:${encodeURIComponent(contact)}`}>{contact}</a>.</> : 'Ask your manager or the administrator of this Postern installation.'}

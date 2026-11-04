@@ -570,6 +570,7 @@ missing history, the items, quiz and Final Exam headings also say “recorded”
 Exports run in the browser from the report already loaded. They add no API route and
 record no audit event of their own; loading the report records `training_progress_viewed`.
 A file leaves Postern's access controls once saved, so keep it with the same care as the staff list.
+The privacy page tells staff that administrators can save these reports to their own devices.
 
 For **Overall progress**, each attachment has equal weight. Documents count unique valid pages opened, photos
 count once, and videos count the union of recorded playback intervals, so rewatching
