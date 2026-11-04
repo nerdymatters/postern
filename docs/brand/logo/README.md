@@ -25,7 +25,7 @@ favicon/                       Deployed copies live in dashboard/web/public
 ## In the app
 
 - Header and landing page: `Wordmark` in `dashboard/web/src/ui.tsx` renders `dashboard/web/src/PosternWordmark.tsx` at `h-6` (24 px). The letters are outlines, so no font is loaded; `role="img"` and `aria-label="Postern"` name the header link.
-- UI icons: `dashboard/web/src/PosternIcons.tsx` contains 22 icons. The SVG files in `icons/` are the same drawings. The sun/moon theme icons live separately in `dashboard/web/src/theme.tsx`; their licenses are in `dashboard/web/public/third-party-licenses.txt`, which also notes that `IconAward` (`icons/award.svg`) follows the shape of Lucide's award icon.
+- UI icons: `dashboard/web/src/PosternIcons.tsx` contains 24 icons. The SVG files in `icons/` are the same drawings. The sun/moon theme icons live separately in `dashboard/web/src/theme.tsx`; their licenses are in `dashboard/web/public/third-party-licenses.txt`, which also notes that `IconAward` (`icons/award.svg`) follows the shape of Lucide's award icon.
 - Head tags are in `dashboard/web/index.html`. The favicon, touch icon, Android icons and manifest are in `dashboard/web/public`, which Vite copies to the site root.
 
 There is no SVG favicon, on purpose. A browser scales one SVG to every size, and that would put the shrunken door back into the 16 px tab icon. The .ico contains a separate 16 px drawing instead.

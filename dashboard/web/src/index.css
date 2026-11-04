@@ -89,9 +89,10 @@ video::cue {
 /* The staff report prints alone, over as many landscape pages as it needs, black on white whatever the theme. */
 .print-report { display: none; }
 @media print {
-  html:has(> body > .print-report) { color-scheme: light; }
+  /* Outranks the dark theme's color-scheme, which would otherwise frame every page in black when backgrounds print. */
+  :root[data-theme]:has(> body > .print-report) { color-scheme: light; }
   body:has(> .print-report) { background: #fff; }
-  body:has(> .print-report) > :not(.print-report) { display: none !important; }
+  body:has(> .print-report) > :not(.print-report) { display: none; }
   .print-report { display: block; color: #000; }
   .print-report thead { display: table-header-group; }
   .print-report tr { break-inside: avoid; }
