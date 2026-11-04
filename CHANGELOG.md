@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.21.0 — Staff progress filter, sorting and reports (2026-11-04)
+
+- See who still owes required training with **Incomplete required progress** under Progress status. It lists everyone short of a confirmed 100%, including missing history and unavailable coverage, so a gap in the records never reads as finished.
+- Sort Staff progress by any column. Select a heading to sort by it, and again to reverse; **Sort by** offers the same orders on a phone, where the headings are hidden.
+- Save what is on screen with **Export report**: the selected tab with its search, filter and sort, as a CSV file for a spreadsheet or as a printable report through the print window. Exports keep the table's wording, including Unknown and “At least”, and show times in Eastern. See [what each file contains](dashboard/web/README.md#finding-posts-and-staff-progress).
+- Read on the privacy page that administrators can save these reports to their own devices. The monitoring notice is unchanged, so nobody has to accept it again.
+- This release changes only the web app; the API, data and configuration stay as they are.
+
 ## 0.20.0 — Optional Rust progress replay (2026-11-01)
 
 - Enable faster training-history replay with an optional Rust component. The paired synthetic workload used about half the CPU while preserving page coverage, quiz completion and certificate behavior. Python remains the default and rollback option; production activation requires the [controlled pilot checks](docs/runbooks/rust-server.md#cutover-and-rollback).
