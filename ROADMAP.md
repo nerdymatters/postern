@@ -44,7 +44,7 @@ described in [Architecture](docs/architecture.md).
 |---|---|---|
 | M0 Launch preparation | In progress; parallel with M1 | Current deployment baseline |
 | M1 Accounts and profiles | Production pilot passed; registration closed | M0 launch checks before release |
-| Rust server migration | P1; first reducer passed candidate CI | Final release validation and production pilot in the [runbook](docs/runbooks/rust-server.md) |
+| Rust server migration | P1; reducer released, first live pilot rolled back; query-cost fix in validation | Complete indexed-Python rollout and Rust live acceptance in the [runbook](docs/runbooks/rust-server.md) |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
 | M2 Private spaces and resource catalog | Isolated metadata/onboarding implemented; content integration and hosting pending | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
@@ -74,6 +74,18 @@ server in `postern/`; M4 remains a separate Rust folder client.
   bounded SQLite aggregates, health timings and synthetic reducer profiling are
   recorded in the [first-slice runbook](docs/runbooks/rust-server.md). Representative
   request p95/error rates, audit queue latency and job attribution remain open.
+  **November 2 follow-up:** a passive sample averaged 20.3% whole-host CPU.
+  The unchanged health query scans all 230,727 events; three read-only samples
+  measured 164 ms median query time versus 237 ms for three health requests.
+  These small sequential samples identify a query cost, not representative p95
+  or a complete explanation of host overload. Query/index experiments should
+  measure audit-write cost as well as reads before selecting a change.
+  **November 4 candidate:** three additive indexes reduce the same synthetic
+  health query from 130 to 62 ms and idle exporter lookups to about 0.15–0.20 ms.
+  Exact query results, existing-database startup and rollback compatibility pass;
+  write costs and limits are recorded in the
+  [query investigation](docs/runbooks/rust-server.md#health-and-export-index-candidate-november-4).
+  This addresses measured scan cost, not a proven cause of the live timeout.
 - [x] **RS-02** Select one bounded server path for the first Rust implementation
   from that evidence. Record the API/storage boundary, numeric CPU/memory/latency
   acceptance targets and rollback route before coding. Address query or
@@ -88,18 +100,40 @@ server in `postern/`; M4 remains a separate Rust folder client.
   audit-before-disclosure, recovery and the migrated path's durable effects.
   Preserve training progress, certificate attribution and existing refusal
   behavior; retain the existing regression assertions and test deadlines.
-  **Implemented locally:** optional PyO3 wheel, Python default/rollback,
-  differential fixtures and HTTP disclosure/restart checks. Roster replay wall
-  and CPU both fell 49.9%; all resource gates and 87 focused tests passed.
-  Candidate macOS Python/Rust and Linux native CI passed; final release validation
-  and the controlled production pilot remain required before accepting Rust in production.
+  **Released November 1:** [v0.20.0 / PR #13](https://github.com/nerdymatters/postern/pull/13)
+  includes the optional PyO3 wheel, Python default/rollback, differential fixtures
+  and HTTP disclosure/restart checks. Shared-host synthetic roster replay wall
+  and CPU both fell 49.9%; this is not a production capacity result.
+  [Merged-commit CI](https://github.com/nerdymatters/postern/actions/runs/41362837319)
+  passed: macOS Python 892 tests with six expected optional-native skips, Rust
+  967 tests, Linux native 70 tests per Python version and frontend 372 tests,
+  plus Rust and status-worker checks. Production Rust acceptance remains open.
 - [ ] **RS-04** Rehearse cutover and rollback with disposable data, then stage
   the verified slice on the office Mac with backups and health checks. Preserve
   current activity, private training and configuration. Plan the next migration
   slice from measured results before expanding feature work.
   **Disposable rehearsal passed:** Python → Rust → Python restarts preserve
   newly recorded progress, first-pass certificate identity/name, event bytes
-  and schema. Production staging remains open.
+  and schema. **Office staging completed November 1:** the exact merged release
+  and CI-tested wheel were installed with private backups, 15 passing preflight
+  checks and ready local/public API health. Python remains the serving backend;
+  the native binary checksum and separate-process Rust import were verified.
+  **November 2 benchmark passed:** after bounded attempts found no quiet window,
+  a user-requested retry passed the unchanged rule and all four resource gates.
+  Roster wall/CPU fell 48.5%, reader wall fell 48.1%, peak worker RSS fell 10.5 MiB
+  and all paired digests matched. The operator confirmed the Python reading
+  room opens with correct progress and quiz locks. See the
+  [quiet-host result](docs/runbooks/rust-server.md#quiet-host-acceptance-november-2).
+  **First live pilot stopped:** local administrator authentication and a checked
+  backup enabled Rust on the existing job. A health probe then hit its unchanged
+  two-second timeout; the helper restored Python against the current database.
+  Python identity and local/public health are verified, with private settings
+  and training retained. This rehearsed activation and rollback mechanics, but
+  the Rust staff-result and new-activity comparison were not recorded before
+  the stop. Investigate the health delay before repeating the live acceptance
+  checks; the [pilot record](docs/runbooks/rust-server.md#first-live-pilot-november-2)
+  distinguishes verified rollback from incomplete compatibility acceptance.
+  Broader load attribution remains in RS-01.
 
 **First deliverable:** an attributed baseline, one selected Rust migration slice
 and explicit performance/compatibility acceptance criteria. The first slice is

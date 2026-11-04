@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.21.1 — Health and backup query performance (2026-11-04)
+
+- Check service health and find pending audit backups with less work as retained history grows. Additive SQLite indexes reduce measured query cost while preserving pending-backup status, export order and existing activity. Startup creates the indexes automatically; code rollback can keep them and the current database. See the [measurements and rollout limits](docs/runbooks/rust-server.md#health-and-export-index-candidate-november-4).
+
 ## 0.21.0 — Staff progress filter, sorting and reports (2026-11-04)
 
 - See who still owes required training with **Incomplete required progress** under Progress status. It lists everyone short of a confirmed 100%, including missing history and unavailable coverage, so a gap in the records never reads as finished.

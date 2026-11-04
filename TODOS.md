@@ -29,13 +29,28 @@ expensive queries or competing development jobs. Use the existing isolated
 [capacity rehearsal](docs/runbooks/capacity.md), with comparable workloads and
 numeric acceptance targets recorded before implementing the first Rust slice.
 
-**First-slice status (Nov 1):** load attribution and a bounded, optional Rust
-training-history reducer are implemented locally. See the [measurements and
-rollback runbook](docs/runbooks/rust-server.md). The default remains Python;
-candidate CI passed; final release checks, broader capacity attribution and
-production staging remain open.
+**First-slice status (Nov 2):** the optional Rust training-history reducer shipped
+in [v0.20.0](https://github.com/nerdymatters/postern/releases/tag/v0.20.0).
+The merged commit passed all six CI lanes and was installed on the office Mac
+with verified backups, dependencies and API health. The tested native wheel is
+installed and imports successfully; Python remains active. See the
+[measurements and rollback runbook](docs/runbooks/rust-server.md).
+The November 2 quiet-host retry passed all four benchmark gates with matching
+results. The first live Rust attempt then hit the two-second health-probe limit
+and restored Python successfully against the current database. RS-04 still needs
+the health delay investigated and complete Rust/rollback staff and new-activity
+checks; the Python reading-room baseline was confirmed by the operator.
+Broader RS-01 capacity attribution also remains open.
 Address the measured health/audit history scan and competing development jobs
 before widening the migration. The server migration as a whole is not complete.
+The November 2 read-only follow-up measured 164 ms median for the health query's
+full event scan. The November 4 index candidate halves the synthetic query's wall/CPU cost and
+removes full-history scans from idle exporter selection. Exact result parity,
+existing-database startup and old-code rollback pass. Single-event write wall
+cost rises about 2%; sealing 500 events rises about 10%. See the runbook for
+measurements and limits. Complete candidate CI and controlled index rollout
+with Python before a fresh quiet benchmark and full Rust pilot. No production
+query, index or backend has been changed by this candidate.
 
 **Compatibility:** Preserve API responses, authorization/revocation, durable
 audit admission, single-writer/job ownership, training progress and certificate

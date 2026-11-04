@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT
 CREATE INDEX IF NOT EXISTS events_report ON events(post_id,type,email);
 CREATE INDEX IF NOT EXISTS events_progress ON events(email,type,item_id);
 CREATE INDEX IF NOT EXISTS events_name_history ON events(email,ts DESC,id DESC) WHERE type='certificate_name';
+-- Health reads only batch/clock metadata; export finds unbatched events in sequence order.
+CREATE INDEX IF NOT EXISTS events_batch ON events(batch_id,seq,ts);
 CREATE TABLE IF NOT EXISTS video_metadata(item_id TEXT PRIMARY KEY REFERENCES items(id), duration_seconds REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS video_tickets(token_hash TEXT PRIMARY KEY, view_id TEXT UNIQUE NOT NULL REFERENCES views(id), expires_at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS video_checkpoints(view_id TEXT PRIMARY KEY REFERENCES views(id), reported_at REAL NOT NULL);
@@ -41,6 +43,9 @@ CREATE TABLE IF NOT EXISTS quiz_standing(email TEXT NOT NULL, chapter INTEGER NO
 CREATE TABLE IF NOT EXISTS quiz_seen(email TEXT NOT NULL, chapter INTEGER NOT NULL, question TEXT NOT NULL, times INTEGER NOT NULL, last_ts REAL NOT NULL, last_seq INTEGER NOT NULL, PRIMARY KEY(email,chapter,question));
 CREATE TABLE IF NOT EXISTS quiz_draws(email TEXT NOT NULL, chapter INTEGER NOT NULL, version TEXT NOT NULL, questions TEXT NOT NULL, drawn_at REAL NOT NULL, PRIMARY KEY(email,chapter));
 CREATE TABLE IF NOT EXISTS batches(id TEXT PRIMARY KEY, drive_id TEXT NOT NULL, sha256 TEXT NOT NULL, bytes INTEGER NOT NULL, count INTEGER NOT NULL, created_at REAL NOT NULL, confirmed_at REAL, summary_confirmed INTEGER NOT NULL DEFAULT 0);
+-- The exporter polls every three seconds; completed batches should cost no scan.
+CREATE INDEX IF NOT EXISTS batches_pending ON batches(created_at) WHERE confirmed_at IS NULL OR summary_confirmed=0;
+CREATE INDEX IF NOT EXISTS batches_confirmed ON batches(confirmed_at);
 '''
 
 
