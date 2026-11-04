@@ -26,6 +26,14 @@ export function dated(seconds: number, month: 'short' | 'long' = 'short', timeZo
   return new Date(seconds * 1000).toLocaleDateString(US, { year: 'numeric', month, day: 'numeric', timeZone })
 }
 
+/** With the year and the time in Eastern, for exported reports: every copy reads the same wherever it is
+ *  opened, in a form a spreadsheet can take for a date. "Oct 5, 2026 3:30 PM". */
+export function stamped(seconds: number): string {
+  const date = new Date(seconds * 1000), timeZone = EASTERN
+  // Some browsers put a narrow no-break space before PM, which a spreadsheet does not read as a time.
+  return `${date.toLocaleDateString(US, { year: 'numeric', month: 'short', day: 'numeric', timeZone })} ${date.toLocaleTimeString(US, { hour: 'numeric', minute: '2-digit', timeZone })}`.replace(/\s/g, ' ')
+}
+
 export function moment(seconds: number | null): string {
   if (!seconds) return '—'
   return new Date(seconds * 1000).toLocaleString(US, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })

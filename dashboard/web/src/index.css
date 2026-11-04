@@ -85,3 +85,18 @@ video::cue {
   .print-root { display: block; height: calc(100% - 2px); padding: 0.3in; break-inside: avoid; }
   .print-root, .print-root * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* The staff report prints alone, over as many landscape pages as it needs, black on white whatever the theme. */
+.print-report { display: none; }
+@media print {
+  html:has(> body > .print-report) { color-scheme: light; }
+  body:has(> .print-report) { background: #fff; }
+  body:has(> .print-report) > :not(.print-report) { display: none !important; }
+  .print-report { display: block; color: #000; }
+  .print-report thead { display: table-header-group; }
+  .print-report tr { break-inside: avoid; }
+  /* A person's name, email and role, one per line. They can be any length, so this column gives way first; the short columns keep their words whole. */
+  .print-report td:first-child { overflow-wrap: anywhere; white-space: pre-line; }
+  .print-report td:first-child::first-line { font-weight: 600; }
+  .print-report td:last-child { white-space: nowrap; }
+}

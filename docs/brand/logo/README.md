@@ -53,6 +53,8 @@ The UI icons are line drawings on a 24 px grid with a 2 px stroke and round ends
 | Reading list, quiz | Chapter quiz; locked chapter | `IconQuiz`; `IconPrivacy` (the lock) |
 | Home, badges, quiz result, Staff progress | View certificate; the certificate is ready | `IconAward` |
 | Certificate page, Staff progress | Print or save as PDF; Print certificate | `IconPrint` |
+| Staff progress | Export report | `IconExport` |
+| Staff progress | A column that can be sorted; the sorted column's direction | `IconSort`; `IconArrowRight`, turned to point up or down |
 
 Use 16 px (`size-4`) beside 14 px text and 20 px (`size-5`) inside 16 px buttons, with a 6–8 px gap.
 

@@ -468,7 +468,7 @@ test('staff progress explains quizzes without attempts and sorts by fewest passe
   expect(order()).toEqual(['Amy', 'Bo', 'Zed'])
   screen.getByRole('columnheader', { name: 'Quizzes passed' })
   within(screen.getByText('Amy').closest('tr')!).getByText('C-suite')
-  fireEvent.change(screen.getByRole('combobox', { name: 'Sort by' }), { target: { value: 'quizzes' } })
+  fireEvent.change(screen.getByRole('combobox', { name: 'Sort by' }), { target: { value: 'quizzes:ascending' } })
   expect(order()).toEqual(['Zed', 'Bo', 'Amy'])
   fireEvent.click(screen.getByRole('button', { name: 'View progress for Zed' }))
   screen.getByText('No attempts yet')

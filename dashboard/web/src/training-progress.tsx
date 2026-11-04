@@ -1,12 +1,14 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { api, currentToken, inline, type Certificate, type CertificateHistory, type QuizStanding, type TrainingItem, type TrainingPerson, type TrainingProgress } from './api'
 import { moduleName } from './contents'
-import { dated, EASTERN, moment } from './format'
+import { dated, EASTERN, moment, stamped } from './format'
 import { CertificateCard, PrintableCertificate } from './honors'
 import { Link } from './routes'
-import { QuizBadge } from './quiz'
+import { QuizBadge, quizStatus, type QuizState } from './quiz'
+import { downloadCsv, PrintableReport, type ExportTable } from './table-export'
 import { Button, Field, Message, Panel, input } from './ui'
-import { IconArrowRight, IconAward, IconPrint } from './PosternIcons'
+import { IconArrowRight, IconAward, IconExport, IconPrint, IconSort } from './PosternIcons'
 
 const statusNames: Record<TrainingPerson['status'], string> = {
   complete: 'Completed', in_progress: 'In progress', not_started: 'Not started',
@@ -14,6 +16,99 @@ const statusNames: Record<TrainingPerson['status'], string> = {
 }
 
 const roleNames: Record<string, string> = { admin: 'Admin', manager: 'Manager', 'c-suite': 'C-suite' }
+
+const statusFilters: Record<string, string> = {
+  all: 'All progress', required_incomplete: 'Incomplete required progress', not_started: statusNames.not_started, in_progress: statusNames.in_progress,
+  complete: statusNames.complete, unknown: statusNames.unknown, unavailable: statusNames.unavailable,
+}
+
+/** As shown in the row: people who read the same sort by name. */
+function requiredPercent({ required_progress: required }: TrainingPerson) {
+  return required?.fraction == null ? null : Math.floor(required.fraction * 100)
+}
+
+/** Anything short of a confirmed 100%: missing history or coverage must not read as finished. */
+function requiredIncomplete({ required_progress: required }: TrainingPerson) {
+  return !!required?.total_steps && required.fraction !== 1
+}
+
+type Direction = 'ascending' | 'descending'
+type SortKey = 'person' | 'required' | 'overall' | 'items' | 'quizzes' | 'final' | 'viewed'
+interface Sort { column: SortKey; direction: Direction }
+type Compare = (a: TrainingPerson, b: TrainingPerson) => number
+
+const NAME_ORDER: Sort = { column: 'person', direction: 'ascending' }
+const byName: Compare = (a, b) => (a.name || a.email).localeCompare(b.name || b.email)
+const byNumber = (rank: (person: TrainingPerson) => number): Compare => (a, b) => rank(a) - rank(b)
+
+/** Final Exam standings from furthest behind to furthest along; within tries, by best score. */
+const finalOrder: QuizState[] = ['locked', 'unfinished', 'open', 'optional', 'retry', 'passed']
+function finalRank({ final_exam: exam }: TrainingPerson) {
+  if (!exam) return -1
+  const { state } = quizStatus(exam, exam.optional ?? false)
+  return finalOrder.indexOf(state) + (state === 'retry' ? (exam.best_score ?? 0) / exam.total : 0)
+}
+
+function finalNote({ final_exam: exam }: TrainingPerson) {
+  if (!exam) return '—'
+  const { label } = quizStatus(exam, exam.optional ?? false)
+  return exam.optional && exam.attempts > 0 ? `${label} (optional)` : label
+}
+
+/** Every column with data, in table order, with its names in "Sort by": phones hide the column headings. */
+const sortColumns: Record<SortKey, { compare: Compare } & Record<Direction, string>> = {
+  person: { compare: byName, ascending: 'Name, A to Z', descending: 'Name, Z to A' },
+  required: { compare: byNumber(person => requiredPercent(person) ?? -1), ascending: 'Lowest required progress', descending: 'Highest required progress' },
+  overall: { compare: byNumber(person => person.percent ?? -1), ascending: 'Lowest overall progress', descending: 'Highest overall progress' },
+  items: { compare: byNumber(person => person.completed_items), ascending: 'Fewest items completed', descending: 'Most items completed' },
+  quizzes: { compare: byNumber(person => person.quizzes_passed ?? 0), ascending: 'Fewest quizzes passed', descending: 'Most quizzes passed' },
+  final: { compare: byNumber(finalRank), ascending: 'Final Exam, least progress', descending: 'Final Exam, most progress' },
+  viewed: { compare: byNumber(person => person.last_activity_at ?? 0), ascending: 'Oldest activity', descending: 'Recent activity' },
+}
+
+/** The report's columns, in the words the table uses. A spreadsheet wants name, email and role apart; on paper they
+ *  stack as they do on screen, which leaves the width for a whole email address on one line. */
+function reportTable(people: TrainingPerson[], { paper, incomplete, totalItems, quizTotal, hasFinal, allLocations }: { paper: boolean; incomplete: boolean; totalItems: number; quizTotal: number; hasFinal: boolean; allLocations: boolean }): ExportTable {
+  const columns: [string, (person: TrainingPerson) => string][] = paper
+    ? [['Person', person => [person.name, person.email, roleNames[person.role]].filter(Boolean).join('\n')]]
+    : [['Name', person => person.name], ['Email', person => person.email], ['Role', person => roleNames[person.role] ?? 'Staff']]
+  if (allLocations) columns.push(['Locations', person => (person.groups ?? []).join(', ')])
+  columns.push(
+    ['Required progress', person => person.required_progress?.total_steps === 0 ? 'No required content' : percentage(requiredPercent(person), incomplete)],
+    ['Overall progress', person => percentage(person.percent, incomplete)],
+    ['Status', person => statusNames[person.status]],
+    [`Items completed${incomplete ? ', recorded' : ''} (of ${totalItems})`, person => String(person.completed_items)],
+  )
+  if (quizTotal) columns.push([`${hasFinal ? 'Chapter quizzes' : 'Quizzes'} passed (of ${quizTotal})`, person => `${person.quizzes_passed ?? 0}${person.quiz_exempt ? ' (optional)' : ''}`])
+  if (hasFinal) columns.push(['Final Exam', finalNote])
+  columns.push(['Last viewed (Eastern)', person => person.last_activity_at === null ? 'No record' : stamped(person.last_activity_at)])
+  return { headers: columns.map(([header]) => header), rows: people.map(person => columns.map(([, value]) => value(person))) }
+}
+
+/** The report as a CSV download, or as a page for the browser's print window: a PDF needs the browser to lay out Thai names. */
+function ExportMenu({ shown, disabled, onCsv, onPdf }: { shown: string; disabled: boolean; onCsv: () => void; onPdf: () => void }) {
+  const [open, setOpen] = useState(false)
+  const root = useRef<HTMLDivElement>(null)
+  const toggle = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const away = (event: Event) => { if (!root.current?.contains(event.target as Node)) setOpen(false) }
+    document.addEventListener('pointerdown', away)
+    document.addEventListener('focusin', away)
+    return () => { document.removeEventListener('pointerdown', away); document.removeEventListener('focusin', away) }
+  }, [open])
+  const close = () => { setOpen(false); toggle.current?.focus() }
+  const option = 'block min-h-11 w-full rounded-lg px-3 py-2 text-left hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-emerald-700 dark:hover:bg-neutral-800'
+  const hint = 'block text-xs text-neutral-500 dark:text-neutral-400'
+  return <div ref={root} className="relative w-full sm:w-auto" onKeyDown={event => { if (open && event.key === 'Escape') close() }}>
+    <Button ref={toggle} variant="secondary" className="w-full sm:w-auto" disabled={disabled} aria-expanded={open} aria-controls={open ? 'staff-report-export' : undefined} onClick={() => setOpen(value => !value)}><IconExport className="size-5" />Export report</Button>
+    {open ? <div id="staff-report-export" role="group" aria-label="Export format" className="absolute right-0 z-10 mt-2 w-full rounded-xl border border-neutral-200 bg-white p-2 text-sm shadow-lg sm:w-80 dark:border-neutral-700 dark:bg-neutral-900">
+      <p className="px-3 py-2 text-xs text-neutral-500 dark:text-neutral-400">Exports the {shown} shown, in this order.</p>
+      <button type="button" className={option} onClick={() => { close(); onCsv() }}><span className="block font-medium">CSV file</span><span className={hint}>For Excel or Google Sheets</span></button>
+      <button type="button" className={option} onClick={() => { close(); onPdf() }}><span className="block font-medium">PDF file</span><span className={hint}>Opens the print window. Choose Save as PDF there; on an iPhone or iPad, tap Share, then Save to Files.</span></button>
+    </div> : null}
+  </div>
+}
 
 function quizNote(quiz: QuizStanding, incomplete: boolean) {
   const tries = `${quiz.attempts} attempt${quiz.attempts === 1 ? '' : 's'}`
@@ -178,7 +273,8 @@ export function TrainingDashboard() {
   const [updated, setUpdated] = useState<number | null>(null)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
-  const [sort, setSort] = useState('name')
+  const [sort, setSort] = useState(NAME_ORDER)
+  const [printable, setPrintable] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [selectedGroup, setSelectedGroup] = useState<string | null | undefined>(undefined)
   useEffect(() => {
@@ -196,16 +292,45 @@ export function TrainingDashboard() {
   const chooseGroup = (group: string | null) => {
     setSelectedGroup(group); setExpanded(null); setSearch(''); setStatus('all')
   }
-  const visible = people.filter(person => `${person.name} ${person.email} ${person.certificate?.number ?? ''} ${person.certificate?.name ?? ''}`.toLowerCase().includes(search.trim().toLowerCase()) && (status === 'all' || person.status === status))
-    .sort((a, b) => sort === 'quizzes' ? (a.quizzes_passed ?? 0) - (b.quizzes_passed ?? 0) || (a.name || a.email).localeCompare(b.name || b.email) : sort === 'low' ? (a.percent ?? -1) - (b.percent ?? -1) : sort === 'high' ? (b.percent ?? -1) - (a.percent ?? -1) : sort === 'recent' ? (b.last_activity_at ?? 0) - (a.last_activity_at ?? 0) : (a.name || a.email).localeCompare(b.name || b.email))
   const incomplete = report?.history_incomplete ?? false
   const quizTotal = report?.quiz_total ?? 0
   const hasFinal = people.some(person => person.final_exam)
+  const sortable = (Object.keys(sortColumns) as SortKey[]).filter(column => (column !== 'quizzes' || quizTotal > 0) && (column !== 'final' || hasFinal))
+  const activeSort = sortable.includes(sort.column) ? sort : NAME_ORDER
+  const chooseSort = (column: SortKey) => setSort({ column, direction: column === activeSort.column
+    ? activeSort.direction === 'ascending' ? 'descending' : 'ascending' : column === 'viewed' ? 'descending' : 'ascending' })
+  const heading = (column: SortKey, title: string, padding = 'p-3') => <th role="columnheader" scope="col" aria-sort={activeSort.column === column ? activeSort.direction : undefined} className="p-0">
+    <button type="button" className={`flex w-full cursor-pointer items-center gap-1.5 text-left hover:text-neutral-900 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-700 dark:hover:text-neutral-100 ${activeSort.column === column ? 'text-neutral-900 dark:text-neutral-100' : ''} ${padding}`} onClick={() => chooseSort(column)}>
+      {title}{activeSort.column === column ? <IconArrowRight className={`size-4 shrink-0 ${activeSort.direction === 'ascending' ? '-rotate-90' : 'rotate-90'}`} /> : <IconSort className="size-4 shrink-0 opacity-60" />}
+    </button>
+  </th>
+  const visible = people.filter(person => `${person.name} ${person.email} ${person.certificate?.number ?? ''} ${person.certificate?.name ?? ''}`.toLowerCase().includes(search.trim().toLowerCase()) && (status === 'all' || (status === 'required_incomplete' ? requiredIncomplete(person) : person.status === status)))
+    .sort((a, b) => (activeSort.direction === 'ascending' ? 1 : -1) * sortColumns[activeSort.column].compare(a, b) || byName(a, b))
   const average = people.length && people.every(person => person.percent !== null)
     ? Math.floor(people.reduce((sum, person) => sum + person.items.reduce((total, item) => total + (item.fraction ?? 0), 0) / Math.max(1, person.total_items), 0) / people.length * 100) : null
   const requiredAverage = people.length && people.every(person => person.required_progress?.fraction != null)
     ? Math.floor(people.reduce((sum, person) => sum + (person.required_progress?.fraction ?? 0), 0) / people.length * 100) : null
   const hasRequired = people.some(person => person.required_progress?.total_steps)
+  const requiredSummary = hasRequired ? percentage(requiredAverage, incomplete) : '—'
+  const overallSummary = report?.total_items && people.length ? percentage(average, incomplete) : '—'
+  const completedCount = people.filter(person => person.status === 'complete').length
+  const waitingLabel = incomplete ? 'Progress unknown' : 'Not started'
+  const waitingCount = people.filter(person => person.status === (incomplete ? 'unknown' : 'not_started')).length
+  const measureNote = `Current staff list, including admins · Published content only. Documents count unique pages opened; videos count unique sections watched. Each item has equal weight. Activity does not confirm understanding.${quizTotal ? ' Staff must pass each chapter quiz to unlock the next chapter; admins, managers and C-suite may skip them.' : ''}`
+  const requiredNote = 'Required progress covers Chapters 1–9, their quizzes and the Final Exam. Each content item and assessment has equal weight; assessments count when passed. Optional modules are excluded. Overall progress covers all content items.'
+  const historyNote = `Some viewing history is missing. Percentages are minimum recorded progress; people without records are unknown, not confirmed as unstarted.${quizTotal ? ' Quiz passes in the missing history are not shown, and those chapters stay locked until the quiz is passed again.' : ''}`
+  const tabLabel = tabs[activeTab].label
+  const shown = `${visible.length} of ${people.length} people`
+  // Names the file, so a filtered copy cannot pass for the whole tab. Characters no file system accepts become hyphens.
+  const exportName = `Staff progress - ${tabLabel} - ${dated(updated ?? 0, 'short', EASTERN)}${visible.length < people.length ? ` (${shown})` : ''}`.replace(/[\\/:*?"<>|\p{Cc}]/gu, '-')
+  const exportTable = (paper: boolean) => reportTable(visible, { paper, incomplete, totalItems: report?.total_items ?? 0, quizTotal, hasFinal, allLocations: activeGroup === null })
+  const exportPdf = () => {
+    // An open certificate prints alone and would blank this report (index.css), so the details close first.
+    // The report then stays mounted, hidden on screen: a blank print is worse than a spare table, and browsers
+    // differ on when printing ends.
+    flushSync(() => { setExpanded(null); setPrintable(true) })
+    window.print()
+  }
   return <main className="mx-auto w-full max-w-6xl space-y-5 px-4 py-6">
     <Link to="/admin" className="inline-flex items-center gap-1.5 text-sm text-neutral-600 dark:text-neutral-300 underline"><IconArrowRight className="size-4 rotate-180" />Admin</Link>
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -214,9 +339,9 @@ export function TrainingDashboard() {
     </div>
     <Message text={error} />
     {report ? <>
-      <p className="text-base leading-relaxed text-neutral-600 dark:text-neutral-300">Current staff list, including admins · Published content only. Documents count unique pages opened; videos count unique sections watched. Each item has equal weight. Activity does not confirm understanding.{quizTotal ? ' Staff must pass each chapter quiz to unlock the next chapter; admins, managers and C-suite may skip them.' : ''}</p>
-      <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">Required progress covers Chapters 1–9, their quizzes and the Final Exam. Each content item and assessment has equal weight; assessments count when passed. Optional modules are excluded. Overall progress covers all content items.</p>
-      {incomplete ? <Message text={`Some viewing history is missing. Percentages are minimum recorded progress; people without records are unknown, not confirmed as unstarted.${quizTotal ? ' Quiz passes in the missing history are not shown, and those chapters stay locked until the quiz is passed again.' : ''}`} /> : null}
+      <p className="text-base leading-relaxed text-neutral-600 dark:text-neutral-300">{measureNote}</p>
+      <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">{requiredNote}</p>
+      {incomplete ? <Message text={historyNote} /> : null}
       <div role="tablist" aria-label="Staff locations" className="flex gap-2 overflow-x-auto border-b border-neutral-200 pb-2 dark:border-neutral-800">
         {tabs.map(({ group, label }, index) => <button key={index} type="button" role="tab" id={`staff-group-${index}`} aria-selected={group === activeGroup} aria-controls="staff-group-panel" tabIndex={group === activeGroup ? 0 : -1}
           className={`min-h-11 shrink-0 rounded-lg px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 ${group === activeGroup ? 'bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'}`}
@@ -232,27 +357,40 @@ export function TrainingDashboard() {
       {(report.roster_warnings ?? []).filter(warning => activeGroup === null || warning.group === activeGroup).map(warning => <p key={`${warning.group}:${warning.row}`} className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">{activeGroup === null ? `${warning.group} · ` : ''}Spreadsheet row {warning.row}: {warning.message}. This row has no login access. Add an email address in the spreadsheet to include this person.</p>)}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Panel><p className="text-sm text-neutral-600 dark:text-neutral-300">Staff</p><p className="mt-2 text-2xl font-semibold tabular-nums">{people.length}</p></Panel>
-        <Panel><p className="text-sm text-neutral-600 dark:text-neutral-300">Required progress</p><p className="mt-2 text-2xl font-semibold tabular-nums">{hasRequired ? percentage(requiredAverage, incomplete) : '—'}</p><p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Average across staff in this tab</p></Panel>
-        <Panel><p className="text-sm text-neutral-600 dark:text-neutral-300">Overall progress</p><p className="mt-2 text-2xl font-semibold tabular-nums">{report.total_items && people.length ? percentage(average, incomplete) : '—'}</p><p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Average across staff in this tab</p></Panel>
-        <Panel><p className="text-sm text-neutral-600 dark:text-neutral-300">All items completed</p><p className="mt-2 text-2xl font-semibold tabular-nums">{people.filter(person => person.status === 'complete').length}</p></Panel>
-        <Panel><p className="text-sm text-neutral-600 dark:text-neutral-300">{incomplete ? 'Progress unknown' : 'Not started'}</p><p className="mt-2 text-2xl font-semibold tabular-nums">{people.filter(person => person.status === (incomplete ? 'unknown' : 'not_started')).length}</p></Panel>
+        <Panel><p className="text-sm text-neutral-600 dark:text-neutral-300">Required progress</p><p className="mt-2 text-2xl font-semibold tabular-nums">{requiredSummary}</p><p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Average across staff in this tab</p></Panel>
+        <Panel><p className="text-sm text-neutral-600 dark:text-neutral-300">Overall progress</p><p className="mt-2 text-2xl font-semibold tabular-nums">{overallSummary}</p><p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Average across staff in this tab</p></Panel>
+        <Panel><p className="text-sm text-neutral-600 dark:text-neutral-300">All items completed</p><p className="mt-2 text-2xl font-semibold tabular-nums">{completedCount}</p></Panel>
+        <Panel><p className="text-sm text-neutral-600 dark:text-neutral-300">{waitingLabel}</p><p className="mt-2 text-2xl font-semibold tabular-nums">{waitingCount}</p></Panel>
       </div>
       {!report.total_items ? <Panel><p>No published training content yet. Publish a document or video to start tracking progress here.</p></Panel> : null}
       {!people.length ? <Panel><p>No staff are on the current list.</p></Panel> : <Panel className="space-y-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-48 flex-1"><Field label="Find a person or certificate"><input type="search" className={input} placeholder="Name, email or certificate number" value={search} onChange={event => setSearch(event.target.value)} /></Field></div>
-          <Field label="Progress status"><select className={input} value={status} onChange={event => setStatus(event.target.value)}><option value="all">All progress</option><option value="not_started">Not started</option><option value="in_progress">In progress</option><option value="complete">Completed</option><option value="unknown">History incomplete</option><option value="unavailable">Progress unavailable</option></select></Field>
-          <Field label="Sort by"><select className={input} value={sort} onChange={event => setSort(event.target.value)}><option value="name">Name</option><option value="low">Lowest progress</option><option value="high">Highest progress</option><option value="recent">Recent activity</option>{quizTotal ? <option value="quizzes">Fewest quizzes passed</option> : null}</select></Field>
+          <Field label="Progress status"><select className={input} value={status} onChange={event => setStatus(event.target.value)}>{Object.entries(statusFilters).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
+          <Field label="Sort by"><select className={input} value={`${activeSort.column}:${activeSort.direction}`} onChange={event => {
+            const [column, direction] = event.target.value.split(':')
+            setSort({ column: column as SortKey, direction: direction as Direction })
+          }}>{sortable.flatMap(column => (['ascending', 'descending'] as const).map(direction => <option key={`${column}:${direction}`} value={`${column}:${direction}`}>{sortColumns[column][direction]}</option>))}</select></Field>
         </div>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">{visible.length} of {people.length} people · {report.total_items} training items</p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">{visible.length} of {people.length} people · {report.total_items} training items</p>
+          <ExportMenu shown={shown} disabled={!visible.length} onCsv={() => downloadCsv(exportName, exportTable(false))} onPdf={exportPdf} />
+        </div>
+        {/* Opening details is the only way to a certificate, which prints alone: the two are never mounted together. */}
+        {printable && expanded === null ? <PrintableReport title={exportName} heading={`Staff progress: ${tabLabel}`} table={exportTable(true)} notes={[
+          `As of ${stamped(updated ?? 0)} Eastern · ${shown} · ${report.total_items} training items`,
+          `Showing: ${[statusFilters[status], search.trim() && `search “${search.trim()}”`].filter(Boolean).join(' · ')} · Sorted by: ${sortColumns[activeSort.column][activeSort.direction]}`,
+          `${tabLabel}: Staff ${people.length} · Required progress ${requiredSummary} · Overall progress ${overallSummary} · All items completed ${completedCount} · ${waitingLabel} ${waitingCount}`,
+          measureNote, requiredNote, ...(incomplete ? [historyNote] : []),
+        ]} /> : null}
         {!visible.length ? <p className="py-4 text-neutral-600 dark:text-neutral-300">No people match these filters.</p> : <div className="overflow-x-auto">
           <table role="table" className="block w-full text-left text-sm md:table">
-            <caption className="sr-only">Staff training progress. Expand a person for chapter quiz, Final Exam, module and content details.</caption>
-            <thead role="rowgroup" className="hidden md:table-header-group"><tr role="row" className="border-b border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-300"><th role="columnheader" scope="col" className="py-3 pr-4">Person</th><th role="columnheader" scope="col" className="p-3">Required progress</th><th role="columnheader" scope="col" className="p-3">Overall progress</th><th role="columnheader" scope="col" className="p-3">Items completed</th>{quizTotal ? <th role="columnheader" scope="col" className="p-3">{hasFinal ? 'Chapter quizzes passed' : 'Quizzes passed'}</th> : null}{hasFinal ? <th role="columnheader" scope="col" className="p-3">Final Exam</th> : null}<th role="columnheader" scope="col" className="p-3">Last viewed</th><th role="columnheader" scope="col" className="py-3 pl-3"><span className="sr-only">Details</span></th></tr></thead>
+            <caption className="sr-only">Staff training progress. Select a column heading to sort by it, and again to reverse. Expand a person for chapter quiz, Final Exam, module and content details.</caption>
+            <thead role="rowgroup" className="hidden md:table-header-group"><tr role="row" className="border-b border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-300">{heading('person', 'Person', 'py-3 pr-4')}{heading('required', 'Required progress')}{heading('overall', 'Overall progress')}{heading('items', 'Items completed')}{quizTotal ? heading('quizzes', hasFinal ? 'Chapter quizzes passed' : 'Quizzes passed') : null}{hasFinal ? heading('final', 'Final Exam') : null}{heading('viewed', 'Last viewed')}<th role="columnheader" scope="col" className="py-3 pl-3"><span className="sr-only">Details</span></th></tr></thead>
             <tbody role="rowgroup" className="block md:table-row-group">{visible.map(person => <Fragment key={person.email}>
               <tr role="row" className="grid grid-cols-2 items-center gap-x-4 border-b border-neutral-200 dark:border-neutral-800 py-4 md:table-row md:border-neutral-100 md:py-0">
                 <th role="rowheader" scope="row" className="col-span-2 pb-3 font-normal md:max-w-64 md:py-4 md:pr-4"><p className="break-words font-semibold text-neutral-900 dark:text-neutral-100">{person.name || person.email}</p><p className="break-all text-neutral-500 dark:text-neutral-400">{person.email}</p>{roleNames[person.role] ? <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{roleNames[person.role]}</p> : null}</th>
-                <td role="cell" className="py-2 md:p-3"><p className="mb-1 text-xs text-neutral-500 dark:text-neutral-400 md:hidden">Required progress</p>{person.required_progress?.total_steps === 0 ? <p className="text-sm text-neutral-500 dark:text-neutral-400">No required content</p> : <Meter value={person.required_progress?.fraction == null ? null : Math.floor(person.required_progress.fraction * 100)} incomplete={incomplete} label={`${person.name || person.email}: required progress`} />}</td>
+                <td role="cell" className="py-2 md:p-3"><p className="mb-1 text-xs text-neutral-500 dark:text-neutral-400 md:hidden">Required progress</p>{person.required_progress?.total_steps === 0 ? <p className="text-sm text-neutral-500 dark:text-neutral-400">No required content</p> : <Meter value={requiredPercent(person)} incomplete={incomplete} label={`${person.name || person.email}: required progress`} />}</td>
                 <td role="cell" className="py-2 md:p-3"><p className="mb-1 text-xs text-neutral-500 dark:text-neutral-400 md:hidden">Overall progress</p><Meter value={person.percent} incomplete={incomplete} label={`${person.name || person.email}: overall progress`} /><p className="mt-1.5 text-xs text-neutral-500 dark:text-neutral-400">{statusNames[person.status]}</p></td>
                 <td role="cell" className="py-2 tabular-nums md:p-3"><p className="mb-1 text-xs text-neutral-500 dark:text-neutral-400 md:hidden">Items completed</p>{person.completed_items} / {person.total_items}{incomplete ? <span className="block text-xs text-neutral-500 dark:text-neutral-400">Recorded</span> : null}</td>
                 {quizTotal ? <td role="cell" className="py-2 tabular-nums md:p-3"><p className="mb-1 text-xs text-neutral-500 dark:text-neutral-400 md:hidden">{hasFinal ? 'Chapter quizzes passed' : 'Quizzes passed'}</p>{person.quizzes_passed ?? 0} / {quizTotal}{person.quiz_exempt ? <span className="block text-xs text-neutral-500 dark:text-neutral-400">Optional</span> : null}</td> : null}
