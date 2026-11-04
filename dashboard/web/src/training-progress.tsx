@@ -69,6 +69,7 @@ const sortColumns: Record<SortKey, { compare: Compare } & Record<Direction, stri
 /** The report's columns, in the words the table uses. A spreadsheet wants name, email and role apart; on paper they
  *  stack as they do on screen, which leaves the width for a whole email address on one line. */
 function reportTable(people: TrainingPerson[], { paper, incomplete, totalItems, quizTotal, hasFinal, allLocations }: { paper: boolean; incomplete: boolean; totalItems: number; quizTotal: number; hasFinal: boolean; allLocations: boolean }): ExportTable {
+  const recorded = incomplete ? ', recorded' : ''
   const columns: [string, (person: TrainingPerson) => string][] = paper
     ? [['Person', person => [person.name, person.email, roleNames[person.role]].filter(Boolean).join('\n')]]
     : [['Name', person => person.name], ['Email', person => person.email], ['Role', person => roleNames[person.role] ?? 'Staff']]
@@ -77,10 +78,10 @@ function reportTable(people: TrainingPerson[], { paper, incomplete, totalItems, 
     ['Required progress', person => person.required_progress?.total_steps === 0 ? 'No required content' : percentage(requiredPercent(person), incomplete)],
     ['Overall progress', person => percentage(person.percent, incomplete)],
     ['Status', person => statusNames[person.status]],
-    [`Items completed${incomplete ? ', recorded' : ''} (of ${totalItems})`, person => String(person.completed_items)],
+    [`Items completed${recorded} (of ${totalItems})`, person => String(person.completed_items)],
   )
-  if (quizTotal) columns.push([`${hasFinal ? 'Chapter quizzes' : 'Quizzes'} passed (of ${quizTotal})`, person => `${person.quizzes_passed ?? 0}${person.quiz_exempt ? ' (optional)' : ''}`])
-  if (hasFinal) columns.push(['Final Exam', finalNote])
+  if (quizTotal) columns.push([`${hasFinal ? 'Chapter quizzes' : 'Quizzes'} passed${recorded} (of ${quizTotal})`, person => `${person.quizzes_passed ?? 0}${person.quiz_exempt ? ' (optional)' : ''}`])
+  if (hasFinal) columns.push([`Final Exam${recorded}`, finalNote])
   columns.push(['Last viewed (Eastern)', person => person.last_activity_at === null ? 'No record' : stamped(person.last_activity_at)])
   return { headers: columns.map(([header]) => header), rows: people.map(person => columns.map(([, value]) => value(person))) }
 }
@@ -300,8 +301,9 @@ export function TrainingDashboard() {
   const chooseSort = (column: SortKey) => setSort({ column, direction: column === activeSort.column
     ? activeSort.direction === 'ascending' ? 'descending' : 'ascending' : column === 'viewed' ? 'descending' : 'ascending' })
   const heading = (column: SortKey, title: string, padding = 'p-3') => <th role="columnheader" scope="col" aria-sort={activeSort.column === column ? activeSort.direction : undefined} className="p-0">
-    <button type="button" className={`flex w-full cursor-pointer items-center gap-1.5 text-left hover:text-neutral-900 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-700 dark:hover:text-neutral-100 ${activeSort.column === column ? 'text-neutral-900 dark:text-neutral-100' : ''} ${padding}`} onClick={() => chooseSort(column)}>
-      {title}{activeSort.column === column ? <IconArrowRight className={`size-4 shrink-0 ${activeSort.direction === 'ascending' ? '-rotate-90' : 'rotate-90'}`} /> : <IconSort className="size-4 shrink-0 opacity-60" />}
+    <button type="button" className={`w-full cursor-pointer text-left hover:text-neutral-900 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-700 dark:hover:text-neutral-100 ${activeSort.column === column ? 'text-neutral-900 dark:text-neutral-100' : ''} ${padding}`} onClick={() => chooseSort(column)}>
+      {/* The icon hangs off the last word and takes no width, so sorting adds nothing to a table that already scrolls on a tablet. */}
+      {title}<span className="relative inline-block size-0">{activeSort.column === column ? <IconArrowRight className={`absolute -bottom-0.75 left-1 size-4 ${activeSort.direction === 'ascending' ? '-rotate-90' : 'rotate-90'}`} /> : <IconSort className="absolute -bottom-0.75 left-1 size-4 opacity-60" />}</span>
     </button>
   </th>
   const visible = people.filter(person => `${person.name} ${person.email} ${person.certificate?.number ?? ''} ${person.certificate?.name ?? ''}`.toLowerCase().includes(search.trim().toLowerCase()) && (status === 'all' || (status === 'required_incomplete' ? requiredIncomplete(person) : person.status === status)))
@@ -319,6 +321,8 @@ export function TrainingDashboard() {
   const measureNote = `Current staff list, including admins · Published content only. Documents count unique pages opened; videos count unique sections watched. Each item has equal weight. Activity does not confirm understanding.${quizTotal ? ' Staff must pass each chapter quiz to unlock the next chapter; admins, managers and C-suite may skip them.' : ''}`
   const requiredNote = 'Required progress covers Chapters 1–9, their quizzes and the Final Exam. Each content item and assessment has equal weight; assessments count when passed. Optional modules are excluded. Overall progress covers all content items.'
   const historyNote = `Some viewing history is missing. Percentages are minimum recorded progress; people without records are unknown, not confirmed as unstarted.${quizTotal ? ' Quiz passes in the missing history are not shown, and those chapters stay locked until the quiz is passed again.' : ''}`
+  const rosterWarnings = (report?.roster_warnings ?? []).filter(warning => activeGroup === null || warning.group === activeGroup).map(warning => ({ key: `${warning.group}:${warning.row}`,
+    text: `${activeGroup === null ? `${warning.group} · ` : ''}Spreadsheet row ${warning.row}: ${warning.message}. This row has no login access. Add an email address in the spreadsheet to include this person.` }))
   const tabLabel = tabs[activeTab].label
   const shown = `${visible.length} of ${people.length} people`
   // Names the file, so a filtered copy cannot pass for the whole tab. Characters no file system accepts become hyphens.
@@ -354,7 +358,7 @@ export function TrainingDashboard() {
           }}>{label}</button>)}
       </div>
       <section id="staff-group-panel" role="tabpanel" aria-labelledby={`staff-group-${activeTab}`} className="space-y-4">
-      {(report.roster_warnings ?? []).filter(warning => activeGroup === null || warning.group === activeGroup).map(warning => <p key={`${warning.group}:${warning.row}`} className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">{activeGroup === null ? `${warning.group} · ` : ''}Spreadsheet row {warning.row}: {warning.message}. This row has no login access. Add an email address in the spreadsheet to include this person.</p>)}
+      {rosterWarnings.map(warning => <p key={warning.key} className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">{warning.text}</p>)}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Panel><p className="text-sm text-neutral-600 dark:text-neutral-300">Staff</p><p className="mt-2 text-2xl font-semibold tabular-nums">{people.length}</p></Panel>
         <Panel><p className="text-sm text-neutral-600 dark:text-neutral-300">Required progress</p><p className="mt-2 text-2xl font-semibold tabular-nums">{requiredSummary}</p><p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Average across staff in this tab</p></Panel>
@@ -381,7 +385,7 @@ export function TrainingDashboard() {
           `As of ${stamped(updated ?? 0)} Eastern · ${shown} · ${report.total_items} training items`,
           `Showing: ${[statusFilters[status], search.trim() && `search “${search.trim()}”`].filter(Boolean).join(' · ')} · Sorted by: ${sortColumns[activeSort.column][activeSort.direction]}`,
           `${tabLabel}: Staff ${people.length} · Required progress ${requiredSummary} · Overall progress ${overallSummary} · All items completed ${completedCount} · ${waitingLabel} ${waitingCount}`,
-          measureNote, requiredNote, ...(incomplete ? [historyNote] : []),
+          measureNote, requiredNote, ...(incomplete ? [historyNote] : []), ...rosterWarnings.map(warning => warning.text),
         ]} /> : null}
         {!visible.length ? <p className="py-4 text-neutral-600 dark:text-neutral-300">No people match these filters.</p> : <div className="overflow-x-auto">
           <table role="table" className="block w-full text-left text-sm md:table">

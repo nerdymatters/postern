@@ -500,7 +500,7 @@ test('a CSV exports the current tab as shown, in order, keeping missing history 
   const { name, lines } = await exportCsv(data, () => sortBy('Required progress'))
   expect(name).toBe(`Staff progress - Team One - ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'America/New_York' })}.csv`)
   expect(lines).toEqual([
-    '"Name","Email","Role","Required progress","Overall progress","Status","Items completed, recorded (of 4)","Chapter quizzes passed (of 9)","Final Exam","Last viewed (Eastern)"',
+    '"Name","Email","Role","Required progress","Overall progress","Status","Items completed, recorded (of 4)","Chapter quizzes passed, recorded (of 9)","Final Exam, recorded","Last viewed (Eastern)"',
     '"Ben","ben@example.invalid","Staff","Unknown","Unknown","History incomplete","0","0","Locked","No record"',
     '"Asha","asha@example.invalid","Admin","At least 50%","At least 25%","In progress","2","1 (optional)","Best 12/20 (optional)","Nov 14, 2023 5:13 PM"',
   ])
@@ -592,8 +592,8 @@ test('PDF prints the current view alone, closing an open certificate first', asy
   expect(document.querySelector('.print-report')).toBeNull()
 })
 
-test('the printed report keeps missing-history warnings, and the next export follows the tab', async () => {
-  const data: TrainingProgress = { ...report(), history_incomplete: true, groups: ['Team One', 'Team Two'], people: [{ ...person, groups: ['Team One'] }, { ...person, name: 'Ben', email: 'ben@example.invalid', groups: ['Team Two'] }] }
+test('the printed report keeps missing-history and missing-email warnings, and the next export follows the tab', async () => {
+  const data: TrainingProgress = { ...report(), history_incomplete: true, groups: ['Team One', 'Team Two'], roster_warnings: [{ group: 'Team One', row: 16, message: 'Missing email address' }], people: [{ ...person, groups: ['Team One'] }, { ...person, name: 'Ben', email: 'ben@example.invalid', groups: ['Team Two'] }] }
   vi.spyOn(api, 'trainingProgress').mockResolvedValue(data)
   const print = vi.spyOn(window, 'print').mockImplementation(() => {})
   render(<TrainingDashboard />)
@@ -601,7 +601,7 @@ test('the printed report keeps missing-history warnings, and the next export fol
   const exportPdf = () => { fireEvent.click(screen.getByRole('button', { name: 'Export report' })); fireEvent.click(screen.getByRole('button', { name: /^PDF file/ })) }
   exportPdf()
   const printed = () => document.querySelector('.print-report')!.textContent!
-  for (const text of ['Some viewing history is missing.', 'Items completed, recorded (of 1)', 'Asha']) expect(printed()).toContain(text)
+  for (const text of ['Some viewing history is missing.', 'Spreadsheet row 16: Missing email address.', 'Items completed, recorded (of 1)', 'Asha']) expect(printed()).toContain(text)
   // On paper a person's details stack in one column, as on screen; a spreadsheet keeps them apart.
   expect([...document.querySelectorAll('.print-report th')].map(header => header.textContent)).toEqual(['Person', 'Required progress', 'Overall progress', 'Status', 'Items completed, recorded (of 1)', 'Last viewed (Eastern)'])
   expect(document.querySelector('.print-report td')!.textContent).toBe('Asha\nasha@example.invalid')
@@ -609,6 +609,7 @@ test('the printed report keeps missing-history warnings, and the next export fol
   exportPdf()
   expect(print).toHaveBeenCalledTimes(2)
   expect(printed()).toContain('Staff progress: Team Two')
+  expect(printed()).not.toContain('Spreadsheet row 16') // Another tab's rows stay out of this tab's report.
   expect(printed()).toContain('Ben')
   expect(printed()).not.toContain('Asha')
 })

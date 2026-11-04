@@ -554,13 +554,15 @@ quiz exemption does not count as a pass. People with no required content are lef
 **Export report** saves the people shown, in their current order: the selected tab with
 its search, filter and sort applied. A filtered file says so in its name, for example
 `Staff progress - Team One - Nov 3, 2026 (12 of 31 people).csv`. Values use the table's
-words, including Unknown and “At least”, and times are in Eastern with the year.
+words, including Unknown and “At least”, and times are in Eastern with the year. With
+missing history, the items, quiz and Final Exam headings also say “recorded”.
 
 - **CSV file** downloads directly, as UTF-8 with a byte-order mark so Excel keeps Thai names.
   Cells that start like a spreadsheet formula get a leading apostrophe, as names come
   from a Sheet and from Google accounts.
 - **PDF file** opens the browser's print window with a landscape report, including the
-  tab's summary, what the numbers mean and any missing-history warning. Choose **Save as
+  tab's summary, what the numbers mean and any missing-history or missing-email
+  warning. Choose **Save as
   PDF** there, or on an iPhone or iPad **Share**, then **Save to Files**. Printing rather
   than generating a file lets the browser shape Thai names, with no added dependency.
   Open details close first, as an open certificate prints alone.
