@@ -44,7 +44,7 @@ described in [Architecture](docs/architecture.md).
 |---|---|---|
 | M0 Launch preparation | In progress; parallel with M1 | Current deployment baseline |
 | M1 Accounts and profiles | Production pilot passed; registration closed | M0 launch checks before release |
-| Rust server migration | P1; reducer released, first live pilot rolled back; query-cost fix in validation | Complete indexed-Python rollout and Rust live acceptance in the [runbook](docs/runbooks/rust-server.md) |
+| Rust server migration | P1; indexed Python v0.21.1 deployed; Rust document/rollback smoke passed | Isolated pilot and health-delay diagnosis before broader Rust rollout; [rehearsal](docs/runbooks/pilot-rehearsal.md) |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
 | M2 Private spaces and resource catalog | Isolated metadata/onboarding implemented; content integration and hosting pending | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
@@ -134,6 +134,15 @@ server in `postern/`; M4 remains a separate Rust folder client.
   checks; the [pilot record](docs/runbooks/rust-server.md#first-live-pilot-november-2)
   distinguishes verified rollback from incomplete compatibility acceptance.
   Broader load attribution remains in RS-01.
+  **November 5 update:** v0.21.1's indexes are deployed with Python serving.
+  A fresh quiet-host benchmark passed. After earlier CPU/health guard stops,
+  the final controlled document-reading pilot passed all three staff checks
+  and retained 34 events, including five document-page reads, across Python
+  rollback. Thirteen health samples passed (182 ms median, 252 ms maximum).
+  This closes that smoke/rollback check, not sustained Rust acceptance; the
+  previous intermittent health timeout remains unexplained. The next boundary
+  is a [disposable resource backend and health-stage tracing](docs/runbooks/pilot-rehearsal.md),
+  with representative load and remaining compatibility checks before rollout.
 
 **First deliverable:** an attributed baseline, one selected Rust migration slice
 and explicit performance/compatibility acceptance criteria. The first slice is

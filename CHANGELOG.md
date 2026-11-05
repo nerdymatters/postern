@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.22.0 — Health diagnostics and isolated Rust rehearsals (2026-11-05)
+
+### Added
+
+- Diagnose slow health checks with optional private timing records for request handling, worker queues, database reads and event-loop delays. Tracing is off by default, bounds active traces and file storage, and preserves the existing health response and deadline.
+- Rehearse document reading, quiz unlocking and Python-to-Rust rollback on disposable local data through real HTTP requests. Controlled delay probes check the timing diagnostics without using production data or changing production routing. See the [rehearsal runbook](docs/runbooks/pilot-rehearsal.md) for commands and acceptance limits.
+
 ## 0.21.1 — Health and backup query performance (2026-11-04)
 
 - Check service health and find pending audit backups with less work as retained history grows. Additive SQLite indexes reduce measured query cost while preserving pending-backup status, export order and existing activity. Startup creates the indexes automatically; code rollback can keep them and the current database. See the [measurements and rollout limits](docs/runbooks/rust-server.md#health-and-export-index-candidate-november-4).
