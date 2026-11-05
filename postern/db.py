@@ -46,6 +46,41 @@ CREATE TABLE IF NOT EXISTS batches(id TEXT PRIMARY KEY, drive_id TEXT NOT NULL, 
 -- The exporter polls every three seconds; completed batches should cost no scan.
 CREATE INDEX IF NOT EXISTS batches_pending ON batches(created_at) WHERE confirmed_at IS NULL OR summary_confirmed=0;
 CREATE INDEX IF NOT EXISTS batches_confirmed ON batches(confirmed_at);
+-- Pending batches and unbatched events already have indexed lookup paths.
+-- Track only exceptional orphan events, so confirmation does not rewrite 500
+-- derived rows. These triggers also protect health after rollback to old code.
+CREATE INDEX IF NOT EXISTS batches_unconfirmed ON batches(id) WHERE confirmed_at IS NULL;
+CREATE TABLE IF NOT EXISTS health_orphan_events(seq INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, ts REAL NOT NULL, batch_id TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS health_orphan_oldest ON health_orphan_events(ts);
+CREATE INDEX IF NOT EXISTS health_orphan_batch ON health_orphan_events(batch_id);
+CREATE TRIGGER IF NOT EXISTS health_event_insert AFTER INSERT ON events
+WHEN EXISTS(SELECT 1 FROM health_orphan_events WHERE seq=NEW.seq OR id=NEW.id)
+  OR (NEW.batch_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM batches WHERE id=NEW.batch_id)) BEGIN
+  DELETE FROM health_orphan_events WHERE seq=NEW.seq OR id=NEW.id;
+  INSERT INTO health_orphan_events SELECT NEW.seq,NEW.id,NEW.ts,NEW.batch_id
+    WHERE NEW.batch_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM batches WHERE id=NEW.batch_id);
+END;
+CREATE TRIGGER IF NOT EXISTS health_event_update AFTER UPDATE OF seq,id,ts,batch_id ON events
+WHEN (NEW.batch_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM batches WHERE id=NEW.batch_id))
+  OR ((OLD.batch_id IS NOT NULL OR OLD.seq IS NOT NEW.seq OR OLD.id IS NOT NEW.id)
+    AND EXISTS(SELECT 1 FROM health_orphan_events WHERE seq IN (OLD.seq,NEW.seq) OR id=NEW.id)) BEGIN
+  DELETE FROM health_orphan_events WHERE seq IN (OLD.seq,NEW.seq) OR id=NEW.id;
+  INSERT INTO health_orphan_events SELECT NEW.seq,NEW.id,NEW.ts,NEW.batch_id
+    WHERE NEW.batch_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM batches WHERE id=NEW.batch_id);
+END;
+CREATE TRIGGER IF NOT EXISTS health_event_delete AFTER DELETE ON events BEGIN
+  DELETE FROM health_orphan_events WHERE seq=OLD.seq;
+END;
+CREATE TRIGGER IF NOT EXISTS health_batch_insert AFTER INSERT ON batches BEGIN
+  DELETE FROM health_orphan_events WHERE batch_id=NEW.id;
+END;
+CREATE TRIGGER IF NOT EXISTS health_batch_update AFTER UPDATE OF id ON batches WHEN OLD.id IS NOT NEW.id BEGIN
+  DELETE FROM health_orphan_events WHERE batch_id=NEW.id;
+  INSERT OR REPLACE INTO health_orphan_events SELECT seq,id,ts,batch_id FROM events WHERE batch_id=OLD.id;
+END;
+CREATE TRIGGER IF NOT EXISTS health_batch_delete AFTER DELETE ON batches BEGIN
+  INSERT OR REPLACE INTO health_orphan_events SELECT seq,id,ts,batch_id FROM events WHERE batch_id=OLD.id;
+END;
 '''
 
 
@@ -80,6 +115,15 @@ class Database:
             for pragma in ['journal_mode=WAL', 'synchronous=FULL', 'fullfsync=ON', 'busy_timeout=1000', 'foreign_keys=ON']:
                 db.execute('PRAGMA ' + pragma)
             db.executescript(SCHEMA)
+            if not db.execute("SELECT 1 FROM meta WHERE key='health_orphans_v1'").fetchone():
+                # Backfill once before readiness. A failed/interrupted transaction
+                # leaves no marker and will be rebuilt on the next startup.
+                db.execute('BEGIN IMMEDIATE')
+                db.execute('DELETE FROM health_orphan_events')
+                db.execute('''INSERT INTO health_orphan_events SELECT e.seq,e.id,e.ts,e.batch_id
+                    FROM events e LEFT JOIN batches b ON b.id=e.batch_id WHERE e.batch_id IS NOT NULL AND b.id IS NULL''')
+                db.execute("INSERT INTO meta(key,value) VALUES('health_orphans_v1','true')")
+                db.commit()
             self.ready.set_result({p: db.execute('PRAGMA '+p).fetchone()[0] for p in ['journal_mode','synchronous','fullfsync','busy_timeout']})
             while True:
                 job = self.queue.get()
@@ -132,6 +176,19 @@ class Database:
         self.thread.join(timeout=5)
         if self.thread.is_alive():
             raise RuntimeError('Database writer did not stop')
+
+
+def pending_health(db):
+    # Disjoint sets preserve missing batches, NULL batch IDs and confirmation
+    # reversals without scanning confirmed history or serving a cached status.
+    return db.execute("""SELECT MIN(oldest),SUM(n) FROM (
+        SELECT MIN(ts) oldest,COUNT(*) n FROM events WHERE batch_id IS NULL
+        UNION ALL
+        SELECT MIN(e.ts),COUNT(*) FROM batches b INDEXED BY batches_unconfirmed
+          CROSS JOIN events e ON e.batch_id=b.id WHERE b.confirmed_at IS NULL
+        UNION ALL
+        SELECT MIN(ts),COUNT(*) FROM health_orphan_events
+    )""").fetchone()
 
 
 def rows(db, sql, values=()):

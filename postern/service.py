@@ -15,7 +15,7 @@ import time
 import uuid
 from .auth import Permissions, Refusal, canonical_email, parse_allowlist, session_identity, token_hash
 from .cache import CompositeCache
-from .db import AuditUnavailable, Database, event, meta, rows, set_meta
+from .db import AuditUnavailable, Database, event, meta, pending_health, rows, set_meta
 from .cache import SessionInvalidated
 from .stamp import stamp
 from .derive import Deriver, DeriveError
@@ -497,7 +497,10 @@ class Service:
             path.write_bytes(content);path.chmod(0o600)
             def seal(db):
                 db.execute('INSERT INTO batches(id,drive_id,sha256,bytes,count,created_at) VALUES (?,?,?,?,?,?)',(identity,drive_id,digest,len(content),len(events),time.time()))
-                db.executemany('UPDATE events SET batch_id=? WHERE id=?',[(identity,e['id']) for e in events])
+                # Bind exactly the (at most 500) IDs sealed into these bytes.
+                # Events appended while allocating the remote ID wait for the next batch.
+                ids=[e['id'] for e in events]
+                db.execute('UPDATE events SET batch_id=? WHERE id IN ('+','.join('?' for _ in ids)+')',(identity,*ids))
                 return dict(db.execute('SELECT * FROM batches WHERE id=?',(identity,)).fetchone())
             batch=await self.write(seal)
         else:batch=existing[0];path=self.config.data_dir/'exports'/(batch['id']+'.jsonl')
@@ -768,7 +771,7 @@ class Service:
     async def health(self,private=False):
         health_trace.mark('handler')
         def query(db):
-            oldest=db.execute('SELECT MIN(e.ts),count(*) FROM events e LEFT JOIN batches b ON b.id=e.batch_id WHERE b.confirmed_at IS NULL').fetchone()
+            oldest=pending_health(db)
             latest=db.execute('SELECT MAX(confirmed_at) FROM batches').fetchone()[0]
             fresh=self.permissions.fresh(db)
             return {'process':'up','permissions':'ready' if fresh else 'paused','audit':'unavailable' if self.db.failed else 'ready',

@@ -44,7 +44,7 @@ described in [Architecture](docs/architecture.md).
 |---|---|---|
 | M0 Launch preparation | In progress; parallel with M1 | Current deployment baseline |
 | M1 Accounts and profiles | Production pilot passed; registration closed | M0 launch checks before release |
-| Rust server migration | P1; indexed Python v0.21.1 deployed; Rust document/rollback smoke passed | Isolated pilot and health-delay diagnosis before broader Rust rollout; [rehearsal](docs/runbooks/pilot-rehearsal.md) |
+| Rust server migration | P1; v0.22.0 traced reducer pilot passed; health-query candidate in validation | Complete RS-05–RS-09 below; Python still serves production |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
 | M2 Private spaces and resource catalog | Isolated metadata/onboarding implemented; content integration and hosting pending | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
@@ -143,6 +143,60 @@ server in `postern/`; M4 remains a separate Rust folder client.
   previous intermittent health timeout remains unexplained. The next boundary
   is a [disposable resource backend and health-stage tracing](docs/runbooks/pilot-rehearsal.md),
   with representative load and remaining compatibility checks before rollout.
+  **November 5 traced v0.22.0 pilot passed:** timing capture is enabled; the
+  disposable rehearsal, fresh quiet benchmark and all three live staff checks
+  passed. Roster wall/CPU fell about 49%; reader results matched. Python rollback
+  preserved 77 events, including 23 document-page events, and their hashes were
+  rechecked afterward. All 18 sampled Rust guard checks passed (141–184 ms,
+  maximum observed host CPU 44.9%). The wider trace also captured seven simultaneous
+  health requests each minute taking 2.25–2.71 seconds inside the database-query
+  stage on both backends. This narrows the next work to concurrent health-query
+  cost; it does not prove the source of those requests or every historical timeout.
+  A read-only backup replay measured the full audit-history aggregate at 122 ms
+  median versus about 0.05 ms for the latest-export lookup. A seven-reader replay
+  stopped at the unchanged CPU guard and is not passing performance evidence.
+  Python remains active with timing capture on. Optimize and validate this query
+  path with exact result parity and write/rollback checks, then complete broader
+  representative acceptance before changing the serving default.
+
+### Remaining migration checklist
+
+The released Rust code is currently a native training-history reducer called by
+Python. A successful reducer pilot is not a replacement of the HTTP server or
+its background workers. Python remains the production default.
+
+- [x] Implement and release the first reducer with Python/Rust parity tests.
+- [x] Meet the reducer CPU/time targets and rehearse actual-document cutover and
+  rollback, preserving staff activity (latest: 77 events and 23 page events).
+- [x] Enable bounded health timings and localize the recurring delay to the
+  shared health database queries.
+- [ ] **RS-05 — Finish the health-query fix.** Validate exact pending/confirmed/
+  orphan semantics, startup migration, write cost and old-code rollback; review,
+  run clean CI, ship, then verify the recurring live probe burst. Current work
+  is an isolated candidate; production has not changed.
+- [ ] **RS-06 — Complete representative acceptance.** Finish RS-01's request
+  p50/p95/error, CPU/RSS, audit-queue and job attribution. Exercise the remaining
+  role/revocation, consent, quiz/certificate, media, export and recovery cases
+  under measured load. Retain the two-second health and 70% host CPU guards;
+  run heavy concurrency on an isolated runner.
+- [ ] **RS-07 — Make the first reducer the serving default.** Use the reviewed
+  release, backup, single-writer checks and fresh benchmark; confirm real staff
+  behavior, observe sustained operation, and retain a tested Python fallback.
+- [ ] **RS-08 — Migrate the remaining server responsibilities.** Inventory and
+  rank the next slice using measured cost before each port. The remaining areas
+  are HTTP routing and sessions/authorization; catalog and reports; durable audit
+  writes and recovery; cloud storage/export; document/video/selfie processing;
+  and publication, retention and other background jobs. Each slice needs API
+  parity, fault tests, performance targets, packaging and a rollback rehearsal.
+- [ ] **RS-09 — Complete the runtime transition.** Prove end-to-end operation and
+  restore/recovery with Rust owning the agreed server responsibilities, complete
+  a sustained production observation window, then retire Python serving
+  dependencies when the rollback policy permits. Test/benchmark scripts may
+  remain Python; they are not the serving runtime.
+
+The separately planned cloud move and the M4 Rust folder client are separate workstreams.
+This checklist does not imply that every remaining component should be ported
+before its cost and ownership boundary have been measured.
 
 **First deliverable:** an attributed baseline, one selected Rust migration slice
 and explicit performance/compatibility acceptance criteria. The first slice is
