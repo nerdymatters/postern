@@ -24,6 +24,7 @@ from starlette.formparsers import MultiPartException
 from .auth import Refusal, session_identity, verify_google_identity
 from .service import Service
 from . import quiz, video, selfie
+from .health_trace import HealthTiming
 
 PRIVATE = {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
            'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY'}
@@ -395,4 +396,5 @@ def create_app(config, store=None, service=None, *, spaces=None):
                 return FileResponse(candidate, headers=PRIVATE)
             return FileResponse(root / 'index.html', headers=PRIVATE)
 
+    app.add_middleware(HealthTiming)
     return app

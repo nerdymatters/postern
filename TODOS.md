@@ -35,11 +35,12 @@ The merged commit passed all six CI lanes and was installed on the office Mac
 with verified backups, dependencies and API health. The tested native wheel is
 installed and imports successfully; Python remains active. See the
 [measurements and rollback runbook](docs/runbooks/rust-server.md).
-The November 2 quiet-host retry passed all four benchmark gates with matching
-results. The first live Rust attempt then hit the two-second health-probe limit
-and restored Python successfully against the current database. RS-04 still needs
-the health delay investigated and complete Rust/rollback staff and new-activity
-checks; the Python reading-room baseline was confirmed by the operator.
+The November 2 and November 5 quiet-host benchmarks passed all four gates with
+matching results. Earlier live attempts stopped on the original CPU/health
+guards. The November 5 document-reading pilot subsequently passed the baseline,
+Rust and restored-Python staff checks, preserving all 34 events including five
+document-page reads. RS-04's smoke/rollback check passed; the intermittent health
+delay and broader live acceptance remain open. Python continues serving.
 Broader RS-01 capacity attribution also remains open.
 Address the measured health/audit history scan and competing development jobs
 before widening the migration. The server migration as a whole is not complete.
@@ -48,9 +49,10 @@ full event scan. The November 4 index candidate halves the synthetic query's wal
 removes full-history scans from idle exporter selection. Exact result parity,
 existing-database startup and old-code rollback pass. Single-event write wall
 cost rises about 2%; sealing 500 events rises about 10%. See the runbook for
-measurements and limits. Complete candidate CI and controlled index rollout
-with Python before a fresh quiet benchmark and full Rust pilot. No production
-query, index or backend has been changed by this candidate.
+measurements and limits. Exact candidate/merged CI and the indexed Python rollout
+completed in v0.21.1. Prepare the [isolated pilot and health diagnostics](docs/runbooks/pilot-rehearsal.md)
+before broader Rust rollout. A passing short pilot does not explain the earlier
+timeout or establish representative latency under load.
 
 **Compatibility:** Preserve API responses, authorization/revocation, durable
 audit admission, single-writer/job ownership, training progress and certificate

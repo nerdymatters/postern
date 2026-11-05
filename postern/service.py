@@ -22,7 +22,7 @@ from .derive import Deriver, DeriveError
 from .storage import FakeStore, GoogleStore
 from .progress import annotate, dashboard, finished_items, unfinished
 from .categories import category_key, category_name
-from . import branding, exam, honors, quiz, selfie, training, progress_backend
+from . import branding, exam, honors, quiz, selfie, training, progress_backend, health_trace
 
 
 class Service:
@@ -63,6 +63,7 @@ class Service:
         self.last_signin_refresh = 0
         self.export_error = None
         self.limits = {}
+        self.health_recorder = health_trace.Recorder.configured(config.data_dir, progress_backend.selected())
 
     async def write(self, operation, timings=None):
         started=time.monotonic();future=self.db.submit(operation)
@@ -107,6 +108,8 @@ class Service:
             await asyncio.gather(*list(self.derive_tasks.values()),return_exceptions=True)
         await asyncio.to_thread(self.cache.close)
         await asyncio.to_thread(self.db.close)
+        if self.health_recorder is not None:
+            await asyncio.to_thread(self.health_recorder.close)
 
     async def refresh(self):
         async with self.refresh_lock:
@@ -763,6 +766,7 @@ class Service:
         return await self.execute(request,query,admin=True,event_name=None)
 
     async def health(self,private=False):
+        health_trace.mark('handler')
         def query(db):
             oldest=db.execute('SELECT MIN(e.ts),count(*) FROM events e LEFT JOIN batches b ON b.id=e.batch_id WHERE b.confirmed_at IS NULL').fetchone()
             latest=db.execute('SELECT MAX(confirmed_at) FROM batches').fetchone()[0]
@@ -771,9 +775,15 @@ class Service:
                 'backup':'delayed' if oldest[0] and time.time()-oldest[0]>60 else 'current','pending_events':oldest[1],
                 'oldest_unexported_at':oldest[0],'last_export_at':latest,'allowlist_error':meta(db,'allowlist_error'),
                 'recovery_mode':meta(db,'recovery_mode',False)}
-        try:result=await asyncio.to_thread(self.db.read,query)
-        except Exception:result={'process':'up','permissions':'paused','audit':'unavailable','backup':'unknown'}
-        result['storage']='low' if shutil.disk_usage(self.config.data_dir).free<self.config.free_floor+self.config.upload_limit else 'ready'
+        try:result=await health_trace.read(self.db,query)
+        except Exception:
+            health_trace.mark('database_error')
+            result={'process':'up','permissions':'paused','audit':'unavailable','backup':'unknown'}
+        health_trace.mark('disk_started')
+        try:
+            result['storage']='low' if shutil.disk_usage(self.config.data_dir).free<self.config.free_floor+self.config.upload_limit else 'ready'
+        finally:
+            health_trace.mark('disk_finished')
         if not private:return {k:result[k] for k in ['process','permissions','audit','backup','storage']}
         result['mode']=self.config.mode;result['cache']=self.cache.snapshot();result['sqlite']=self.db.settings
         return result
