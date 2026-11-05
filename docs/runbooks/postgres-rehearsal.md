@@ -126,7 +126,7 @@ functions for a later controlled migration adapter. It has no production CLI.
    unavailable to ordinary members. Child records have their own grants. Ambiguous
    identities and incomplete preparation never become implicit access.
 
-All persistent legacy tables are archived except reusable video tickets; session
+All other persistent legacy tables are archived except reusable video tickets; session
 rows omit `token_hash`. Those historic rows are not recreated as active sessions.
 Agreement, enrollment, quiz, view and certificate records stay in the restricted
 archive. The rehearsal verifies raw rows, quiz standing, certificate identity and

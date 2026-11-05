@@ -3,7 +3,7 @@
 The optional Rust reducer accelerates the history replay used by the reading
 room, quiz completion checks and staff progress report. Python remains the
 default. This is an incremental server migration; production cutover and the
-rest of the server remain open in [RS-01–04](../../ROADMAP.md#rust-server-migration).
+rest of the server remain open in the [remaining migration checklist](../../ROADMAP.md#remaining-migration-checklist).
 
 ## Measurements and scope
 
@@ -446,8 +446,8 @@ Its actual 500-event seal transaction measured 6.09 to 7.08 ms; single-event app
 and confirmation measurements stayed within the original baseline-plus-max(1 ms,
 20%) allowance. The earlier range-update microbenchmark still failed that allowance;
 it is not the exporter's final transaction shape. Keep both sets of evidence under
-`.context/health-pending-20261105/`. Review, full CI and the guarded live burst check
-must pass before this candidate becomes a release or closes RS-05.
+`.context/health-pending-20261105/`. Review and full CI must pass before release;
+the guarded live burst check must pass before closing RS-05.
 
 ## Cutover and rollback
 
