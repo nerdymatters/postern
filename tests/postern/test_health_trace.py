@@ -6,6 +6,7 @@ import json
 import os
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -24,6 +25,12 @@ class Capture:
 
     def emit(self, record):
         self.records.append(record)
+
+    def acquire_trace(self):
+        return True
+
+    def release_trace(self):
+        pass
 
 
 def test_http_trace_is_opt_in_private_bounded_and_response_compatible(config, store, clock, monkeypatch):
@@ -54,8 +61,94 @@ def test_http_trace_is_opt_in_private_bounded_and_response_compatible(config, st
     assert path.stat().st_mode & 0o777 == 0o600
     assert path.parent.stat().st_mode & 0o777 == 0o700
     assert set(final) == {'schema', 'pid', 'backend', 'request', 'started_at', 'stages_ms',
-                          'loop_lag_max_ms', 'stage', 'dropped_records'}
+                          'loop_lag_max_ms', 'stage', 'dropped_records', 'skipped_traces'}
     assert not service.health_recorder.thread.is_alive()
+
+
+# Value: protects=diagnostic construction failures preserve the public health response;
+# fails_when=Recorder or Trace setup exceptions escape into service startup or GET /health;
+# why_new=existing sink-failure coverage starts after diagnostic construction;
+# seam=none; no_claim=catastrophic allocation failures or production availability.
+@pytest.mark.parametrize('failure', ['recorder', 'trace'])
+def test_diagnostic_construction_failure_preserves_http_health(config, store, clock, monkeypatch, failure):
+    monkeypatch.delenv('POSTERN_HEALTH_TRACE', raising=False)
+    with TestClient(create_app(config, service=Service(config, store, clock))) as client:
+        expected = client.get('/health')
+        assert expected.status_code == 200
+
+    attempts = []
+    def unavailable(*args, **kwargs):
+        attempts.append(failure)
+        raise OSError('Diagnostic setup unavailable')
+
+    monkeypatch.setenv('POSTERN_HEALTH_TRACE', '1')
+    if failure == 'recorder':
+        monkeypatch.setattr(health_trace.Recorder, '__init__', unavailable)
+    else:
+        monkeypatch.setattr(health_trace, 'Trace', unavailable)
+    service = Service(config, store, clock)
+    with TestClient(create_app(config, service=service)) as client:
+        response = client.get('/health')
+        assert response.status_code == expected.status_code
+        assert response.json() == expected.json()
+        assert response.headers == expected.headers
+    assert attempts == [failure]
+
+
+# Value: protects=overlapping health requests retain independent partial and completed traces;
+# fails_when=shared trace state or context propagation mixes one request's stages into another;
+# why_new=existing timing tests exercise only one health request at a time;
+# seam=none; no_claim=production concurrency capacity or diagnostic filesystem throughput.
+def test_overlapping_http_health_requests_keep_independent_traces(config, store, clock, monkeypatch):
+    service = Service(config, store, clock)
+    capture = Capture()
+    capture.close = lambda: None
+    service.health_recorder = capture
+    entered, release = threading.Event(), threading.Event()
+    selection_lock = threading.Lock()
+    selected = False
+    original = service.db.read
+
+    def block_first_health_read(operation):
+        nonlocal selected
+        block = False
+        if health_trace.CURRENT.get() is not None:
+            with selection_lock:
+                if not selected:
+                    selected = block = True
+        if block:
+            entered.set()
+            assert release.wait(5)
+        return original(operation)
+
+    monkeypatch.setattr(service.db, 'read', block_first_health_read)
+    expected_stages = health_trace.STAGES - {'database_error'}
+    with TestClient(create_app(config, service=service)) as client:
+        with ThreadPoolExecutor(max_workers=2) as requests:
+            first = requests.submit(client.get, '/health')
+            try:
+                assert entered.wait(5)
+                second_response = requests.submit(client.get, '/health').result(5)
+                assert second_response.status_code == 200
+                finished = [row for row in capture.records if row['stage'] == 'request_finished']
+                assert len(finished) == 1
+                assert set(finished[0]['stages_ms']) == expected_stages
+                identities = {row['request'] for row in capture.records}
+                assert len(identities) == 2
+                blocked_identity, = identities - {finished[0]['request']}
+                blocked = [row for row in capture.records if row['request'] == blocked_identity]
+                assert blocked[-1]['stage'] == 'worker_started'
+                assert 'query_started' not in blocked[-1]['stages_ms']
+            finally:
+                release.set()
+            first_response = first.result(5)
+            assert first_response.status_code == 200
+            assert first_response.json() == second_response.json()
+    finished = [row for row in capture.records if row['stage'] == 'request_finished']
+    assert len(finished) == 2 and len({row['request'] for row in finished}) == 2
+    for row in finished:
+        assert set(row['stages_ms']) == expected_stages
+        assert list(row['stages_ms'].values()) == sorted(row['stages_ms'].values())
 
 
 def test_worker_queue_wait_is_visible_before_worker_runs(config, store, clock):
@@ -253,3 +346,81 @@ def test_cancelled_health_keeps_partial_trace_and_propagates(config, store, cloc
             await asyncio.to_thread(lambda: None)
             await service.close()
     asyncio.run(probe())
+
+
+@pytest.mark.parametrize('ending', ['return', 'error', 'cancel'])
+def test_trace_cap_preserves_health_and_recovers_permits(tmp_path, monkeypatch, ending):
+    # Value: protects=16 active traces, unchanged excess requests, and permit recovery;
+    # fails_when=admission is unbounded or any completion path leaks a permit;
+    # why_new=existing checks trace one request at a time; seam=none;
+    # no_claim=real server scheduling or capacity (controlled ASGI application).
+    recorder = health_trace.Recorder(tmp_path / 'trace', 'python')
+    service = SimpleNamespace(health_recorder=recorder)
+    app_state = SimpleNamespace(state=SimpleNamespace(service=service))
+    expected = [{'type': 'http.response.start', 'status': 200, 'headers': []},
+                {'type': 'http.response.body', 'body': b'ready'}]
+
+    async def probe():
+        release = [asyncio.Event() for _ in range(16)]
+        all_entered = asyncio.Event()
+        traced = {}
+
+        async def application(scope, receive, send):
+            identity = scope['test_request']
+            traced[identity] = health_trace.CURRENT.get() is not None
+            if len(traced) == 16:
+                all_entered.set()
+            if identity < 16:
+                await release[identity].wait()
+            if identity == 0 and ending == 'error':
+                raise OSError('controlled application failure')
+            for message in expected:
+                await send(message)
+
+        middleware = health_trace.HealthTiming(application)
+
+        async def request(identity):
+            messages = []
+            async def send(message):
+                messages.append(message)
+            scope = {'app': app_state, 'type': 'http', 'method': 'GET',
+                     'path': '/health', 'test_request': identity}
+            await middleware(scope, None, send)
+            return messages
+
+        tasks = [asyncio.create_task(request(i)) for i in range(16)]
+        try:
+            await asyncio.wait_for(all_entered.wait(), 5)
+            assert all(traced.values())
+            assert await request(16) == expected
+            assert traced[16] is False and recorder.skipped_traces == 1
+            if ending == 'cancel':
+                tasks[0].cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await tasks[0]
+            else:
+                release[0].set()
+                if ending == 'error':
+                    with pytest.raises(OSError, match='controlled application failure'):
+                        await tasks[0]
+                else:
+                    assert await tasks[0] == expected
+            assert await request(17) == expected and traced[17] is True
+            def unavailable_trace(_):
+                raise OSError('controlled setup failure')
+            with monkeypatch.context() as patch:
+                patch.setattr(health_trace, 'Trace', unavailable_trace)
+                assert await request(18) == expected and traced[18] is False
+            assert await request(19) == expected and traced[19] is True
+            assert recorder.skipped_traces == 1
+        finally:
+            for event in release:
+                event.set()
+            await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 5)
+
+    try:
+        asyncio.run(probe())
+    finally:
+        recorder.close()
+    records = [json.loads(line) for line in (recorder.directory / 'health.jsonl').read_text().splitlines()]
+    assert max(row['skipped_traces'] for row in records) == 1

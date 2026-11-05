@@ -1,6 +1,9 @@
 """The rehearsal cannot accept a live endpoint/config or reuse existing data."""
 import importlib.util
 import json
+import os
+import subprocess
+import sys
 
 import pytest
 
@@ -32,3 +35,24 @@ def test_real_process_rehearsal_preserves_pages_quiz_unlock_and_stops_children(t
             record = json.loads(line)
             assert record['backend'] in ('python', 'rust')
             assert '@example.invalid' not in line and 'Bearer' not in line
+
+
+@pytest.mark.parametrize('via_environment', [False, True])
+def test_optimized_rehearsal_refuses_before_creating_output(tmp_path, via_environment):
+    # Value: protects=assertion-based rehearsal cannot report success when optimized;
+    # fails_when=optimized Python can run the rehearsal; why_new=existing tests use normal Python;
+    # seam=none; no_claim=the actual rehearsal's functional correctness.
+    output = tmp_path / 'must-not-exist'
+    environment = dict(os.environ)
+    environment.pop('PYTHONOPTIMIZE', None)
+    command = [sys.executable]
+    if via_environment:
+        environment['PYTHONOPTIMIZE'] = '1'
+    else:
+        command.append('-O')
+    command += ['-m', 'scripts.pilot_rehearsal', '--output', str(output)]
+    result = subprocess.run(command, cwd=pilot.SOURCE, env=environment,
+                            capture_output=True, text=True, timeout=5)
+    assert result.returncode != 0
+    assert 'Pilot rehearsal requires assertions' in result.stderr
+    assert not output.exists() and not result.stdout

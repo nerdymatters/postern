@@ -6,6 +6,9 @@ lock on that directory. This is a functional rehearsal, not a capacity benchmark
 """
 from __future__ import annotations
 
+if not __debug__:
+    raise SystemExit('Pilot rehearsal requires assertions; run without -O or PYTHONOPTIMIZE.')
+
 import argparse
 import asyncio
 from concurrent.futures import ThreadPoolExecutor

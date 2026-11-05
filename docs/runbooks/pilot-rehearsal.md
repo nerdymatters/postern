@@ -7,12 +7,15 @@ the office backend therefore affects both portals.
 
 ## Run a disposable backend rehearsal
 
-From a source checkout with the normal test dependencies, `psutil`, and the
+From a source checkout with the normal test dependencies and the
 compatible optional Rust wheel installed:
 
 ```sh
 python -m scripts.pilot_rehearsal --output /path/to/new-pilot-evidence
 ```
+
+Run with assertions enabled. The harness refuses `-O` and `PYTHONOPTIMIZE`
+before creating output because its compatibility checks use assertions.
 
 The output directory must not exist. No production URL, config or credentials
 can be supplied. The harness creates a private synthetic roster, sample quizzes,
@@ -51,10 +54,17 @@ Other endpoints, including private health and configuration, are not traced.
 Records are written only beneath the configured data directory in
 `health-diagnostics/health.jsonl` and `health.jsonl.1`. Each file is bounded to
 1 MiB; the directory is mode 0700 and files mode 0600. Symlink/non-regular log
-targets are refused. A dedicated writer consumes a 64-record queue. A full queue
-or failed sink drops diagnostics; it cannot return cached health, suppress an
-application error or delay rollback waiting for log I/O. Missing records or
-`dropped_records` mean incomplete diagnostic coverage, not successful requests.
+targets are refused. Rotation replaces older records, so retention is finite
+and depends on probe frequency. Copy the files promptly after a stopped pilot;
+this rolling trace is not an incident archive.
+A dedicated writer consumes a 64-record queue. At most 16 requests are traced
+at once; nonblocking admission lets excess health requests execute unchanged
+without tracing and increments `skipped_traces`. A full queue or failed sink
+drops diagnostics; it cannot return cached health or suppress an application
+error. Shutdown joins the writer for up to one second after dispatch through
+the shared executor; time waiting for that executor is outside the join bound.
+Missing records, `dropped_records` or `skipped_traces` mean incomplete diagnostic
+coverage, not successful requests.
 
 Each snapshot contains PID, backend, a process-local request counter, start time,
 fixed stage offsets in monotonic milliseconds, and maximum observed event-loop
@@ -74,6 +84,9 @@ snapshots make an unfinished request visible before a client's timeout.
 | `response_finished - received` | Through the final ASGI response send |
 
 `database_error` records only that the existing database exception path ran.
+An end-stage mark means the operation returned or raised, not that readiness
+passed. Cancellation can return to the loop before the worker finishes; do not
+interpret that order as a successful-request duration from the table above.
 Missing end stages can indicate a request still in progress, cancellation or lost
 diagnostics. The 50 ms event-loop timer runs only while a traced request is in
 flight. It cannot measure network time, an event-loop stall before ASGI dispatch,

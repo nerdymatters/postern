@@ -25,12 +25,15 @@ STAGES = frozenset(('received', 'handler', 'submitted', 'worker_started',
 
 class Recorder:
     MAX_BYTES = 1024 * 1024
+    MAX_ACTIVE_TRACES = 16
 
     def __init__(self, directory: Path, backend: str):
         self.directory, self.backend = directory, backend
         self.pending = queue.Queue(maxsize=64)
         self.stopping = threading.Event()
         self.dropped = 0
+        self.skipped_traces = 0
+        self.trace_slots = threading.BoundedSemaphore(self.MAX_ACTIVE_TRACES)
         self.failed = False
         self.identities = itertools.count(1)
         self.thread = threading.Thread(target=self._run, name='postern-health-trace', daemon=True)
@@ -45,12 +48,22 @@ class Recorder:
         except Exception:
             return None
 
+    def acquire_trace(self):
+        if self.stopping.is_set() or self.failed or not self.trace_slots.acquire(blocking=False):
+            self.skipped_traces += 1
+            return False
+        return True
+
+    def release_trace(self):
+        self.trace_slots.release()
+
     def emit(self, record):
         try:
             if self.stopping.is_set() or self.failed:
                 self.dropped += 1
                 return
-            self.pending.put_nowait({**record, 'dropped_records': self.dropped})
+            self.pending.put_nowait({**record, 'dropped_records': self.dropped,
+                                     'skipped_traces': self.skipped_traces})
         except Exception:
             self.dropped += 1
 
@@ -180,9 +193,12 @@ class HealthTiming:
         recorder = getattr(service, 'health_recorder', None)
         if recorder is None or scope['type'] != 'http' or scope['method'] != 'GET' or scope['path'] != '/health':
             return await self.app(scope, receive, send)
+        if not recorder.acquire_trace():
+            return await self.app(scope, receive, send)
         try:
             trace = Trace(recorder)
         except Exception:
+            recorder.release_trace()
             return await self.app(scope, receive, send)
         token = CURRENT.set(trace)
 
@@ -196,5 +212,8 @@ class HealthTiming:
         try:
             await self.app(scope, receive, measured_send)
         finally:
-            CURRENT.reset(token)
-            trace.finish()
+            try:
+                CURRENT.reset(token)
+                trace.finish()
+            finally:
+                recorder.release_trace()
