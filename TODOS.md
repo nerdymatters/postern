@@ -71,7 +71,8 @@ checks stay open before changing the serving default.
 **Current round:** an isolated health-query candidate uses indexed unbatched and
 unconfirmed-batch reads plus transactionally maintained orphan metadata. Exact
 parity, checkpoint compatibility and copied-history read/write measurements pass.
-Full CI, release and live-burst verification remain required before rollout.
+All six CI jobs passed on candidate commit `2798542`; final release-commit CI,
+release and guarded live-burst verification remain required before completing rollout.
 The [remaining migration checklist](ROADMAP.md#remaining-migration-checklist)
 separates this fix, sustained reducer acceptance and the remaining server ports.
 
