@@ -467,12 +467,14 @@ the sustained production rollout remains pending.
 
 ## Remaining performance work
 
-Validate and roll out the health/export index candidate before expanding the
-Rust boundary. It reduces metadata scan cost but does not establish the cause
-of the stopped live pilot. Preserve fail-closed backup/audit readiness and
-measure production behavior before another Rust cutover. Separately move broad builds
-and tests to dedicated runners, or schedule
-bounded runs in a quiet window. Do not terminate unrelated user jobs.
+As recorded in the [November 5 roadmap update](../../ROADMAP.md#rust-server-migration),
+the v0.21.1 indexes are deployed with Python serving, and the document-reading
+and rollback smoke check passed. Sustained Rust acceptance and the cause of the
+earlier intermittent health timeout remain open. Use the
+[isolated rehearsal and health diagnostics](pilot-rehearsal.md) for the next checks.
+Preserve fail-closed backup/audit readiness and measure production behavior
+before broader Rust rollout. Move broad builds and tests to dedicated runners,
+or schedule bounded runs in a quiet window. Do not terminate unrelated user jobs.
 
 RS-01 still needs representative request p95/error rates, audit queue/commit
 latency and background-job attribution. Run those larger rehearsals away from

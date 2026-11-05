@@ -11,7 +11,7 @@ From a source checkout with the normal test dependencies and the
 compatible optional Rust wheel installed:
 
 ```sh
-python -m scripts.pilot_rehearsal --output /path/to/new-pilot-evidence
+.venv/bin/python -m scripts.pilot_rehearsal --output /path/to/new-pilot-evidence
 ```
 
 Run with assertions enabled. The harness refuses `-O` and `PYTHONOPTIMIZE`
@@ -99,7 +99,7 @@ diagnostic files when their evidence is no longer required.
 ## Validate diagnosis with controlled delays
 
 ```sh
-python -m scripts.pilot_rehearsal --fault-probes /path/to/new-delay-evidence
+.venv/bin/python -m scripts.pilot_rehearsal --fault-probes /path/to/new-delay-evidence
 ```
 
 This starts separate disposable Python services with one controlled 2.2-second
