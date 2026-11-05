@@ -15,6 +15,55 @@ from postern.pg import MigrationError,Postgres,restore_quarantined
 from postern.recover import import_events
 
 
+# Format 1 predates derived health metadata. Keep this inventory independent of
+# the current schema so an added runtime table cannot silently redefine bundles.
+FORMAT1_TABLES = set('batches events items members meta operations posts quiz_draws quiz_seen quiz_standing selfie_reservations selfies session_devices session_ip_agreements sessions video_checkpoints video_coverage video_metadata views'.split())
+
+
+@pytest.mark.parametrize('upgraded', [False, True])
+def test_checkpoint_export_keeps_format1_inventory_with_optional_health_metadata(tmp_path, upgraded):
+    path = tmp_path/'source.sqlite3'
+    conn = sqlite3.connect(path)
+    try:
+        conn.executescript(SCHEMA)
+        if not upgraded:
+            for (name,) in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'health_%'").fetchall():
+                conn.execute(f'DROP TRIGGER {name}')
+            conn.execute('DROP TABLE health_orphan_events')
+        conn.execute("INSERT INTO events(id,ts,type,summary,payload,batch_id) VALUES('old-event',1,'synthetic',0,'{}','missing')")
+        conn.commit()
+        before = hashlib.sha256(path.read_bytes()).hexdigest()
+        bundle = tmp_path/'bundle'
+        digest = export_legacy(path, str(uuid.uuid4()), {}, bundle)
+        manifest = load_manifest(bundle, digest)
+        assert set(manifest['counts']) == FORMAT1_TABLES
+        assert manifest['counts']['events'] == 1
+        assert all(json.loads(line)['table'] != 'health_orphan_events' for line in (bundle/'rows.jsonl').read_bytes().splitlines())
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+        conn.execute('CREATE TABLE unexpected(id TEXT)')
+        conn.commit()
+        with pytest.raises(ValueError, match='schema table set differs'):
+            export_legacy(path, str(uuid.uuid4()), {}, tmp_path/'unknown-schema')
+    finally:
+        conn.close()
+
+
+def test_existing_format1_bundle_still_loads_and_unknown_tables_still_fail(tmp_path):
+    (tmp_path/'objects').mkdir()
+    (tmp_path/'rows.jsonl').write_bytes(b'')
+    manifest = {'format':1, 'installation':str(uuid.uuid4()), 'counts':dict.fromkeys(FORMAT1_TABLES, 0),
+                'objects':{}, 'rows_sha256':hashlib.sha256(b'').hexdigest(),
+                'omitted':['video_tickets','sessions.token_hash']}
+    data = canonical(manifest)
+    (tmp_path/'manifest.json').write_bytes(data)
+    assert load_manifest(tmp_path, hashlib.sha256(data).hexdigest()) == manifest
+    manifest['counts']['unexpected'] = 0
+    data = canonical(manifest)
+    (tmp_path/'manifest.json').write_bytes(data)
+    with pytest.raises(ValueError, match='unsupported bundle'):
+        load_manifest(tmp_path, hashlib.sha256(data).hexdigest())
+
+
 @pytest.fixture
 def legacy(tmp_path):
     path=tmp_path/'source.sqlite3'; conn=sqlite3.connect(path);conn.row_factory=sqlite3.Row;conn.executescript(SCHEMA)

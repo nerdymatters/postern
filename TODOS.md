@@ -50,9 +50,31 @@ removes full-history scans from idle exporter selection. Exact result parity,
 existing-database startup and old-code rollback pass. Single-event write wall
 cost rises about 2%; sealing 500 events rises about 10%. See the runbook for
 measurements and limits. Exact candidate/merged CI and the indexed Python rollout
-completed in v0.21.1. Prepare the [isolated pilot and health diagnostics](docs/runbooks/pilot-rehearsal.md)
-before broader Rust rollout. A passing short pilot does not explain the earlier
-timeout or establish representative latency under load.
+completed in v0.21.1. The [isolated pilot and health diagnostics](docs/runbooks/pilot-rehearsal.md)
+shipped in v0.22.0. Its traced live document/rollback pilot passed all staff checks
+and preserved 77 events including 23 document-page events. The fresh benchmark
+cut roster wall/CPU about 49% with matching results. Python is restored and
+timing capture remains enabled.
+
+**Next measured task:** reduce concurrent health-query cost. The wider capture
+showed seven simultaneous health requests each minute spending 2.25–2.71 seconds
+in the database-query stage on both backends, despite all 18 sampled Rust guard
+checks passing. A read-only backup replay measured the audit-history aggregate
+at 122 ms median and the latest-export lookup at about 0.05 ms. The aggregate
+still scans the full covering event index. A seven-reader replay stopped at the
+70% CPU guard; retain it as stopped evidence, not a benchmark pass. Attribute the
+request source and test a query change on isolated data with exact health-result
+parity, write-cost and rollback checks. Do not mask the cost with stale health or
+a wider deadline. Sustained/representative acceptance and remaining compatibility
+checks stay open before changing the serving default.
+
+**Current round:** an isolated health-query candidate uses indexed unbatched and
+unconfirmed-batch reads plus transactionally maintained orphan metadata. Exact
+parity, checkpoint compatibility and copied-history read/write measurements pass.
+All six CI jobs passed on candidate commit `2798542`; final release-commit CI,
+release and guarded live-burst verification remain required before completing rollout.
+The [remaining migration checklist](ROADMAP.md#remaining-migration-checklist)
+separates this fix, sustained reducer acceptance and the remaining server ports.
 
 **Compatibility:** Preserve API responses, authorization/revocation, durable
 audit admission, single-writer/job ownership, training progress and certificate

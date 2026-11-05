@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.22.1 — Pending-backup health performance (2026-11-05)
+
+### Fixed
+
+- Check backup health without scanning already confirmed activity. Health retains the exact pending count and oldest-event time, while audit export still seals at most 500 selected events and retries the same bytes. Startup builds derived metadata once; the [rollout runbook](docs/runbooks/rust-server.md#pending-health-query-candidate-november-5) records measurements, startup checks and rollback limits.
+- Keep existing offline migration checkpoints readable after the health optimization. New checkpoints retain the original format and omit rebuildable health metadata. After rolling serving code back to v0.22.0, use the newer offline exporter for upgraded snapshots and retain the live metadata; see [checkpoint compatibility](docs/runbooks/postgres-rehearsal.md).
+
 ## 0.22.0 — Health diagnostics and isolated Rust rehearsals (2026-11-05)
 
 ### Added

@@ -23,7 +23,10 @@ import uuid
 from .db import SCHEMA
 from .pg import literal, MigrationError
 
-TABLES=set(re.findall(r'CREATE TABLE IF NOT EXISTS (\w+)',SCHEMA))
+# Rebuildable runtime metadata is optional in source snapshots and is not part
+# of the immutable format-1 checkpoint inventory.
+DERIVED={'health_orphan_events'}
+TABLES=set(re.findall(r'CREATE TABLE IF NOT EXISTS (\w+)',SCHEMA))-DERIVED
 OMITTED={'video_tickets'}
 
 
@@ -53,10 +56,10 @@ def export_legacy(database,installation,objects,output):
     try:
         conn.execute('BEGIN')
         tables={r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
-        if tables!=TABLES: raise ValueError('source schema table set differs; reconcile before export')
+        if tables-DERIVED!=TABLES: raise ValueError('source schema table set differs; reconcile before export')
         with (output/'rows.jsonl').open('xb') as stream:
             os.chmod(stream.name,0o600)
-            for table in sorted(tables-OMITTED):
+            for table in sorted(TABLES-OMITTED):
                 columns=conn.execute(f'PRAGMA table_info("{table}")').fetchall()
                 keys=[r['name'] for r in sorted(columns,key=lambda r:r['pk']) if r['pk']]
                 names=[r['name'] for r in columns if not(table=='sessions' and r['name']=='token_hash')]

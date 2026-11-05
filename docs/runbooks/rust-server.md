@@ -3,7 +3,7 @@
 The optional Rust reducer accelerates the history replay used by the reading
 room, quiz completion checks and staff progress report. Python remains the
 default. This is an incremental server migration; production cutover and the
-rest of the server remain open in [RS-01–04](../../ROADMAP.md#rust-server-migration).
+rest of the server remain open in the [remaining migration checklist](../../ROADMAP.md#remaining-migration-checklist).
 
 ## Measurements and scope
 
@@ -419,6 +419,35 @@ removes a demonstrated recurring cost but is not proof that the timeout is
 fixed. Deploy and observe the indexes with Python first, repeat the quiet-host
 benchmark with the verified release, then complete the Rust staff check and
 new-activity comparison across rollback under the existing health limits.
+
+## Pending-health query candidate, November 5
+
+This candidate replaces the confirmed-history scan with three disjoint reads:
+unbatched events, events in unconfirmed batches, and derived orphan metadata.
+SQLite triggers maintain the orphan table in the same transaction as authoritative
+event/batch writes. Startup backfills it once before readiness; a failed transaction
+leaves no completion marker. Retained triggers continue working when rolling back
+to v0.22.0, whose health query ignores the extra table. Do not remove the table,
+triggers or marker independently, or restore an older database over current activity.
+Format-1 checkpoint bundles omit the derived table and still accept old snapshots.
+After a serving-code rollback, use the newer checkpoint exporter for upgraded
+snapshots; the v0.22.0 exporter rejects the added table. Preserve the required
+`batches_unconfirmed` index with the table, triggers and completion marker.
+
+On an isolated copy containing 232,168 events, startup migration took 340 ms and
+the health aggregate fell from 117.82 to 0.0041 ms median. Seven concurrent query
+readers completed in at most 7.66 ms. These are query measurements, not HTTP or
+sustained production acceptance; work still grows with unexported/orphan backlog.
+Authoritative event hashes and query results matched.
+
+Early implementations failed the write budget and were retained as failed evidence.
+The final exporter updates exactly the selected event IDs in one bound statement.
+Its actual 500-event seal transaction measured 6.09 to 7.08 ms; single-event append
+and confirmation measurements stayed within the original baseline-plus-max(1 ms,
+20%) allowance. The earlier range-update microbenchmark still failed that allowance;
+it is not the exporter's final transaction shape. Keep both sets of evidence under
+`.context/health-pending-20261105/`. Review and full CI must pass before release;
+the guarded live burst check must pass before closing RS-05.
 
 ## Cutover and rollback
 
