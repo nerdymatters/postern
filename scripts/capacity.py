@@ -10,12 +10,14 @@ import argparse
 import asyncio
 from collections import Counter, defaultdict
 import hashlib
+from importlib.machinery import EXTENSION_SUFFIXES
 import json
 import math
 import platform
 from pathlib import Path
 import socket
 import subprocess
+import sys
 import time
 import uuid
 
@@ -181,6 +183,14 @@ def seed(service, roster, history_hours, existing_reader=None):
         service.db.submit(existing).result(10)
     # One synthetic 12-hour timeline. Nine hours corresponds to 2,160 events per reader.
     count = int(history_hours*240)
+    if count:
+        # Establish confirmed history before assigning events to it. Inserting
+        # this last creates an orphan row for every event and then clears the
+        # entire history in one bounded writer transaction. No workload is active
+        # yet; this is synthetic prior-confirmation metadata, not recovery proof.
+        service.db.submit(lambda db: db.execute(
+            'INSERT INTO batches(id,drive_id,sha256,bytes,count,created_at,confirmed_at,summary_confirmed) VALUES (?,?,?,?,?,?,?,1)',
+            ('synthetic-seed', 'synthetic-seed', '0'*64, 0, roster*count, now-86400, now-1))).result(10)
     for reader, email in enumerate(emails):
         def history(db):
             last_seq = db.execute('SELECT COALESCE(MAX(seq),0) FROM events').fetchone()[0]
@@ -192,13 +202,6 @@ def seed(service, roster, history_hours, existing_reader=None):
             db.execute("UPDATE events SET batch_id='synthetic-seed' WHERE seq>?", (last_seq,))
         if count:
             service.db.submit(history).result(10)
-    if count:
-        # Health joins events to batches. A dangling seed batch would incorrectly
-        # label all historical fixtures as an overdue backup, despite new exports
-        # succeeding. This is synthetic prior-confirmation metadata, not a recovery test.
-        service.db.submit(lambda db: db.execute(
-            'INSERT INTO batches(id,drive_id,sha256,bytes,count,created_at,confirmed_at,summary_confirmed) VALUES (?,?,?,?,?,?,?,1)',
-            ('synthetic-seed', 'synthetic-seed', '0'*64, 0, roster*count, now-86400, now-1))).result(10)
     return tokens
 
 
@@ -477,11 +480,18 @@ async def run(args):
         revision = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True,
                                   capture_output=True, check=False).stdout.strip() or None
         backend = progress_backend.selected()
+        native_hash = None
+        if backend == 'rust':
+            # Maturin's package __file__ is a Python shim, not the reducer binary.
+            extension = sys.modules[progress_backend.native().reduce.__module__]
+            binary = Path(extension.__file__)
+            if not any(str(binary).endswith(suffix) for suffix in EXTENSION_SUFFIXES):
+                raise RuntimeError('Native reducer provenance did not resolve to an extension binary')
+            native_hash = hashlib.sha256(binary.read_bytes()).hexdigest()
         runtime = {'backend': backend, 'revision': revision, 'python': platform.python_version(),
                    'platform': platform.platform(), 'machine': platform.machine(),
                    'logical_cpus': psutil.cpu_count(),
-                   'native_sha256': hashlib.sha256(Path(progress_backend.native().__file__).read_bytes()).hexdigest()
-                   if backend == 'rust' else None}
+                   'native_sha256': native_hash}
         report = {'scenario': vars(args), 'elapsed_seconds': round(elapsed, 3),
                   'runtime': runtime,
                   'process_cpu_seconds': cpu_seconds, 'main_thread_cpu_seconds': main_cpu_seconds,

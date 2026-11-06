@@ -2,6 +2,8 @@
 import argparse
 import asyncio
 import hashlib
+import importlib
+import importlib.machinery
 import json
 import shutil
 import time
@@ -112,14 +114,47 @@ def test_short_mixed_workload_cannot_pass_without_progress_and_dashboard(tmp_pat
     backend = capacity.progress_backend.selected()
     assert report['runtime']['backend'] == backend
     assert report['runtime']['revision'] is None  # The owned fixture root is not a git checkout.
-    expected_hash = (hashlib.sha256(capacity.Path(capacity.progress_backend.native().__file__).read_bytes()).hexdigest()
-                     if backend == 'rust' else None)
+    expected_hash = None
+    if backend == 'rust':
+        extension = importlib.import_module('postern_progress_native.postern_progress_native')
+        assert isinstance(extension.__loader__, importlib.machinery.ExtensionFileLoader)
+        expected_hash = hashlib.sha256(capacity.Path(extension.__file__).read_bytes()).hexdigest()
     assert report['runtime']['native_sha256'] == expected_hash
     # gstack-timing-ok: adjacent process/thread CPU clock reads need a 10ms precision allowance, not a performance budget.
     assert report['process_cpu_seconds'] + .01 >= report['main_thread_cpu_seconds'] > 0
     assert report['writer_by_caller']['request_or_other']['operation_cpu_ms']['count'] > 0
     assert report['writer_by_caller']['request_or_other']['commit_ms']['count'] > 0
     assert report['requests']['health']['statuses']['200'] >= 2
+
+
+def test_seeded_history_never_builds_an_orphan_backlog(tmp_path):
+    # Regression: mixed hosted campaign failed when one final batch insert cleared
+    # 492,480 synthetic orphan rows inside the bounded audit transaction.
+    # Value: protects=history fixture obeys batch relationships throughout setup;
+    # fails_when=confirmed batch is inserted after its events; seam=writer observer;
+    # no_claim=representative load performance or production recovery.
+    service = capacity.Service(capacity.Config(data_dir=tmp_path/'data', mode='demo', preview=True),
+                               store=capacity.FakeStore(tmp_path/'cloud'))
+    original_submit = service.db.submit
+    orphan_counts = []
+    def observed_submit(operation):
+        def observed(db):
+            result = operation(db)
+            orphan_counts.append(db.execute('SELECT COUNT(*) FROM health_orphan_events').fetchone()[0])
+            return result
+        return original_submit(observed)
+    service.db.submit = observed_submit
+    try:
+        capacity.seed(service, 2, .1)
+        assert orphan_counts and max(orphan_counts) == 0
+        def inspect(db):
+            return (db.execute('SELECT COUNT(*) FROM events').fetchone()[0],
+                    tuple(db.execute('SELECT count,summary_confirmed FROM batches').fetchone()),
+                    db.execute('SELECT COUNT(*) FROM events WHERE batch_id IS NULL').fetchone()[0])
+        assert service.db.read(inspect) == (48, (48, 1), 0)
+        assert not service.db.failed
+    finally:
+        service.db.close()
 
 
 def test_fast_enrollment_keeps_reader_until_progress_is_saved(tmp_path, monkeypatch):
