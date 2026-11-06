@@ -12,8 +12,10 @@ from collections import Counter, defaultdict
 import hashlib
 import json
 import math
+import platform
 from pathlib import Path
 import socket
+import subprocess
 import time
 import uuid
 
@@ -29,9 +31,21 @@ from postern.service import Service
 from postern.storage import FakeStore
 from postern.video import CHUNK
 from postern.selfie import device_hash
+from postern import progress_backend
 
 ROOT = Path(__file__).resolve().parents[1]
 VIDEO, PDF = 'capacity-video', 'capacity-pdf'
+HEALTH = {'process': 'up', 'permissions': 'ready', 'audit': 'ready',
+          'backup': 'current', 'storage': 'ready'}
+
+
+def health_payload(response):
+    if response is None:
+        return {}
+    try:
+        return response.json()
+    except ValueError:
+        return {}
 
 
 def progress_key(email, ranges):
@@ -90,6 +104,9 @@ class Metrics:
         self.rss = []
         self.host_idle = []
         self.queue_depth = []
+        self.writer_operations = defaultdict(list)
+        self.writer_queue = defaultdict(list)
+        self.writer_commit = defaultdict(list)
 
     async def request(self, client, label, method, path, **kwargs):
         started = time.monotonic()
@@ -112,7 +129,11 @@ class Metrics:
                 'queue_ms': distribution(self.queue), 'commit_ms': distribution(self.commit),
                 'event_loop_lag_ms': distribution(self.lag), 'process_rss_mib': distribution(self.rss),
                 'whole_host_idle_percent': distribution(self.host_idle),
-                'writer_queue_depth': distribution(self.queue_depth)}
+                'writer_queue_depth': distribution(self.queue_depth),
+                'writer_by_caller': {owner: {'operation_cpu_ms': distribution(values),
+                                             'queue_ms': distribution(self.writer_queue[owner]),
+                                             'commit_ms': distribution(self.writer_commit[owner])}
+                                     for owner, values in list(self.writer_operations.items())}}
 
 
 def seed(service, roster, history_hours, existing_reader=None):
@@ -201,6 +222,30 @@ async def run(args):
         await asyncio.to_thread(service.db.close)
         raise
     metrics = Metrics()
+    recording = False
+    original_submit = service.db.submit
+    def measured_submit(operation):
+        try:
+            caller = asyncio.current_task()
+        except RuntimeError:
+            caller = None
+        owner = (caller.get_coro().__qualname__ if caller in service.tasks else 'request_or_other')
+        measure = recording
+        def measured_operation(db):
+            before = time.thread_time()
+            try:
+                return operation(db)
+            finally:
+                if measure:
+                    metrics.writer_operations[owner].append((time.thread_time()-before)*1000)
+        future = original_submit(measured_operation)
+        def completed(done):
+            if measure and hasattr(done, 'commit_ms'):
+                metrics.writer_queue[owner].append(done.queue_ms)
+                metrics.writer_commit[owner].append(done.commit_ms)
+        future.add_done_callback(completed)
+        return future
+    service.db.submit = measured_submit
     expected_progress = Counter()
     bad_video_bodies = 0
     range_digest = hashlib.sha256(bytes(range(256))*(CHUNK//256)).digest()
@@ -210,7 +255,7 @@ async def run(args):
         try:
             return await original_write(operation, timing)
         finally:
-            if 'audit_ms' in timing:
+            if recording and 'audit_ms' in timing:
                 metrics.audit.append(timing['audit_ms'])
                 metrics.queue.append(timing['queue_ms'])
                 metrics.commit.append(timing['commit_ms'])
@@ -263,7 +308,15 @@ async def run(args):
                 if busy_samples >= 10:
                     aborted = 'whole-host CPU reserve below 30% for five seconds'
                     stop.set()
-                if guard_live and time.monotonic() >= next_health:
+                if time.monotonic() >= next_health:
+                    async with httpx.AsyncClient(trust_env=False, timeout=2) as isolated:
+                        probe = await metrics.request(isolated, 'health', 'GET', f'http://127.0.0.1:{port}/health')
+                        if probe is None or probe.status_code != 200 or health_payload(probe) != HEALTH:
+                            aborted = 'isolated health check failed; rehearsal stopped'
+                            stop.set()
+                    next_health = time.monotonic()+5
+                    if not guard_live:
+                        continue
                     async with httpx.AsyncClient(trust_env=False, timeout=2) as guard:
                         try:
                             live = await guard.get('http://127.0.0.1:8790/health')
@@ -275,11 +328,12 @@ async def run(args):
                     if not healthy:
                         aborted = 'live local health check failed; rehearsal stopped'
                         stop.set()
-                    next_health = time.monotonic()+5
         sampler = asyncio.create_task(sample())
         async with httpx.AsyncClient(base_url=f'http://127.0.0.1:{port}', timeout=15,
                                      trust_env=False, limits=httpx.Limits(max_connections=args.users+5)) as client:
             started = time.monotonic()
+            cpu_started, main_cpu_started = time.process_time(), time.thread_time()
+            recording = True
             if args.scenario == 'signin':
                 await asyncio.gather(*(metrics.request(client, 'signin', 'POST', '/api/auth/demo',
                     json={'email': f'reader{i}@example.invalid', 'name': f'Reader {i}'}) for i in range(args.users)))
@@ -331,6 +385,10 @@ async def run(args):
                 viewer = asyncio.create_task(existing_reader()) if args.with_reader else None
                 try:
                     await asyncio.gather(*(enroll(i) for i in range(args.users)))
+                    # Keep the already-enrolled reader active for the declared
+                    # observation window even when all enrollments finish early.
+                    while viewer and time.monotonic()-started < args.seconds and not stop.is_set():
+                        await asyncio.sleep(.1)
                 finally:
                     viewer_stop.set()
                     if viewer:
@@ -383,10 +441,15 @@ async def run(args):
                             reader.next_dashboard = now+30
                         await asyncio.sleep(.1)
                 await asyncio.gather(*(reader(i) for i in range(args.users)))
-            health = await client.get('/health')
-            health_body = health.json()
+            health = await metrics.request(client, 'health', 'GET', '/health', timeout=2)
+            health_body = health_payload(health)
+            if health is None or health.status_code != 200 or health_body != HEALTH:
+                aborted = aborted or 'final isolated health check failed; rehearsal stopped'
         elapsed = time.monotonic()-started
+        cpu_seconds, main_cpu_seconds = time.process_time()-cpu_started, time.thread_time()-main_cpu_started
+        recording = False
         stop.set()
+        await sampler  # Include any probe already in flight before deciding success.
         recorded_progress = await asyncio.to_thread(service.db.read, lambda db: Counter(
             progress_key(row['email'], json.loads(row['payload'])['detail']['ranges'])
             for row in db.execute("SELECT email,payload FROM events WHERE type='video_progress' AND seq>?",
@@ -410,15 +473,27 @@ async def run(args):
                         metrics.statuses['video_range']['206'] >= args.users)
         functional_checks = (not aborted and no_errors and complete and coverage['passed'] and not bad_video_bodies and
                              integrity['progress_matches_acknowledged_requests'] and
-                             health_body == {'process': 'up', 'permissions': 'ready', 'audit': 'ready',
-                                             'backup': 'current', 'storage': 'ready'})
+                             health_body == HEALTH)
+        revision = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True,
+                                  capture_output=True, check=False).stdout.strip() or None
+        backend = progress_backend.selected()
+        runtime = {'backend': backend, 'revision': revision, 'python': platform.python_version(),
+                   'platform': platform.platform(), 'machine': platform.machine(),
+                   'logical_cpus': psutil.cpu_count(),
+                   'native_sha256': hashlib.sha256(Path(progress_backend.native().__file__).read_bytes()).hexdigest()
+                   if backend == 'rust' else None}
         report = {'scenario': vars(args), 'elapsed_seconds': round(elapsed, 3),
+                  'runtime': runtime,
+                  'process_cpu_seconds': cpu_seconds, 'main_thread_cpu_seconds': main_cpu_seconds,
+                  'other_threads_cpu_seconds': max(0, cpu_seconds-main_cpu_seconds),
                   'roster': roster, 'seeded_history_events': roster*int(args.history_hours*240),
                   'aborted': aborted, 'health': health_body, 'integrity': integrity,
                   'workload_coverage': coverage,
                   'functional_checks_passed': functional_checks,
                   'live_health_guard_enabled': guard_live, **metrics.report(),
                   'limitations': ['Loopback HTTP; client and server share one process and event loop.',
+                                  'CPU excludes fixture seeding, startup, shutdown and converter subprocesses; sampled RSS includes prior fixture allocation.',
+                                  'Writer operation CPU excludes SQLite commit; background caller labels identify task ownership, not exclusive job CPU.',
                                   'Synthetic sessions; selfies disabled for mixed workload, real sanitizer/face check with a public-domain test portrait in enrollment.',
                                   'Fake cloud with configured artificial delay; no actual Google authentication or quotas measured.',
                                   'Opaque byte fixture, not a playable video; no browser buffering measurement.',
