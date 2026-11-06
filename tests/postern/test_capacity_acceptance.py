@@ -14,6 +14,14 @@ import pytest
 from scripts import capacity
 
 
+@pytest.fixture(autouse=True)
+def controlled_host_cpu(monkeypatch):
+    # Functional HTTP contracts must not depend on unrelated runner processes.
+    # The overload test below overrides this input and proves the real guard.
+    # Process/thread CPU accounting and HTTP health checks remain real.
+    monkeypatch.setattr(capacity.psutil, 'cpu_percent', lambda *args, **kwargs: 0.0)
+
+
 @pytest.fixture
 def isolated_signin(tmp_path, monkeypatch):
     fixtures = tmp_path / 'tests/fixtures'
@@ -24,6 +32,38 @@ def isolated_signin(tmp_path, monkeypatch):
     return argparse.Namespace(scenario='signin', users=1, roster=1, seconds=10,
                               history_hours=0, ramp_seconds=0, video_mbps=1.5,
                               cloud_delay=0, with_reader=False)
+
+
+def test_sustained_cpu_guard_rejects_otherwise_complete_workload(isolated_signin, tmp_path, monkeypatch):
+    # Value: protects=whole-host overload still refuses a functionally complete run;
+    # fails_when=CPU stop condition is bypassed; seam=CPU sensor and HTTP scheduling;
+    # no_claim=physical overload performance (no busy work is generated).
+    original_request = httpx.AsyncClient.request
+    async def exercise():
+        sampled = asyncio.Event()
+        calls = 0
+        def overloaded(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls >= 11:  # Initial sensor priming plus ten busy observations.
+                sampled.set()
+            return 100.0
+        async def request(client, method, url, **kwargs):
+            if str(url) == 'http://127.0.0.1:8790/health':
+                raise httpx.ConnectError('No existing service in this isolated test')
+            if str(url) == '/api/auth/demo':
+                await asyncio.wait_for(sampled.wait(), 15)
+            return await original_request(client, method, url, **kwargs)
+        monkeypatch.setattr(capacity.psutil, 'cpu_percent', overloaded)
+        monkeypatch.setattr(httpx.AsyncClient, 'request', request)
+        return await capacity.run(isolated_signin)
+    assert asyncio.run(exercise()) is False
+    report = json.loads(next(tmp_path.glob('.context/capacity/*/report.json')).read_text())
+    assert report['aborted'] == 'whole-host CPU reserve below 30% for five seconds'
+    assert report['functional_checks_passed'] is False
+    assert report['workload_coverage']['passed'] is True
+    assert report['whole_host_idle_percent']['count'] >= 10
+    assert report['whole_host_idle_percent']['max'] == 0
 
 
 @pytest.mark.parametrize('phase,fault', [
