@@ -13,7 +13,8 @@ snapshot and authorization checks. Cancelling a request does not release a worke
 that is still reading. Shutdown cancels queued reads and waits for the active read
 before closing the database. Selecting `python` at restart restores both the
 original reducer and the shared-pool read scheduling. The scheduling change still
-requires the representative capacity measurements below before cutover.
+requires the [representative capacity measurements](capacity.md#paired-reducer-measurements)
+before cutover.
 
 ## Measurements and scope
 
