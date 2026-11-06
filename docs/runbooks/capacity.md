@@ -82,6 +82,16 @@ heartbeat or a 30-second dashboard refresh.
 
 ## Paired reducer measurements
 
+The deterministic concurrent contracts in
+`tests/postern/test_progress_concurrency.py` complement these load measurements.
+They hold eight completed HTTP snapshots before disclosure, continue serving and
+recording document pages, then change session, role, consent, recovery or audit
+availability. They also check current quiz locks after a pass, certificate
+identity, missing-media handling, and a failed export followed by retry and
+restore into a separate synthetic database. The normal CI lanes run them with
+both the Python and real Rust reducers. These controlled interleavings do not
+claim sustained fault-load capacity, real cloud behavior or a staff-device check.
+
 For stage diagnosis, dispatch **tests** with `progress_profile=true` and
 `capacity=false`. One disposable Mac profiles three alternating Python/Rust pairs
 over 492,480 synthetic all-video events. The `progress-profile` artifact contains
