@@ -14,13 +14,17 @@ on:
         description: Profile synthetic replay stages on one isolated Mac
         type: boolean
         default: false
+      progress_request_profile:
+        description: Profile request waiting under isolated mixed traffic
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   progress-profile:
-    if: github.event_name == 'workflow_dispatch' && inputs.progress_profile
+    if: github.event_name == 'workflow_dispatch' && (inputs.progress_profile || inputs.progress_request_profile)
     runs-on: macos-15
     timeout-minutes: 20
     steps:
@@ -41,6 +45,9 @@ jobs:
           mkdir -p .context/progress-profile
           python -m pip freeze > .context/progress-profile/dependencies.txt
           git rev-parse HEAD > .context/progress-profile/revision.txt
+      - name: Install request fixture tools
+        if: inputs.progress_request_profile
+        run: brew install poppler ffmpeg
       - name: Prepare the disposable profiling host
         shell: bash
         run: |
@@ -72,7 +79,19 @@ jobs:
               raise SystemExit('Disposable host did not reach the required quiet period')
           PY
       - name: Profile three alternating pairs with worker guards
+        if: inputs.progress_profile
         run: python -m scripts.progress_profile --output .context/progress-profile/results
+      - name: Profile request waiting and replay under mixed traffic
+        if: inputs.progress_request_profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=0
+          for backend in python rust; do
+            POSTERN_PROGRESS_BACKEND="$backend" python -m scripts.progress_request_profile \
+              --output ".context/progress-profile/request-$backend" || status=1
+          done
+          exit "$status"
       - name: Preserve diagnostic receipts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
