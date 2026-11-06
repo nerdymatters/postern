@@ -134,6 +134,11 @@ included in the spans, and wrappers are removed when the diagnostic ends.
 `roster_checkpoint` spans include both startup priming and incremental report
 replay; `roster_history` remains the full-replay path. These are nested timings,
 not additive request costs.
+The diagnostic also tags the existing RSS samples as startup, workload,
+verification or cleanup and records boundary snapshots. It retains at most
+1,000 tagged samples and reports any dropped observations. This identifies
+whether a peak occurs during serving or the extra raw Python comparison;
+it changes neither the original RSS distribution nor its acceptance limit.
 After a successful attempt has stopped its server and closed the writer, a
 guarded fresh process profiles replay, row fetching and materialized reduction
 on that same synthetic database. `quiet-replay.json` and its guard receipt
@@ -305,3 +310,46 @@ has changed.
 ## External acceptance still required
 
 Longer paced/soak tests and [real-device checks](dmv-video-test.md) remain necessary before claiming a capacity. Keep measurements and deployment details private. Do not increase Uvicorn process count without redesigning shared writer and job ownership.
+
+## Sustained fault and rollback rehearsal
+
+Dispatch **tests** with `sustained_fault_load=true` and the other diagnostic
+inputs false. Separate disposable hosted Mac jobs run Python and Rust with
+25 synthetic readers, a 228-person roster, nine hours of seeded history and at
+least 120 seconds of document/catalog activity. No production account, URL,
+configuration or database is accepted. The native wheel is built from that
+checkout. Inspect `fault-load-python` and `fault-load-rust` artifacts, including
+failures; successful CI exit alone is not production acceptance.
+
+Each reader must attempt document pages and successfully fetch the catalog in
+all three equal observation windows, and successfully read at least two pages.
+Expected preparing responses during the explicitly injected media outage count
+only as activity, never as successful reads. Every acknowledged page must match
+one durable event. The positive report control admits eight reports and exactly
+eight audit events. Subsequent phases hold eight completed snapshots before
+revoking the synthetic admin session, role or consent; all must refuse without
+report data or report-view audit events while other readers continue.
+
+The rehearsal imports quiz/certificate evidence during traffic, checks immediate
+lock/certificate updates and duplicate-import idempotence, injects missing media,
+and verifies failed export preserves events and pending batches before retry.
+After traffic stops, fresh HTTP reports must equal raw Python replay. It then
+closes the application, retains the complete event identity/payload digest,
+and reopens the same current database with Python. Reader progress, quiz locks,
+certificates, staff report, durable pages and health must remain correct.
+
+The host CPU, available memory and RSS guards continue through shutdown and
+rollback startup. Health is checked during serving, with the same two-second
+wall deadline, and explicitly after rollback; it is suspended only for planned
+stop/start. Missing phases, incomplete traffic, resource failures and cleanup
+failures prevent a successful receipt. A full probe has a ten-minute guard;
+each application startup remains limited to ten seconds. For a small diagnostic,
+run `python -m scripts.progress_fault_load --output .context/fault-smoke-new`;
+it uses two readers, no historical seed and fifteen seconds. Use a fresh output
+path and a development environment; `--representative` requires hosted macOS.
+
+This proves synthetic sustained correctness, not real Google sign-in, WAN or
+video capacity, provider quotas, a complete cloud restore or live staff-device
+behavior. Global recovery/audit failures remain covered by the separate
+controlled concurrency tests. Python rollback reuses acknowledged data; it never
+restores an older backup over new work.

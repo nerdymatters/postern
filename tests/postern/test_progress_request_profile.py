@@ -7,6 +7,37 @@ import pytest
 from scripts import progress_profile, progress_request_profile
 
 
+@pytest.mark.parametrize('failed', [False, True])
+def test_memory_phases_preserve_samples_and_restore_wrappers(monkeypatch, failed):
+    module = progress_request_profile
+    async def start(instance):
+        instance.rss.append(10)
+    async def verify(metrics):
+        metrics.rss.append(30)
+        if failed:
+            raise RuntimeError('injected verification failure')
+        return True
+    monkeypatch.setattr(module.service.Service, 'start', start)
+    monkeypatch.setattr(module.capacity, 'verify_dashboard', verify)
+    original_init = module.capacity.Metrics.__init__
+    with module.capture_memory() as memory:
+        metrics = module.capacity.Metrics()
+        asyncio.run(module.service.Service.start(metrics))
+        metrics.rss.append(20)
+        if failed:
+            with pytest.raises(RuntimeError, match='injected verification failure'):
+                asyncio.run(module.capacity.verify_dashboard(metrics))
+        else:
+            assert asyncio.run(module.capacity.verify_dashboard(metrics)) is True
+        metrics.rss.append(40)
+    assert metrics.rss == [10, 20, 30, 40]
+    assert [row['phase'] for row in memory['samples']] == ['startup', 'workload', 'verification', 'cleanup']
+    assert [row['rss_mib'] for row in memory['samples']] == metrics.rss
+    assert [row['phase'] for row in memory['boundaries']] == ['startup_begin', 'startup_end', 'verification_begin', 'verification_end']
+    assert module.capacity.Metrics.__init__ is original_init
+    assert module.service.Service.start is start and module.capacity.verify_dashboard is verify
+
+
 def test_spans_measure_real_replay_and_restore_functions(tmp_path, monkeypatch):
     monkeypatch.setenv('POSTERN_PROGRESS_BACKEND', 'python')
     path = tmp_path/'synthetic.sqlite3'
