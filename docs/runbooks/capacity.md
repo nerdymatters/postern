@@ -52,8 +52,17 @@ process CPU excludes setup/teardown and converter subprocesses. Writer operation
 record thread CPU, queue and commit time grouped by the owning background task
 or `request_or_other`. Operation CPU excludes SQLite commit; task labels do not
 give exclusive per-job CPU because API and background reads share worker threads.
-Client
-and server share a process/event loop, so CPU/memory results include both.
+Client and server share a process/event loop, so CPU/memory results include both.
+Synthetic readers release each video response after the scenario's existing response checks.
+`process_rss_after_setup_mib` records memory before requests; sampled memory still
+includes allocations retained from fixture setup.
+
+During consecutive busy host samples, `host_cpu_diagnostics` keeps the last ten
+intervals with active request counts, snapshot cost and the five busiest visible
+processes. Process CPU percentages use one core as 100%, unlike whole-host CPU;
+short-lived or inaccessible processes may be absent. PID and creation time identify
+each process; arguments and environment values are not collected. Use these
+records to investigate CPU stops, without treating incomplete runs as accepted.
 
 The rehearsal stops on memory pressure or sustained whole-host CPU reserve below
 30%. When the existing local Postern health endpoint is detected, it checks that
