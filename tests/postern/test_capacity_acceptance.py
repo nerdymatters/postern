@@ -187,6 +187,7 @@ def test_short_mixed_workload_cannot_pass_without_progress_and_dashboard(tmp_pat
     report = json.loads(next(tmp_path.glob('.context/capacity/*/report.json')).read_text())
     assert report['aborted'] is None
     assert report['integrity']['progress_matches_acknowledged_requests'] is True
+    assert report['integrity']['raw_python_dashboard_matches'] is True
     assert report['requests']['video_range']['statuses'] == {'206': 1}
     assert report['workload_coverage']['passed'] is False
     assert 'progress' in report['workload_coverage']['missing']
@@ -417,8 +418,103 @@ def test_writer_measurements_include_owned_work_and_exclude_lifecycle(isolated_s
     request_cpu = report['writer_by_caller']['request_or_other']['operation_cpu_ms']
     assert 65 <= request_cpu['max'] < 200  # gstack-timing-ok: .07s thread job is measured; neither .4s lifecycle job is.
     assert .18 <= report['process_cpu_seconds'] < whole_run_cpu-.7  # gstack-timing-ok: .20s real workload; .80s lifecycle excluded.
+    # Startup's .4s writer job must remain visible in comparable CPU; moving
+    # dashboard work before readiness cannot manufacture an apparent saving.
+    assert report['startup']['process_cpu_seconds'] >= .38  # gstack-timing-ok: .4s real startup CPU, 20ms accounting allowance.
+    assert report['comparable_process_cpu_seconds'] == report['process_cpu_seconds']+report['startup']['process_cpu_seconds']
+    assert report['comparable_process_cpu_seconds'] < whole_run_cpu-.35  # gstack-timing-ok: shutdown's .4s is still outside both serving phases.
     assert report['main_thread_cpu_seconds'] >= .025  # gstack-timing-ok: .03s controlled main-thread CPU work.
     assert report['other_threads_cpu_seconds'] >= .15  # gstack-timing-ok: .17s controlled writer CPU work, with 20ms allowance.
+
+
+def test_startup_guard_cancels_lifespan_and_keeps_failure_evidence(isolated_signin, tmp_path, monkeypatch):
+    original_start, original_close = capacity.Service.start, capacity.Service.close
+    observed = {}
+    async def start(service):
+        observed['service'] = service
+        await original_start(service)
+        observed['priming'] = True
+        await asyncio.Event().wait()  # Controlled unfinished startup, no CPU work.
+    async def close(service):
+        await original_close(service)
+        observed['closed'] = True
+    # Preflight is healthy; a later resource sample fails during startup.
+    monkeypatch.setattr(capacity.psutil, 'virtual_memory', lambda: SimpleNamespace(
+        available=512*1024**2 if observed.get('priming') else 4*1024**3))
+    monkeypatch.setattr(capacity.Service, 'start', start)
+    monkeypatch.setattr(capacity.Service, 'close', close)
+    with pytest.raises(RuntimeError, match='memory safety threshold'):
+        asyncio.run(capacity.run(isolated_signin))
+    assert observed['closed'] and not observed['service'].db.thread.is_alive()
+    report = json.loads(next(tmp_path.glob('.context/capacity/*/startup-failure.json')).read_text())
+    assert not report['functional_checks_passed'] and report['aborted'] == 'memory safety threshold'
+    assert report['startup']['elapsed_seconds'] > 0
+    assert not report['resources']['requests']  # No workload can run before readiness.
+
+
+def test_readiness_observed_after_deadline_is_rejected_and_retained(isolated_signin, tmp_path, monkeypatch):
+    async def exercise():
+        caller = asyncio.current_task()
+        original_sleep = asyncio.sleep
+        delayed = False
+        async def late_poll(seconds):
+            nonlocal delayed
+            if asyncio.current_task() is caller and seconds == .05 and not delayed:
+                delayed = True
+                await original_sleep(10.05)  # gstack-timing-ok: cross the fixed 10s readiness deadline while the server starts normally.
+            else:
+                await original_sleep(seconds)
+        monkeypatch.setattr(capacity.asyncio, 'sleep', late_poll)
+        return await capacity.run(isolated_signin)
+    with pytest.raises(RuntimeError, match='startup timed out'):
+        asyncio.run(exercise())
+    report = json.loads(next(tmp_path.glob('.context/capacity/*/startup-failure.json')).read_text())
+    assert not report['functional_checks_passed']
+    assert report['startup']['ready'] and report['startup']['elapsed_seconds'] > 10
+    assert 'signin' not in report['resources']['requests']
+
+
+@pytest.mark.parametrize('fault', ['stale_output', 'raw_error'])
+def test_wrong_dashboard_output_fails_independent_raw_replay_check(isolated_signin, tmp_path, monkeypatch, fault):
+    args = isolated_signin
+    args.scenario, args.seconds = 'mixed', 17
+    original_request = httpx.AsyncClient.request
+    async def stale(client, method, url, **kwargs):
+        response = await original_request(client, method, url, **kwargs)
+        if fault == 'stale_output' and str(url).endswith('/api/admin/progress') and response.status_code == 200:
+            # Simulate stale/missing accumulated evidence behind a successful HTTP status.
+            return httpx.Response(200, json={**response.json(), 'people': []}, request=response.request)
+        return response
+    monkeypatch.setattr(httpx.AsyncClient, 'request', stale)
+    original_read = capacity.Service.read_progress
+    async def read(service, operation):
+        if fault == 'raw_error' and operation.__qualname__ == 'verify_dashboard.<locals>.reference':
+            raise RuntimeError('injected reference replay failure')
+        return await original_read(service, operation)
+    monkeypatch.setattr(capacity.Service, 'read_progress', read)
+    assert asyncio.run(capacity.run(args)) is False
+    report = json.loads(next(tmp_path.glob('.context/capacity/*/report.json')).read_text())
+    assert report['workload_coverage']['passed']
+    assert report['integrity']['progress_matches_acknowledged_requests']
+    assert report['integrity']['raw_python_dashboard_matches'] is False
+    assert report['aborted'] is None
+    if fault == 'raw_error':
+        assert report['verification']['error'] == 'RuntimeError'
+    assert report['process_cpu_seconds'] > 0
+
+
+def test_mixed_resource_abort_skips_additional_verification(isolated_signin, tmp_path, monkeypatch):
+    args = isolated_signin
+    args.scenario, args.seconds = 'mixed', 17
+    monkeypatch.setattr(capacity.psutil, 'cpu_percent', lambda *args, **kwargs: 100.)
+    async def unexpected(*args):
+        pytest.fail('Verification must not add work after a resource abort')
+    monkeypatch.setattr(capacity, 'verify_dashboard', unexpected)
+    assert asyncio.run(capacity.run(args)) is False
+    report = json.loads(next(tmp_path.glob('.context/capacity/*/report.json')).read_text())
+    assert report['aborted'] == 'whole-host CPU reserve below 30% for five seconds'
+    assert report['verification']['skipped'] == 'workload aborted'
+    assert report['integrity']['raw_python_dashboard_matches'] is False
 
 
 @pytest.mark.parametrize('with_reader', [False, True])

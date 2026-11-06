@@ -27,6 +27,20 @@ CREATE TABLE IF NOT EXISTS progress_events(
 CREATE INDEX IF NOT EXISTS progress_events_reader ON progress_events(email,type,item_id);
 CREATE INDEX IF NOT EXISTS progress_events_legacy ON progress_events(seq) WHERE portable<1;
 CREATE INDEX IF NOT EXISTS progress_events_pending ON progress_events(seq) WHERE portable=-1;
+CREATE TABLE IF NOT EXISTS progress_generation(id INTEGER PRIMARY KEY CHECK(id=1), value INTEGER NOT NULL);
+INSERT OR IGNORE INTO progress_generation VALUES(1,0);
+CREATE TRIGGER IF NOT EXISTS progress_generation_delete AFTER DELETE ON progress_events BEGIN
+    UPDATE progress_generation SET value=value+1 WHERE id=1;
+END;
+CREATE TRIGGER IF NOT EXISTS progress_generation_update
+AFTER UPDATE OF seq,id,email,item_id,type,ts,payload,portable ON progress_events
+WHEN OLD.portable>=0 BEGIN
+    UPDATE progress_generation SET value=value+1 WHERE id=1;
+END;
+CREATE TRIGGER IF NOT EXISTS progress_generation_insert AFTER INSERT ON progress_events
+WHEN EXISTS(SELECT 1 FROM progress_events WHERE seq>NEW.seq) BEGIN
+    UPDATE progress_generation SET value=value+1 WHERE id=1;
+END;
 CREATE TRIGGER IF NOT EXISTS progress_event_insert AFTER INSERT ON events BEGIN
     DELETE FROM progress_events WHERE seq=NEW.seq OR id=NEW.id;
     INSERT INTO progress_events(seq,id,email,item_id,type,ts,payload) SELECT NEW.seq,NEW.id,NEW.email,NEW.item_id,NEW.type,NEW.ts,{_NEW_PAYLOAD}

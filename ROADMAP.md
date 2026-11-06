@@ -44,7 +44,7 @@ described in [Architecture](docs/architecture.md).
 |---|---|---|
 | M0 Launch preparation | In progress; parallel with M1 | Current deployment baseline |
 | M1 Accounts and profiles | Production pilot passed; registration closed | M0 launch checks before release |
-| Rust server migration | P1; v0.22.0 traced reducer pilot passed; health-query candidate in validation | Complete RS-05–RS-09 below; Python still serves production |
+| Rust server migration | P1; v0.22.1 health fix and document pilot passed; incremental report candidate in validation | Complete RS-06–RS-09 below; Python still serves production |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
 | M2 Private spaces and resource catalog | Isolated metadata/onboarding implemented; content integration and hosting pending | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
@@ -167,18 +167,34 @@ its background workers. Python remains the production default.
 
 - [x] Implement and release the first reducer with Python/Rust parity tests.
 - [x] Meet the reducer CPU/time targets and rehearse actual-document cutover and
-  rollback, preserving staff activity (latest: 77 events and 23 page events).
+  rollback, preserving staff activity (latest November 6: 40 events and eight
+  document-page events, rechecked after Python restoration).
 - [x] Enable bounded health timings and localize the recurring delay to the
   shared health database queries.
-- [ ] **RS-05 — Finish the health-query fix.** Validate exact pending/confirmed/
-  orphan semantics, startup migration, write cost and old-code rollback; review,
-  run clean CI, ship, then verify the recurring live probe burst. Current work
-  is an isolated candidate; production has not changed.
-- [ ] **RS-06 — Complete representative acceptance.** Finish RS-01's request
-  p50/p95/error, CPU/RSS, audit-queue and job attribution. Exercise the remaining
-  role/revocation, consent, quiz/certificate, media, export and recovery cases
-  under measured load. Retain the two-second health and 70% host CPU guards;
-  run heavy concurrency on an isolated runner.
+- [x] **RS-05 — Finish the health-query fix.** Released in v0.22.1 after
+  parity, startup, write-cost, checkpoint/rollback checks, review and clean CI.
+  The Python rollout preserved 234,691 events. A three-minute live capture
+  included 108 complete requests and three bursts of 8–10 requests: query time
+  at most 8.9 ms and server response at most 81.3 ms. The fresh Rust document
+  pilot preserved all 40 events, including eight page reads, across rollback;
+  all 28 traced Rust health requests completed, maximum response 25.4 ms.
+  Python remains the serving default; sustained acceptance remains open.
+- [ ] **RS-06 — Complete representative acceptance.** The compact-input candidate
+  completed all 30 isolated functional attempts with no guard aborts; health
+  peaked at 27.42 ms and relative CPU, latency and memory bars passed. Its
+  absolute two-second dashboard target failed ten attempts across both modes.
+  Those results remain failed. Draft PR #18 also adds concurrent disclosure,
+  quiz/certificate, media/export/recovery checks; the preceding d6e9180 commit
+  passed all six CI lanes (2,637 passing checks, 28 expected native skips).
+  The next local candidate adds bounded incremental Rust staff-report evidence,
+  startup measurement and independent raw-history dashboard verification.
+  Its prospective protocol requires Rust dashboard p95 <=2s, retaining Python
+  as the measured correctness/rollback control, and includes startup CPU for
+  both modes. See [capacity protocol](docs/runbooks/capacity.md#incremental-dashboard-candidate-protocol).
+  Complete candidate CI, independent review, three paired runs per scenario
+  and sustained fault-load/live-device checks before rollout. Retain all
+  failures and the two-second health and 70% host CPU guards. No new candidate
+  is deployed; the rest of the server has not migrated.
 - [ ] **RS-07 — Make the first reducer the serving default.** Use the reviewed
   release, backup, single-writer checks and fresh benchmark; confirm real staff
   behavior, observe sustained operation, and retain a tested Python fallback.

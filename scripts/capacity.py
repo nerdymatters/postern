@@ -33,7 +33,7 @@ from postern.service import Service
 from postern.storage import FakeStore
 from postern.video import CHUNK
 from postern.selfie import device_hash
-from postern import progress_backend
+from postern import progress, progress_backend
 
 ROOT = Path(__file__).resolve().parents[1]
 VIDEO, PDF = 'capacity-video', 'capacity-pdf'
@@ -55,6 +55,47 @@ def progress_key(email, ranges):
     # The API normalizes 0.0 to 0 at the beginning of an interval. Compare
     # numeric endpoints, not their JSON spelling, while retaining exact values.
     return email, tuple((float(a), float(b)) for a, b in ranges)
+
+
+async def verify_dashboard(service, port, token, stop):
+    """After traffic stops, compare HTTP output with fresh raw Python evidence.
+
+    This extra correctness request is outside measured workload CPU/latencies;
+    it never counts as workload coverage. Resource guards remain active.
+    """
+    class RawHistory:
+        def history(self, db, items):
+            return progress._reduce_python(items, db.execute(
+                "SELECT e.email,e.item_id,e.type,e.ts,e.payload FROM events e "
+                "JOIN members m ON m.email=e.email WHERE e.type IN "
+                "('page_served','item_summary','video_progress','item_open','view_requested')"))
+    def reference(db):
+        db.execute('BEGIN')
+        # A guard racing verification can interrupt this disposable SQL replay.
+        db.set_progress_handler(lambda: int(stop.is_set()), 1000)
+        return progress.dashboard(db, service.permissions.quizzes, service.final_exam,
+            default_group=service.config.branding.default_group,
+            certificate_prefix=service.config.branding.certificate_prefix, history_cache=RawHistory())
+    started = time.monotonic()
+    failure = None
+    if stop.is_set():
+        return {'raw_python_dashboard_matches': False, 'elapsed_seconds': 0, 'skipped': 'resource guard'}
+    async with httpx.AsyncClient(trust_env=False, timeout=15) as client:
+        try:
+            response = await client.get(f'http://127.0.0.1:{port}/api/admin/progress',
+                                        headers={'Authorization': 'Bearer '+token})
+            if stop.is_set():
+                return {'raw_python_dashboard_matches': False, 'elapsed_seconds': time.monotonic()-started,
+                        'skipped': 'resource guard'}
+            expected = await service.read_progress(reference)
+            matches = response.status_code == 200 and response.json() == expected
+        except Exception as error:
+            # Verification faults fail the attempt without discarding the
+            # completed workload's measurements. Keep only the exception class.
+            failure = type(error).__name__
+            matches = False
+    return {'raw_python_dashboard_matches': matches, 'elapsed_seconds': time.monotonic()-started,
+            'error': failure}
 
 
 def distribution(values):
@@ -318,29 +359,37 @@ async def run(args):
                 metrics.queue.append(timing['queue_ms'])
                 metrics.commit.append(timing['commit_ms'])
     service.write = measured_write
+    original_start = service.start
+    lifecycle_task = None
+    async def tracked_start():
+        nonlocal lifecycle_task
+        lifecycle_task = asyncio.current_task()
+        await original_start()
+    service.start = tracked_start
     app = create_app(config, service=service)
     sock = socket.socket()
     sock.bind(('127.0.0.1', 0))
     port = sock.getsockname()[1]
     server = uvicorn.Server(uvicorn.Config(app, log_level='error', access_log=False))
-    task = asyncio.create_task(server.serve(sockets=[sock]))
-    sampler = None
+    task = sampler = None
     started = time.monotonic()
     aborted = None
+    process = psutil.Process()
+    rss_after_setup = process.memory_info().rss/1024**2
+    metrics.rss.append(rss_after_setup)
+    psutil.cpu_percent()
+    stop = asyncio.Event()
+    startup = None
+    guard_phase = 'startup'
+    failure = None
+    async def serve():
+        try:
+            await server.serve(sockets=[sock])
+        except SystemExit as error:
+            # Uvicorn's startup refusal must not terminate the event loop before
+            # the harness can preserve evidence and close its owned resources.
+            raise RuntimeError(f'Isolated server exited during startup ({error.code})') from error
     try:
-        for _ in range(200):
-            if server.started:
-                break
-            if task.done():
-                await task
-                raise RuntimeError('Isolated server stopped during startup')
-            await asyncio.sleep(.05)
-        if not server.started:
-            raise RuntimeError('Isolated server startup timed out')
-        process = psutil.Process()
-        rss_after_setup = process.memory_info().rss/1024**2
-        psutil.cpu_percent()
-        stop = asyncio.Event()
         async with httpx.AsyncClient(trust_env=False, timeout=2) as guard:
             try:
                 live = await guard.get('http://127.0.0.1:8790/health')
@@ -369,6 +418,7 @@ async def run(args):
                             previous_at, previous_snapshot = previous_processes
                             metrics.host_cpu_diagnostics.append({
                                 'elapsed_seconds': round(observed_at-started, 3),
+                                'phase': guard_phase,
                                 'host_cpu_percent': round(100-idle, 2),
                                 'interval_seconds': round(observed_at-previous_at, 3),
                                 'active_requests': {k: v for k, v in metrics.active.items() if v},
@@ -390,11 +440,12 @@ async def run(args):
                     aborted = 'whole-host CPU reserve below 30% for five seconds'
                     stop.set()
                 if time.monotonic() >= next_health:
-                    async with httpx.AsyncClient(trust_env=False, timeout=2) as isolated:
-                        probe = await metrics.request(isolated, 'health', 'GET', f'http://127.0.0.1:{port}/health')
-                        if probe is None or probe.status_code != 200 or health_payload(probe) != HEALTH:
-                            aborted = 'isolated health check failed; rehearsal stopped'
-                            stop.set()
+                    if server.started:
+                        async with httpx.AsyncClient(trust_env=False, timeout=2) as isolated:
+                            probe = await metrics.request(isolated, 'health', 'GET', f'http://127.0.0.1:{port}/health')
+                            if probe is None or probe.status_code != 200 or health_payload(probe) != HEALTH:
+                                aborted = 'isolated health check failed; rehearsal stopped'
+                                stop.set()
                     next_health = time.monotonic()+5
                     if not guard_live:
                         continue
@@ -409,12 +460,35 @@ async def run(args):
                     if not healthy:
                         aborted = 'live local health check failed; rehearsal stopped'
                         stop.set()
-        sampler = asyncio.create_task(sample())
+        startup_started = started = time.monotonic()
+        startup_cpu, startup_main_cpu = time.process_time(), time.thread_time()
+        if rss_after_setup > 1024 or psutil.virtual_memory().available < 1024**3:
+            aborted = 'memory safety threshold'
+        if not aborted:
+            task = asyncio.create_task(serve())
+            sampler = asyncio.create_task(sample())
+        # The same resource and live-health guards cover normal service startup,
+        # including native checkpoint priming. No benchmark-only warm request.
+        while time.monotonic()-startup_started < 10 and not server.started and not aborted:
+            if task.done():
+                await task
+                raise RuntimeError('Isolated server stopped during startup')
+            await asyncio.sleep(.05)
+        metrics.rss.append(process.memory_info().rss/1024**2)
+        startup = {'elapsed_seconds': time.monotonic()-startup_started,
+                   'ready': server.started,
+                   'process_cpu_seconds': time.process_time()-startup_cpu,
+                   'main_thread_cpu_seconds': time.thread_time()-startup_main_cpu,
+                   'peak_rss_mib': max(metrics.rss)}
+        if not server.started or aborted or startup['elapsed_seconds'] > 10:
+            raise RuntimeError(aborted or 'Isolated server startup timed out')
         async with httpx.AsyncClient(base_url=f'http://127.0.0.1:{port}', timeout=15,
-                                     trust_env=False, limits=httpx.Limits(max_connections=args.users+5)) as client:
+                                     trust_env=False, limits=httpx.Limits(max_connections=args.users+5,
+                                                                         keepalive_expiry=4)) as client:
             started = time.monotonic()
             cpu_started, main_cpu_started = time.process_time(), time.thread_time()
             recording = True
+            guard_phase = 'workload'
             if args.scenario == 'signin':
                 await asyncio.gather(*(metrics.request(client, 'signin', 'POST', '/api/auth/demo',
                     json={'email': f'reader{i}@example.invalid', 'name': f'Reader {i}'}) for i in range(args.users)))
@@ -533,6 +607,14 @@ async def run(args):
         elapsed = time.monotonic()-started
         cpu_seconds, main_cpu_seconds = time.process_time()-cpu_started, time.thread_time()-main_cpu_started
         recording = False
+        guard_phase = 'verification'
+        if args.scenario != 'mixed':
+            verification = {'raw_python_dashboard_matches': None, 'elapsed_seconds': 0}
+        elif aborted:
+            verification = {'raw_python_dashboard_matches': False, 'elapsed_seconds': 0,
+                            'skipped': 'workload aborted'}
+        else:
+            verification = await verify_dashboard(service, port, tokens[0], stop)
         stop.set()
         await sampler  # Include any probe already in flight before deciding success.
         recorded_progress = await asyncio.to_thread(service.db.read, lambda db: Counter(
@@ -540,6 +622,7 @@ async def run(args):
             for row in db.execute("SELECT email,payload FROM events WHERE type='video_progress' AND seq>?",
                                   (roster*int(args.history_hours*240),))))
         integrity = {'video_body_mismatches': bad_video_bodies,
+                     'raw_python_dashboard_matches': verification['raw_python_dashboard_matches'],
                      'progress_matches_acknowledged_requests': recorded_progress == expected_progress,
                      'acknowledged_progress_records': sum(expected_progress.values()),
                      'persisted_progress_records': sum(recorded_progress.values())}
@@ -558,6 +641,7 @@ async def run(args):
                         metrics.statuses['video_range']['206'] >= args.users)
         functional_checks = (not aborted and no_errors and complete and coverage['passed'] and not bad_video_bodies and
                              integrity['progress_matches_acknowledged_requests'] and
+                             integrity['raw_python_dashboard_matches'] is not False and
                              health_body == HEALTH)
         revision = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True,
                                   capture_output=True, check=False).stdout.strip() or None
@@ -575,7 +659,10 @@ async def run(args):
                    'logical_cpus': psutil.cpu_count(),
                    'native_sha256': native_hash}
         report = {'scenario': vars(args), 'elapsed_seconds': round(elapsed, 3),
-                  'runtime': runtime,
+                  'runtime': runtime, 'startup': startup, 'verification': verification,
+                  'comparable_process_cpu_seconds': startup['process_cpu_seconds']+cpu_seconds,
+                  'first_dashboard_ms': metrics.latencies['dashboard'][0] if metrics.latencies['dashboard'] else None,
+                  'progress_cache': service.progress_history.diagnostics() if service.progress_history else None,
                   'process_cpu_seconds': cpu_seconds, 'main_thread_cpu_seconds': main_cpu_seconds,
                   'process_rss_after_setup_mib': round(rss_after_setup, 3),
                   'other_threads_cpu_seconds': max(0, cpu_seconds-main_cpu_seconds),
@@ -585,7 +672,7 @@ async def run(args):
                   'functional_checks_passed': functional_checks,
                   'live_health_guard_enabled': guard_live, **metrics.report(),
                   'limitations': ['Loopback HTTP; client and server share one process and event loop.',
-                                  'CPU excludes fixture seeding, startup, shutdown and converter subprocesses; sampled RSS includes prior fixture allocation.',
+                                  'Workload CPU and startup CPU are reported separately; comparable CPU adds both. Fixture seeding, post-workload correctness verification, shutdown and converter subprocesses are excluded. Sampled RSS covers startup, workload and verification and includes prior fixture allocation.',
                                   'Host CPU diagnostics retain the last ten busy intervals and five busiest visible processes per interval; short-lived/inaccessible processes may be missing. One-core percentages are not whole-host percentages.',
                                   'Writer operation CPU excludes SQLite commit; background caller labels identify task ownership, not exclusive job CPU.',
                                   'Synthetic sessions; selfies disabled for mixed workload, real sanitizer/face check with a public-domain test portrait in enrollment.',
@@ -599,13 +686,31 @@ async def run(args):
                           'requests': report['requests'], 'audit_ms': report['audit_ms'],
                           'event_loop_lag_ms': report['event_loop_lag_ms']}, indent=2))
         return functional_checks
+    except BaseException as error:
+        failure = error
+        if guard_phase == 'startup':
+            (folder/'startup-failure.json').write_text(json.dumps({
+                'functional_checks_passed': False, 'error': type(error).__name__,
+                'aborted': aborted, 'startup': startup,
+                'resources': metrics.report()}, indent=2)+'\n')
+        raise
     finally:
         if sampler:
             sampler.cancel()
             await asyncio.gather(sampler, return_exceptions=True)
         server.should_exit = True
-        await task
-        sock.close()
+        try:
+            if not server.started and lifecycle_task is not None and not lifecycle_task.done():
+                lifecycle_task.cancel()
+                await asyncio.gather(lifecycle_task, return_exceptions=True)
+            if task is not None:
+                result, = await asyncio.gather(task, return_exceptions=True)
+                if failure is None and isinstance(result, BaseException):
+                    raise result
+            else:
+                await service.close()
+        finally:
+            sock.close()
 
 
 def main():

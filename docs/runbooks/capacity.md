@@ -48,14 +48,34 @@ Reports include per-route latency/status counts, audit queue and commit times,
 event-loop lag, process memory, sampled whole-host CPU reserve, byte integrity,
 and comparison of acknowledged progress with persisted records by user. Reports
 also identify the backend, source revision, native binary hash and Python/host;
-process CPU excludes setup/teardown and converter subprocesses. Writer operations
+workload CPU excludes fixture setup, startup, post-workload verification, shutdown
+and converter subprocesses. `startup` separately records normal service-start
+wall/CPU and sampled peak RSS, including Rust checkpoint priming;
+`comparable_process_cpu_seconds` adds startup and workload CPU for both modes.
+`first_dashboard_ms` records the first actual workload report request.
+`progress_cache` contains bounded counts and retained bytes, without identities.
+Writer operations
 record thread CPU, queue and commit time grouped by the owning background task
 or `request_or_other`. Operation CPU excludes SQLite commit; task labels do not
 give exclusive per-job CPU because API and background reads share worker threads.
 Client and server share a process/event loop, so CPU/memory results include both.
+The workload client expires idle connections after four seconds, before the
+server's unchanged five-second keepalive deadline. This reduces races when a
+server closes an idle socket; no request is retried. Both backends pay the same
+reconnection cost. A functional run with an untraced `ReadError` remains failed.
+A separate scaled probe reproduced an idle-close race and supports this
+mitigation; it does not establish the original reset's cause.
 Synthetic readers release each video response after the scenario's existing response checks.
 `process_rss_after_setup_mib` records memory before requests; sampled memory still
 includes allocations retained from fixture setup.
+Resource guards run during startup, workload and final verification. Startup
+must still finish within ten seconds. A failed or cancelled startup closes its
+lifespan and preserves `startup-failure.json` alongside other receipts.
+After mixed traffic stops, a separate HTTP dashboard response is compared with
+a fresh Python replay of authoritative events. Its status appears in
+`integrity.raw_python_dashboard_matches`; it does not count toward workload
+coverage, measured request latencies or comparable CPU. Its elapsed time is
+reported under `verification`, and sampled memory still includes it.
 
 During consecutive busy host samples, `host_cpu_diagnostics` keeps the last ten
 intervals with active request counts, snapshot cost and the five busiest visible
@@ -111,6 +131,9 @@ retain the underlying capacity report and all spans, including failed attempts.
 These two instrumented attempts diagnose waiting; they are not a replacement for
 the three uninstrumented acceptance pairs. No email, payload or credential is
 included in the spans, and wrappers are removed when the diagnostic ends.
+`roster_checkpoint` spans include both startup priming and incremental report
+replay; `roster_history` remains the full-replay path. These are nested timings,
+not additive request costs.
 After a successful attempt has stopped its server and closed the writer, a
 guarded fresh process profiles replay, row fetching and materialized reduction
 on that same synthetic database. `quiet-replay.json` and its guard receipt
@@ -150,10 +173,12 @@ fails the attempt and never starts the measured workload; no automatic retry is 
 Transport failures retain their exception class in `transport_errors`, alongside
 the existing failed request counts, without exception messages or request URLs.
 
-Every report, setup receipt, stdout/stderr and exit code is retained, including failures. The
+Every report, setup/startup-failure receipt, stdout/stderr and exit code is retained, including failures. The
 `capacity-*` artifacts also contain dependency versions and the checked-out
 revision. A green job means functional coverage passed; it does **not** mean
-performance acceptance. Review all six reports against these preselected bars:
+performance acceptance. The original pre-incremental campaign used the following
+bars. Its failed attempts remain failed; the prospective candidate protocol below
+does not reclassify them:
 
 - No abort, unexpected status, unfinished enrollment, missing family/reader,
   byte mismatch or difference between acknowledged and persisted progress.
@@ -167,6 +192,24 @@ performance acceptance. Review all six reports against these preselected bars:
 - Mixed workloads target at least 20% lower median process CPU, catalog p95 and
   dashboard p95. Sign-in/enrollment are no-regression controls. Preserve a missed
   target as a failure for investigation, rather than changing it after the run.
+
+### Incremental-dashboard candidate protocol
+
+Registered November 6 before the integrated candidate's HTTP measurements under
+the user's standing advance approval. Keep the same five scenarios, three
+alternating pairs, roster, history, pacing, correctness requirements and all
+non-dashboard latency targets. The two-second dashboard p95 target applies to
+Rust. Record Python's full dashboard distribution and known miss as the unchanged
+correctness and rollback control; exclude only that control's dashboard from the
+absolute two-second gate. Relative latency limits still apply to every family.
+
+Use startup plus workload CPU for both the 20% mixed-workload improvement target
+and the no-regression control, reporting both components. Include startup in the
+resource guards and sampled peak RSS comparison, keep the ten-second readiness
+deadline, and issue no benchmark-only warm request. Mixed correctness additionally
+requires the post-workload raw Python dashboard comparison. All other original
+gates remain. Retain every attempt and report first-request latency and cache
+counts. Previous campaigns and their original analyzer are unchanged.
 
 This is an isolated synthetic load comparison, not full RS-06 acceptance. Role
 changes/revocation, consent, quiz/certificate, media failures, export and recovery

@@ -90,6 +90,10 @@ class AuditUnavailable(Exception):
     pass
 
 
+class ReadConnection(sqlite3.Connection):
+    """Internal provenance for connections opened read-only by Database.read."""
+
+
 class Database:
     def __init__(self, path, capacity=128, deadline=1.5):
         self.path, self.deadline = path, deadline
@@ -192,8 +196,16 @@ class Database:
     def read(self, operation):
         # A connection's `with` block ends its transaction but never closes it. Unclosed readers kept
         # their file descriptors while the writer stayed open, until the API hit its open-file limit.
-        db = sqlite3.connect(f'file:{self.path}?mode=ro', uri=True, timeout=1)
+        path = self.path.resolve()
+        before = path.stat()
+        db = sqlite3.connect(path.as_uri()+'?mode=ro', uri=True, timeout=1,
+                             factory=ReadConnection)
         try:
+            after = path.stat()
+            # Do not retain progress from a connection opened during a file
+            # replacement. Ordinary reads still return their own SQL snapshot.
+            db.progress_owner = self if (before.st_dev, before.st_ino) == (after.st_dev, after.st_ino) else None
+            db.progress_file = (str(path), before.st_dev, before.st_ino)
             db.row_factory = sqlite3.Row
             db.execute('PRAGMA query_only=ON')
             return operation(db)

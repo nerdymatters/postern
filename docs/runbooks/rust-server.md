@@ -7,7 +7,8 @@ rest of the server remain open in the [remaining migration checklist](../../ROAD
 
 With `POSTERN_PROGRESS_BACKEND=rust`, reading-room, quiz-completion and staff-report
 snapshots share one dedicated read worker. This limits simultaneous SQLite/native
-history replays; requests waiting behind a roster scan can still take longer.
+history replays. The all-staff report retains bounded incremental evidence as
+described below; a required rebuild can still delay requests behind it.
 Each operation opens its own read-only connection and retains its existing
 snapshot and authorization checks. Cancelling a request does not release a worker
 that is still reading. Shutdown cancels queued reads and waits for the active read
@@ -132,6 +133,42 @@ This adds disk and write work. Read-speed microbenchmarks are diagnostic only;
 the unchanged paired HTTP, memory, durability and compatibility gates remain
 required before rollout.
 
+### Incremental staff-report evidence
+
+The Rust service primes a disposable checkpoint during normal startup when both
+the compact history and catalog metadata are eligible. Subsequent reports replay
+only events after the saved sequence through the native `CHECKPOINT_VERSION=1`
+interface. Install the matching wheel before selecting Rust; an old or missing
+interface refuses selection before the writer starts. Reader-specific queries
+still use full native replay. Python retains its original reducer and scheduling.
+
+The checkpoint stores page sets, merged interval evidence, attempts, opened state
+and activity clocks, never percentages or a finished HTTP response. Each request
+reads its current roster, catalog, quiz and certificate state in one read-only WAL
+snapshot and retains the final authorization/audit gate. A failed replay never
+publishes a new checkpoint or sequence. Responses cannot mutate saved evidence.
+
+One service owns one cache. Only that Database's actual `mode=ro` read connections
+can retain results. A writable transaction remains ineligible even after setting
+`query_only`. File identity, item metadata, roster and the derived
+`progress_generation` counter form its invalidation key; older snapshots rebuild
+when necessary. Triggers invalidate old-event updates/deletes, replacements and
+out-of-order inserts. Export-only updates do not invalidate it. The generation
+table is also excluded from format-1 migration inventories.
+
+Retained checkpoint and key data are conservatively capped at 16 MiB, with only
+16 recent row-count diagnostics. An oversized result is returned completely but
+is not retained; this cap does not bound temporary full-replay allocations.
+Legacy/unready history and nonportable metadata keep their original full replay
+and request-time errors. They are not primed at startup. Cache loss, Python
+rollback and process restart cannot lose durable progress.
+
+Startup priming is measured separately and included in comparable CPU for the
+[next candidate protocol](capacity.md#incremental-dashboard-candidate-protocol).
+History repairs and catalog changes may require an expensive rebuild; the steady
+workload target does not promise a two-second repair. This mechanism remains
+subject to compatibility, memory, startup, representative-load and live gates.
+
 ## Performance acceptance
 
 Targets were recorded before implementation:
@@ -177,7 +214,7 @@ In a development checkout with the project's test dependencies installed:
 # Run builds and rehearsals sequentially, preferably away from the serving Mac.
 CARGO_BUILD_JOBS=1 nice -n 10 .venv/bin/python -m pip wheel --no-deps ./native/progress --wheel-dir .context/rust-wheels
 # Install the wheel matching this host from .context/rust-wheels.
-.venv/bin/python -m pip install --no-deps .context/rust-wheels/postern_progress_native-0.1.0-cp311-abi3-macosx_11_0_arm64.whl
+.venv/bin/python -m pip install --no-deps .context/rust-wheels/postern_progress_native-0.2.0-cp311-abi3-macosx_11_0_arm64.whl
 POSTERN_PROGRESS_BACKEND=rust nice -n 10 .venv/bin/python -m pytest tests/native tests/postern/test_progress_backend.py tests/postern/test_progress.py tests/postern/test_training_progress.py -q
 nice -n 10 .venv/bin/python -m scripts.progress_benchmark --output .context/progress-benchmark
 ```
