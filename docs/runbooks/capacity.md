@@ -109,6 +109,12 @@ so this is not an identical live storage state. The profiler reads the fixture's
 published catalog. These additional timings do not enter the HTTP report or
 replace any acceptance target. A quiet-profile failure fails the diagnostic
 while preserving the preceding capacity report and request spans.
+Each replay report names its `source`: original `events` or eligible
+`progress_events`. Row materialization uses that same source. A direct-schema
+seed with legacy zero timestamps can stay on the original query, while the
+completed HTTP fixture can use compact inputs; do not compare those fixtures as
+an isolated backend improvement. See [compact progress inputs](rust-server.md#compact-progress-inputs)
+for rebuilding, legacy fallback and rollback behavior.
 
 Manually dispatch the existing **tests** workflow with `capacity=true`. It runs
 on disposable macOS 15 runners using the pinned pilot dependencies and a Rust

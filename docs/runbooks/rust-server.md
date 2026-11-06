@@ -69,7 +69,7 @@ releases. No staff identities or event payloads were copied into the baseline.
 
 ```mermaid
 flowchart LR
-    A[Python authorization and read snapshot] --> B[Unchanged SQLite selection]
+    A[Python authorization and read snapshot] --> B[SQLite: compact inputs or audit history]
     B --> C[Rust: parse and reduce batches of 256 rows]
     C --> D[Python response construction]
     D --> E[Existing reauthorization and audit admission]
@@ -95,6 +95,42 @@ never becomes a successful partial result.
 
 The original Python hot loop remains intact for rollback. A helper refactor
 was measured to add overhead and was removed from that path.
+
+### Compact progress inputs
+
+Both backends can read the rebuildable `progress_events` table in the same SQLite
+snapshot as the catalog and roster. It preserves selection fields and only the
+JSON detail needed for progress. Full audit events remain authoritative and are
+still exported unchanged. Triggers mirror inserts, updates, deletes and identity
+replacements, including writes by an older release. Export-only `batch_id`
+updates do not rewrite this table. The derived table is excluded from format-1
+migration bundles, so old snapshots and bundles retain their existing inventory.
+
+Existing databases use the original event query until rebuilding completes.
+The writer rebuilds only after a 100 ms idle queue interval, with at most 128 rows
+and a 25 ms budget checked between rows. SQLite caps each derived payload at
+64 KiB before Python materializes it. Oversized payloads stay authoritative in
+`events`; the derived row is marked ineligible. The budget is cooperative, not
+a hard bound on a single SQLite operation or filesystem commit. The cursor and
+completion marker commit with each batch, so interruption resumes safely.
+An unsuccessful batch rolls back, logs `Progress read table rebuild paused`, and
+keeps the original read path active; startup retries unfinished work.
+
+The smaller table may produce a different query plan. Any pending or exceptional
+input keeps **all** history reads on the original query: this includes malformed
+or deeply nested JSON, BLOB payloads, large numbers and nonpositive or legacy
+timestamps. This conservatively preserves order-sensitive historical results
+and exceptions. Ordinary old-writer rows become eligible after idle processing.
+Check `meta.progress_inputs_v1` for completion and `progress_events.portable`
+for classification: `-1` pending, `0` original-query fallback, `1` eligible.
+The source switches only when rebuilding is complete and every row is eligible.
+
+Selecting `python` still restores the original reducer and read scheduling;
+it also uses eligible compact inputs. Rolling back to an older release reads
+the full events table, while the installed triggers keep the derived copy current.
+This adds disk and write work. Read-speed microbenchmarks are diagnostic only;
+the unchanged paired HTTP, memory, durability and compatibility gates remain
+required before rollout.
 
 ## Performance acceptance
 
@@ -494,9 +530,11 @@ Before a production pilot:
 5. Roll back by persisting `POSTERN_PROGRESS_BACKEND=python` and reloading the
    same job definition as in step 3 against the **current** database. Verify
    the loaded environment is Python; health alone does not identify the backend.
-   Recheck health and activity
-   recorded during the Rust window. This slice has no schema migration and
-   needs no database restore; restoring an older backup would lose new activity.
+   Recheck health and activity recorded during the Rust window. Compact inputs
+   add rebuildable tables, indexes and triggers; backend rollback keeps this
+   additive metadata and needs no database restore. Restoring an older backup
+   would lose new activity. See [compact progress inputs](#compact-progress-inputs)
+   for rollback to an older application release.
 
 The disposable-data rehearsal starts Python, restarts with Rust, records new
 page activity and a first exam pass/saved certificate name, then closes and

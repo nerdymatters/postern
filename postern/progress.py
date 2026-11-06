@@ -9,7 +9,7 @@ from .db import meta, rows
 from .video import intervals
 from .categories import category_name
 from .quiz import EXEMPT, chapter_number, finished, published, records, summary
-from . import exam, honors, progress_backend
+from . import exam, honors, progress_backend, progress_store
 
 
 def history(db, items, email=None, coverage=False):
@@ -18,7 +18,7 @@ def history(db, items, email=None, coverage=False):
     coverage=True reads only page and playback evidence for the given items, which is all
     that completion needs, through the (email, type, item_id) index.
     """
-    sql = "SELECT e.email,e.item_id,e.type,e.ts,e.payload FROM events e "
+    sql = f"SELECT e.email,e.item_id,e.type,e.ts,e.payload FROM {progress_store.source(db)} e "
     # Recovery can annotate an individual reader before the roster is restored.
     # Only the all-staff dashboard limits its scan to current members.
     if email is None:

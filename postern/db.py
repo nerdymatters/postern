@@ -11,7 +11,9 @@ import sqlite3
 import threading
 import time
 import json
+import logging
 import uuid
+from . import progress_store
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -81,7 +83,7 @@ END;
 CREATE TRIGGER IF NOT EXISTS health_batch_delete AFTER DELETE ON batches BEGIN
   INSERT OR REPLACE INTO health_orphan_events SELECT seq,id,ts,batch_id FROM events WHERE batch_id=OLD.id;
 END;
-'''
+''' + progress_store.SCHEMA
 
 
 class AuditUnavailable(Exception):
@@ -94,6 +96,7 @@ class Database:
         self.queue = queue.Queue(maxsize=capacity)
         self.ready = concurrent.futures.Future()
         self.failed = False
+        self.progress_rebuild_error = None
         self.thread = threading.Thread(target=self._worker, name='postern-writer', daemon=True)
         self.thread.start()
         self.settings = self.ready.result(timeout=10)
@@ -124,9 +127,31 @@ class Database:
                     FROM events e LEFT JOIN batches b ON b.id=e.batch_id WHERE e.batch_id IS NOT NULL AND b.id IS NULL''')
                 db.execute("INSERT INTO meta(key,value) VALUES('health_orphans_v1','true')")
                 db.commit()
+            if not progress_store.ready(db) and not db.execute('SELECT 1 FROM events LIMIT 1').fetchone():
+                db.execute('BEGIN IMMEDIATE')
+                progress_store.rebuild_batch(db)
+                db.commit()
+            rebuild_pending = progress_store.pending(db)
             self.ready.set_result({p: db.execute('PRAGMA '+p).fetchone()[0] for p in ['journal_mode','synchronous','fullfsync','busy_timeout']})
             while True:
-                job = self.queue.get()
+                try:
+                    job = self.queue.get(timeout=.1 if rebuild_pending else None)
+                except queue.Empty:
+                    # Existing installations keep reading authoritative events
+                    # until this bounded, resumable projection is complete. Only
+                    # spend idle writer time; queued audit work always goes first.
+                    try:
+                        db.execute('BEGIN IMMEDIATE')
+                        rebuild_pending = not progress_store.rebuild_batch(db)
+                        db.commit()
+                    except Exception as error:
+                        db.rollback()
+                        self.progress_rebuild_error = type(error).__name__
+                        rebuild_pending = False  # retry on next startup, retain raw fallback
+                        logging.getLogger(__name__).warning(
+                            'Progress read table rebuild paused (%s); audit history remains active',
+                            self.progress_rebuild_error)
+                    continue
                 if job is None:
                     break
                 queued, operation, future = job
@@ -139,6 +164,10 @@ class Database:
                     started = time.monotonic()
                     db.execute('BEGIN IMMEDIATE')
                     result = operation(db)
+                    # Raw recovery/old-style writes may have introduced inputs
+                    # needing classification. The partial index makes this cheap.
+                    if self.progress_rebuild_error is None and not rebuild_pending:
+                        rebuild_pending = progress_store.pending(db)
                     db.commit()
                     future.queue_ms = (started - queued) * 1000
                     future.commit_ms = (time.monotonic() - started) * 1000
@@ -217,4 +246,5 @@ def event(db, kind, context=None, *, post_id=None, item_id=None, view_id=None, d
                'ip': context.get('ip'), 'user_agent': context.get('user_agent'), 'detail': detail, 'summary': summary}
     db.execute('INSERT INTO events(id,ts,type,email,post_id,item_id,view_id,summary,payload) VALUES (?,?,?,?,?,?,?,?,?)',
                (identity, ts, kind, payload['email'], post_id, item_id, view_id, int(summary), json.dumps(payload)))
+    progress_store.compact_created(db, identity, kind)
     return identity
