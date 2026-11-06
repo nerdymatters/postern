@@ -53,6 +53,38 @@ jobs:
           mkdir -p .context/capacity
           python -m pip freeze > .context/capacity/dependencies.txt
           git rev-parse HEAD > .context/capacity/revision.txt
+      - name: Prepare the disposable measurement host
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This setting belongs only to this disposable benchmark VM.
+          test "${GITHUB_ACTIONS:-}" = true
+          test "${RUNNER_ENVIRONMENT:-}" = github-hosted
+          test "$(uname -s)" = Darwin
+          { sudo -n /usr/bin/mdutil -a -i off; } > .context/capacity/indexing.stdout 2> .context/capacity/indexing.stderr
+          /usr/bin/mdutil -a -s >> .context/capacity/indexing.stdout
+          python - <<'PY'
+          import json, time
+          from pathlib import Path
+          import psutil
+          samples = []
+          started = time.monotonic()
+          quiet_since = None
+          ready = False
+          while time.monotonic() - started < 300:
+              cpu = psutil.cpu_percent(interval=1)
+              now = time.monotonic()
+              quiet_since = (quiet_since if quiet_since is not None else now) if cpu <= 70 else None
+              samples.append({'elapsed_seconds': round(now-started, 3), 'host_cpu_percent': cpu})
+              ready = quiet_since is not None and now-quiet_since >= 60
+              Path('.context/capacity/host-readiness.json').write_text(json.dumps({
+                  'ready': ready, 'quiet_seconds_required': 60, 'deadline_seconds': 300,
+                  'max_host_cpu_percent': 70, 'samples': samples}, indent=2)+'\n')
+              if ready:
+                  break
+          if not ready:
+              raise SystemExit('Disposable host did not reach the required quiet period; no measurements started')
+          PY
       - name: Measure three alternating pairs on this runner
         env:
           SCENARIO_ARGS: ${{ matrix.args }}
@@ -83,6 +115,7 @@ jobs:
             .context/capacity/*.stderr
             .context/capacity/*.exit
             .context/capacity/*.txt
+            .context/capacity/host-readiness.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14

@@ -92,6 +92,12 @@ observations last 120 seconds. Other pacing stays at the defaults documented abo
 
 Each job runs three pairs sequentially on its own runner, in Python/Rust,
 Rust/Python, Python/Rust order. Different scenario jobs use different runners.
+The capacity job disables Spotlight indexing only on its disposable GitHub-hosted
+Mac, then requires 60 consecutive seconds at or below 70% whole-host CPU before
+starting the batch. A five-minute readiness deadline fails the job without
+starting measurements. Indexing output and the readiness samples are retained.
+This prepared-host environment differs from earlier unconditioned measurements;
+compare backends within the same batch. Ordinary CI and office settings are unchanged.
 Every report, stdout/stderr and exit code is retained, including failures. The
 `capacity-*` artifacts also contain dependency versions and the checked-out
 revision. A green job means functional coverage passed; it does **not** mean
