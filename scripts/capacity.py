@@ -50,6 +50,34 @@ def distribution(values):
         for name, fraction in [('p50', .5), ('p95', .95), ('p99', .99), ('max', 1)]}}
 
 
+def workload_coverage(args, statuses, acknowledged_progress):
+    """Missing traffic is a failed rehearsal, even if every request made succeeded."""
+    if args.scenario == 'signin':
+        required = {'signin': ('200', args.users)}
+    elif args.scenario == 'enrollment':
+        required = {'selfie_capture': ('202', args.users), 'selfie_status': ('200', args.users),
+                    'enrollment_ready': ('confirmed', args.users)}
+        if args.with_reader:
+            required.update(existing_reader_open=('200', 1), existing_reader_player=('200', 1),
+                            existing_reader_range=('206', 1), existing_reader_progress=('200', 1))
+    else:
+        required = {'open_view': ('200', args.users*2), 'player': ('200', args.users),
+                    'video_range': ('206', args.users), 'progress': ('200', args.users),
+                    'catalog': ('200', args.users), 'page': ('200', math.ceil(args.users/5)),
+                    'dashboard': ('200', 1)}
+    counts = {label: {'status': status, 'minimum': minimum,
+                      'observed': statuses.get(label, {}).get(status, 0)}
+              for label, (status, minimum) in required.items()}
+    missing = [label for label, count in counts.items() if count['observed'] < count['minimum']]
+    expected_readers = ({f'reader{i}@example.invalid' for i in range(args.users)}
+                        if args.scenario == 'mixed' else
+                        {f'reader{args.users}@example.invalid'} if args.with_reader else set())
+    actual_readers = {email for (email, _), count in acknowledged_progress.items() if count > 0}
+    missing_readers = sorted(expected_readers - actual_readers)
+    return {'passed': not missing and not missing_readers, 'families': counts,
+            'missing': missing, 'readers_without_progress': missing_readers}
+
+
 class Metrics:
     def __init__(self):
         self.latencies = defaultdict(list)
@@ -369,6 +397,7 @@ async def run(args):
                      'persisted_progress_records': sum(recorded_progress.values())}
         no_errors = all(status in {'200', '202', '206', 'confirmed'}
                         for statuses in metrics.statuses.values() for status in statuses)
+        coverage = workload_coverage(args, metrics.statuses, expected_progress)
         if args.scenario == 'signin':
             complete = metrics.statuses['signin']['200'] == args.users
         elif args.scenario == 'enrollment':
@@ -379,13 +408,14 @@ async def run(args):
             complete = (metrics.statuses['open_view']['200'] == args.users*2 and
                         metrics.statuses['player']['200'] == args.users and
                         metrics.statuses['video_range']['206'] >= args.users)
-        functional_checks = (not aborted and no_errors and complete and not bad_video_bodies and
+        functional_checks = (not aborted and no_errors and complete and coverage['passed'] and not bad_video_bodies and
                              integrity['progress_matches_acknowledged_requests'] and
                              health_body == {'process': 'up', 'permissions': 'ready', 'audit': 'ready',
                                              'backup': 'current', 'storage': 'ready'})
         report = {'scenario': vars(args), 'elapsed_seconds': round(elapsed, 3),
                   'roster': roster, 'seeded_history_events': roster*int(args.history_hours*240),
                   'aborted': aborted, 'health': health_body, 'integrity': integrity,
+                  'workload_coverage': coverage,
                   'functional_checks_passed': functional_checks,
                   'live_health_guard_enabled': guard_live, **metrics.report(),
                   'limitations': ['Loopback HTTP; client and server share one process and event loop.',
@@ -396,6 +426,7 @@ async def run(args):
         (folder/'report.json').write_text(json.dumps(report, indent=2)+'\n')
         print(json.dumps({'report': str(folder/'report.json'), 'aborted': aborted,
                           'functional_checks_passed': functional_checks,
+                          'workload_coverage': coverage,
                           'requests': report['requests'], 'audit_ms': report['audit_ms'],
                           'event_loop_lag_ms': report['event_loop_lag_ms']}, indent=2))
         return functional_checks
