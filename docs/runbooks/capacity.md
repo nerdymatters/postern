@@ -56,8 +56,9 @@ consumes CPU, disk, and memory: use a separate host or an agreed quiet window fo
 longer tests. These stop conditions are safeguards, not proof of no user impact.
 
 Inspect `report.json`, not merely the process exit status. Functional errors cause
-a nonzero exit, but latency/CPU acceptance and workload coverage still require
-review of the report. Any abort, unexpected
+a nonzero exit. Required request-family minimums and progress from every active
+reader are recorded in `workload_coverage` and enforced before success; latency/CPU
+acceptance still requires review of the report. Any abort, unexpected
 HTTP error, unfinished enrollment, integrity mismatch, or missing request family
 means the scenario did not pass. Very short runs may never reach a 15-second
 heartbeat or a 30-second dashboard refresh.
