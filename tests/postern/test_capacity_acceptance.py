@@ -1,12 +1,87 @@
 """Acceptance cannot be inferred from an incomplete synthetic HTTP workload."""
 import argparse
 import asyncio
+import hashlib
 import json
 import shutil
+import time
 
+import httpx
 import pytest
 
 from scripts import capacity
+
+
+@pytest.fixture
+def isolated_signin(tmp_path, monkeypatch):
+    fixtures = tmp_path / 'tests/fixtures'
+    fixtures.mkdir(parents=True)
+    for name in ('page.jpg', 'selfie-face.jpg'):
+        shutil.copyfile(capacity.ROOT / 'tests/fixtures' / name, fixtures / name)
+    monkeypatch.setattr(capacity, 'ROOT', tmp_path)
+    return argparse.Namespace(scenario='signin', users=1, roster=1, seconds=10,
+                              history_hours=0, ramp_seconds=0, video_mbps=1.5,
+                              cloud_delay=0, with_reader=False)
+
+
+@pytest.mark.parametrize('phase,fault', [
+    (phase, fault) for phase in ('final', 'periodic', 'inflight')
+    for fault in ('malformed', 'status', 'timeout', 'backup')
+])
+def test_health_failures_preserve_report(isolated_signin, tmp_path, monkeypatch, phase, fault):
+    # Value: protects=failed health probes retain a failed report including probes racing workload completion;
+    # fails_when=JSON errors escape or pending probe failure is canceled or ignored;
+    # why_new=existing harness integrations see healthy JSON only; seam=none;
+    # no_claim=production health or WAN failure (fault injected at HTTP client boundary, real loopback app).
+    original_request = httpx.AsyncClient.request
+
+    async def exercise():
+        periodic_started, final_seen = asyncio.Event(), asyncio.Event()
+
+        async def request(client, method, url, **kwargs):
+            path = str(url)
+            if path == 'http://127.0.0.1:8790/health':
+                raise httpx.ConnectError('No existing service in this isolated test')
+            response = await original_request(client, method, url, **kwargs)
+            if path == '/api/auth/demo' and phase != 'final':
+                await asyncio.wait_for(periodic_started.wait(), 8)
+            if path.endswith('/health'):
+                periodic = path.startswith('http://')
+                if periodic:
+                    periodic_started.set()
+                    if phase == 'inflight':
+                        await asyncio.wait_for(final_seen.wait(), 3)
+                else:
+                    final_seen.set()
+                if (periodic and phase != 'final') or (not periodic and phase == 'final'):
+                    if fault == 'timeout':
+                        raise httpx.ReadTimeout('Controlled health timeout', request=response.request)
+                    if fault == 'malformed':
+                        return httpx.Response(200, content=b'not JSON', request=response.request)
+                    if fault == 'status':
+                        return httpx.Response(503, json=capacity.HEALTH, request=response.request)
+                    return httpx.Response(200, json={**capacity.HEALTH, 'backup': 'overdue'},
+                                          request=response.request)
+            return response
+
+        monkeypatch.setattr(httpx.AsyncClient, 'request', request)
+        return await capacity.run(isolated_signin)
+
+    error, passed = None, None
+    try:
+        passed = asyncio.run(exercise())
+    except ValueError as caught:
+        error = caught
+    reports = list(tmp_path.glob('.context/capacity/*/report.json'))
+    assert len(reports) == 1, f'Health failure lost its diagnostic report: {error}'
+    report = json.loads(reports[0].read_text())
+    assert passed is False and report['functional_checks_passed'] is False
+    expected_status = 'transport_error' if fault == 'timeout' else '503' if fault == 'status' else '200'
+    assert report['requests']['health']['statuses'][expected_status] >= 1
+    assert report['workload_coverage']['passed'] is True
+    if phase != 'final':
+        assert report['aborted'] == 'isolated health check failed; rehearsal stopped'
+        assert sum(report['requests']['health']['statuses'].values()) >= 2
 
 
 def test_short_mixed_workload_cannot_pass_without_progress_and_dashboard(tmp_path, monkeypatch):
@@ -30,22 +105,65 @@ def test_short_mixed_workload_cannot_pass_without_progress_and_dashboard(tmp_pat
     assert report['workload_coverage']['passed'] is False
     assert 'progress' in report['workload_coverage']['missing']
     assert 'dashboard' in report['workload_coverage']['missing']
+    # Value: protects=report identifies the actual runtime and includes during-load health observations;
+    # fails_when=backend/hash is mislabeled or only the final health probe remains;
+    # why_new=previous assertions only accepted any backend and one final probe; seam=none;
+    # no_claim=representative CPU or performance acceptance (real isolated ten-second workload).
+    backend = capacity.progress_backend.selected()
+    assert report['runtime']['backend'] == backend
+    assert report['runtime']['revision'] is None  # The owned fixture root is not a git checkout.
+    expected_hash = (hashlib.sha256(capacity.Path(capacity.progress_backend.native().__file__).read_bytes()).hexdigest()
+                     if backend == 'rust' else None)
+    assert report['runtime']['native_sha256'] == expected_hash
+    # gstack-timing-ok: adjacent process/thread CPU clock reads need a 10ms precision allowance, not a performance budget.
+    assert report['process_cpu_seconds'] + .01 >= report['main_thread_cpu_seconds'] > 0
+    assert report['writer_by_caller']['request_or_other']['operation_cpu_ms']['count'] > 0
+    assert report['writer_by_caller']['request_or_other']['commit_ms']['count'] > 0
+    assert report['requests']['health']['statuses']['200'] >= 2
 
 
-@pytest.mark.parametrize('scenario,with_reader,counts,readers', [
-    ('signin', False, {'signin': ('200', 2)}, []),
-    ('enrollment', False, {'selfie_capture': ('202', 2), 'selfie_status': ('200', 2),
+def test_fast_enrollment_keeps_reader_until_progress_is_saved(tmp_path, monkeypatch):
+    # Value: protects=fast enrollment cannot truncate the reader observation window;
+    # fails_when=viewer stops as soon as captures finish; why_new=mixed regression has no enrollment worker;
+    # seam=none; no_claim=real camera/provider or representative load acceptance.
+    fixtures = tmp_path / 'tests/fixtures'
+    fixtures.mkdir(parents=True)
+    for name in ('page.jpg', 'selfie-face.jpg'):
+        shutil.copyfile(capacity.ROOT / 'tests/fixtures' / name, fixtures / name)
+    monkeypatch.setattr(capacity, 'ROOT', tmp_path)
+    args = argparse.Namespace(scenario='enrollment', users=1, roster=2, seconds=18,
+                              history_hours=0, ramp_seconds=0, video_mbps=1.5,
+                              cloud_delay=0, with_reader=True)
+    assert asyncio.run(capacity.run(args)) is True
+    report = json.loads(next(tmp_path.glob('.context/capacity/*/report.json')).read_text())
+    assert report['elapsed_seconds'] >= 18  # gstack-timing-ok: 18s is the explicitly requested observation contract.
+    assert report['workload_coverage']['passed'] is True
+    assert report['integrity']['acknowledged_progress_records'] >= 1
+    assert report['integrity']['progress_matches_acknowledged_requests'] is True
+    assert report['requests']['enrollment_ready']['statuses'] == {'confirmed': 1}
+
+
+@pytest.mark.parametrize('scenario,with_reader,users,counts,readers', [
+    ('signin', False, 2, {'signin': ('200', 2)}, []),
+    ('enrollment', False, 2, {'selfie_capture': ('202', 2), 'selfie_status': ('200', 2),
                            'enrollment_ready': ('confirmed', 2)}, []),
-    ('enrollment', True, {'selfie_capture': ('202', 2), 'selfie_status': ('200', 2),
+    ('enrollment', True, 2, {'selfie_capture': ('202', 2), 'selfie_status': ('200', 2),
                           'enrollment_ready': ('confirmed', 2), 'existing_reader_open': ('200', 1),
                           'existing_reader_player': ('200', 1), 'existing_reader_range': ('206', 1),
                           'existing_reader_progress': ('200', 1)}, [2]),
-    ('mixed', False, {'open_view': ('200', 4), 'player': ('200', 2), 'video_range': ('206', 2),
+    ('mixed', False, 2, {'open_view': ('200', 4), 'player': ('200', 2), 'video_range': ('206', 2),
                       'progress': ('200', 2), 'catalog': ('200', 2), 'page': ('200', 1),
                       'dashboard': ('200', 1)}, [0, 1]),
+    ('mixed', False, 6, {'open_view': ('200', 12), 'player': ('200', 6), 'video_range': ('206', 6),
+                       'progress': ('200', 6), 'catalog': ('200', 6), 'page': ('200', 2),
+                       'dashboard': ('200', 1)}, [0, 1, 2, 3, 4, 5]),
 ])
-def test_missing_family_or_reader_never_qualifies(scenario, with_reader, counts, readers):
-    args = argparse.Namespace(scenario=scenario, users=2, with_reader=with_reader)
+def test_missing_family_or_reader_never_qualifies(scenario, with_reader, users, counts, readers):
+    # Value: protects=required successful traffic minimums and every reader acknowledgement;
+    # fails_when=undercounts, wrong status, zero acknowledgements or rounded-down pages qualify;
+    # why_new=original table only removed whole families and readers; seam=none;
+    # no_claim=HTTP integration or representative performance (explicit protocol-count fixtures).
+    args = argparse.Namespace(scenario=scenario, users=users, with_reader=with_reader)
     statuses = {label: {status: count} for label, (status, count) in counts.items()}
     progress = {(f'reader{i}@example.invalid', ((0., 15.),)): 1 for i in readers}
     assert capacity.workload_coverage(args, statuses, progress)['passed']
@@ -53,8 +171,131 @@ def test_missing_family_or_reader_never_qualifies(scenario, with_reader, counts,
         incomplete = {key: value for key, value in statuses.items() if key != label}
         result = capacity.workload_coverage(args, incomplete, progress)
         assert not result['passed'] and label in result['missing']
+        status, count = counts[label]
+        for replacement in ({status: count-1}, {'599': count}):
+            result = capacity.workload_coverage(args, {**statuses, label: replacement}, progress)
+            assert not result['passed'] and label in result['missing']
     if readers:
         # A repeated acknowledgement from one reader cannot stand in for another.
         missing = dict(progress)
         missing.pop(next(iter(missing)))
         assert not capacity.workload_coverage(args, statuses, missing)['passed']
+        zero = {**progress, next(iter(progress)): 0}
+        result = capacity.workload_coverage(args, statuses, zero)
+        assert not result['passed']
+        assert result['readers_without_progress'] == [next(iter(progress))[0]]
+
+
+def test_writer_measurements_include_owned_work_and_exclude_lifecycle(isolated_signin, tmp_path, monkeypatch):
+    # Value: protects=writer ownership/errors and CPU reports include workload while excluding lifecycle work;
+    # fails_when=background writes are mislabeled, failed operations disappear or lifecycle CPU enters report;
+    # why_new=earlier telemetry assertions checked positive counts only; seam=none;
+    # no_claim=production CPU attribution (controlled real CPU work and synthetic Service/HTTP lifecycle).
+    original_start, original_close = capacity.Service.start, capacity.Service.close
+    original_request = httpx.AsyncClient.request
+    observed = {}
+
+    def cpu_work(seconds):
+        before = time.thread_time()
+        while time.thread_time()-before < seconds:
+            hashlib.sha256(b'capacity measurement control').digest()
+
+    def operation(db, seconds):
+        cpu_work(seconds)
+        return db.execute('SELECT 1').fetchone()[0]
+
+    async def exercise():
+        requested, finished = asyncio.Event(), asyncio.Event()
+
+        async def background(service):
+            await requested.wait()
+            observed['background_result'] = await service.write(lambda db: operation(db, .06))
+
+            def fail(db):
+                operation(db, .04)
+                raise ValueError('controlled writer failure')
+
+            try:
+                await service.write(fail)
+            except ValueError as error:
+                observed['writer_error'] = str(error)
+            finally:
+                finished.set()
+
+        async def start(service):
+            await original_start(service)
+            observed['service'] = service
+            await service.write(lambda db: operation(db, .4))
+
+        async def close(service):
+            await service.write(lambda db: operation(db, .4))
+            await original_close(service)
+
+        async def request(client, method, url, **kwargs):
+            if str(url) == 'http://127.0.0.1:8790/health':
+                raise httpx.ConnectError('No existing service in this isolated test')
+            if str(url) == '/api/auth/demo':
+                cpu_work(.03)
+                requested.set()
+                await asyncio.wait_for(finished.wait(), 3)
+                # This submission has no running asyncio loop in its caller thread.
+                observed['thread_result'] = await asyncio.to_thread(
+                    lambda: observed['service'].db.submit(lambda db: operation(db, .07)).result(2))
+            return await original_request(client, method, url, **kwargs)
+
+        monkeypatch.setattr(capacity.Service, 'background_loop', background)
+        monkeypatch.setattr(capacity.Service, 'start', start)
+        monkeypatch.setattr(capacity.Service, 'close', close)
+        monkeypatch.setattr(httpx.AsyncClient, 'request', request)
+        observed['owner'] = background.__qualname__
+        return await capacity.run(isolated_signin)
+
+    before = time.process_time()
+    assert asyncio.run(exercise()) is True
+    whole_run_cpu = time.process_time()-before
+    report = json.loads(next(tmp_path.glob('.context/capacity/*/report.json')).read_text())
+    assert observed['background_result'] == observed['thread_result'] == 1
+    assert observed['writer_error'] == 'controlled writer failure'
+    owner = report['writer_by_caller'][observed['owner']]
+    assert owner['operation_cpu_ms']['count'] == 2
+    assert owner['operation_cpu_ms']['min'] >= 35  # gstack-timing-ok: actual .04s/.06s thread CPU work, with 5ms allowance.
+    assert owner['operation_cpu_ms']['max'] >= 55  # gstack-timing-ok: successful writer operation burns .06s thread CPU.
+    assert owner['queue_ms']['count'] == owner['commit_ms']['count'] == 1
+    request_cpu = report['writer_by_caller']['request_or_other']['operation_cpu_ms']
+    assert 65 <= request_cpu['max'] < 200  # gstack-timing-ok: .07s thread job is measured; neither .4s lifecycle job is.
+    assert .18 <= report['process_cpu_seconds'] < whole_run_cpu-.7  # gstack-timing-ok: .20s real workload; .80s lifecycle excluded.
+    assert report['main_thread_cpu_seconds'] >= .025  # gstack-timing-ok: .03s controlled main-thread CPU work.
+    assert report['other_threads_cpu_seconds'] >= .15  # gstack-timing-ok: .17s controlled writer CPU work, with 20ms allowance.
+
+
+@pytest.mark.parametrize('with_reader', [False, True])
+def test_enrollment_wait_is_optional_and_obeys_health_stop(isolated_signin, tmp_path, monkeypatch, with_reader):
+    # Value: protects=no-reader enrollment finishes promptly and reader observation obeys a health stop;
+    # fails_when=the observation wait becomes unconditional or ignores the stop signal;
+    # why_new=existing enrollment test covers the full successful window only; seam=none;
+    # no_claim=real overload or camera/provider failures (isolated app with controlled health response).
+    args = isolated_signin
+    args.scenario, args.roster, args.seconds, args.with_reader = 'enrollment', 2, 30, with_reader
+    original_request = httpx.AsyncClient.request
+
+    async def request(client, method, url, **kwargs):
+        path = str(url)
+        if path == 'http://127.0.0.1:8790/health':
+            raise httpx.ConnectError('No existing service in this isolated test')
+        response = await original_request(client, method, url, **kwargs)
+        if with_reader and path.startswith('http://') and path.endswith('/health'):
+            return httpx.Response(200, json={**capacity.HEALTH, 'backup': 'overdue'}, request=response.request)
+        return response
+
+    monkeypatch.setattr(httpx.AsyncClient, 'request', request)
+    assert asyncio.run(capacity.run(args)) is (not with_reader)
+    report = json.loads(next(tmp_path.glob('.context/capacity/*/report.json')).read_text())
+    assert report['elapsed_seconds'] < 20  # gstack-timing-ok: absence/stop must bypass the declared 30s observation wait.
+    assert report['requests']['enrollment_ready']['statuses'] == {'confirmed': 1}
+    if with_reader:
+        assert report['aborted'] == 'isolated health check failed; rehearsal stopped'
+        assert not report['workload_coverage']['passed']
+        assert report['workload_coverage']['readers_without_progress'] == ['reader1@example.invalid']
+    else:
+        assert report['aborted'] is None and report['workload_coverage']['passed']
+        assert 'existing_reader_progress' not in report['requests']

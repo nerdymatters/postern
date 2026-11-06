@@ -33,6 +33,8 @@ Google quotas, key fetching, all Google round trips, or camera/device behavior.
 `--with-reader` adds one already-enrolled synthetic reader making video range
 requests and saving progress while the group enrolls. It requires a spare roster
 account and checks persisted progress against acknowledged updates numerically.
+The existing reader stays active for the full `--seconds` window even when all
+captures finish earlier, so a fast enrollment cannot skip the progress heartbeat.
 
 The mixed scenario exercises real authorization, audit commits, range responses,
 15-second progress reporting, a document page for one in five viewers, catalog
@@ -44,7 +46,13 @@ decoding, video quality, player buffering, or rendering on staff devices.
 
 Reports include per-route latency/status counts, audit queue and commit times,
 event-loop lag, process memory, sampled whole-host CPU reserve, byte integrity,
-and comparison of acknowledged progress with persisted records by user. Client
+and comparison of acknowledged progress with persisted records by user. Reports
+also identify the backend, source revision, native binary hash and Python/host;
+process CPU excludes setup/teardown and converter subprocesses. Writer operations
+record thread CPU, queue and commit time grouped by the owning background task
+or `request_or_other`. Operation CPU excludes SQLite commit; task labels do not
+give exclusive per-job CPU because API and background reads share worker threads.
+Client
 and server share a process/event loop, so CPU/memory results include both.
 
 The rehearsal stops on memory pressure or sustained whole-host CPU reserve below
@@ -62,6 +70,42 @@ acceptance still requires review of the report. Any abort, unexpected
 HTTP error, unfinished enrollment, integrity mismatch, or missing request family
 means the scenario did not pass. Very short runs may never reach a 15-second
 heartbeat or a 30-second dashboard refresh.
+
+## Paired reducer measurements
+
+Manually dispatch the existing **tests** workflow with `capacity=true`. It runs
+on disposable macOS 15 runners using the pinned pilot dependencies and a Rust
+wheel built from that checkout. It never accepts a serving URL or credentials.
+Five jobs cover sign-in (50 users), enrollment (10/25 users, a one-second fake
+upload delay and one existing reader), and mixed reading (25/50 users, a roster
+of 228 and nine hours of history: 492,480 seeded events). Mixed and enrollment
+observations last 120 seconds. Other pacing stays at the defaults documented above.
+
+Each job runs three pairs sequentially on its own runner, in Python/Rust,
+Rust/Python, Python/Rust order. Different scenario jobs use different runners.
+Every report, stdout/stderr and exit code is retained, including failures. The
+`capacity-*` artifacts also contain dependency versions and the checked-out
+revision. A green job means functional coverage passed; it does **not** mean
+performance acceptance. Review all six reports against these preselected bars:
+
+- No abort, unexpected status, unfinished enrollment, missing family/reader,
+  byte mismatch or difference between acknowledged and persisted progress.
+- During-load health is sampled every five seconds with a two-second timeout,
+  checking all five fields, including backup freshness. Every health latency
+  must be <=2s. Existing CPU and memory safeguards still apply.
+- Every request-family p95 <=2s, except selfie capture <=30s and enrollment-ready
+  <=120s. Across three pairs, median Rust p95 must not exceed Python by more than
+  max(20%, 25ms) for any family. Median workload process CPU must not exceed
+  max(110% of Python, Python+1 CPU-second); sampled peak RSS <=Python+32MiB.
+- Mixed workloads target at least 20% lower median process CPU, catalog p95 and
+  dashboard p95. Sign-in/enrollment are no-regression controls. Preserve a missed
+  target as a failure for investigation, rather than changing it after the run.
+
+This is an isolated synthetic load comparison, not full RS-06 acceptance. Role
+changes/revocation, consent, quiz/certificate, media failures, export and recovery
+still need controlled checks under concurrent load; ordinary compatibility CI
+does not substitute for those probes. Real devices/WAN and sustained serving
+operation remain separate gates before making Rust the default.
 
 ## v0.6.3 concurrency behavior
 
