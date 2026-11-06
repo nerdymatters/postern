@@ -46,6 +46,23 @@ def test_stage_profile_matches_streaming_progress(tmp_path, monkeypatch, backend
     assert json.loads(json.dumps(result)) == result
 
 
+@pytest.mark.parametrize('backend', ['python', 'rust'])
+def test_stage_profile_materializes_the_selected_compact_source(tmp_path, monkeypatch, backend):
+    if backend == 'rust':
+        pytest.importorskip('postern_progress_native')
+    monkeypatch.setenv('POSTERN_PROGRESS_BACKEND', backend)
+    path = tmp_path/'compact.sqlite3'
+    progress_profile.seed(path, readers=2, events_per_reader=12)
+    with sqlite3.connect(path) as db:
+        db.row_factory = sqlite3.Row
+        db.execute('UPDATE events SET ts=ts+1793990000')
+        while not progress_profile.progress_store.rebuild_batch(db):
+            pass
+    result = progress_profile.profile(path, backend)
+    assert result['source'] == 'progress_events'
+    assert result['rows'] == 24
+
+
 def test_cli_rejects_office_host_before_creating_output(tmp_path, monkeypatch):
     monkeypatch.delenv('GITHUB_ACTIONS', raising=False)
     output = tmp_path/'not-created'

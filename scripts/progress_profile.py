@@ -20,7 +20,7 @@ import time
 
 import psutil
 
-from postern import progress, progress_backend
+from postern import progress, progress_backend, progress_store
 from postern.db import SCHEMA, event
 from scripts.progress_benchmark import digest
 
@@ -64,8 +64,9 @@ def profile(path, backend, *, catalog=False):
             "SELECT i.id,i.kind,i.pages,v.duration_seconds FROM items i "
             "JOIN posts p ON p.id=i.post_id LEFT JOIN video_metadata v ON v.item_id=i.id "
             "WHERE p.status='published'")} if catalog else ITEMS
+        source = progress_store.source(db)
         streamed, streaming = measure(lambda: progress.history(db, items))
-        rows, fetching = measure(lambda: list(db.execute(SQL)))
+        rows, fetching = measure(lambda: list(db.execute(SQL.replace('FROM events e', f'FROM {source} e'))))
         expected = digest(streamed)
         del streamed
         operation = (lambda: progress._reduce_python(items, rows)) if backend == 'python' else (
@@ -87,7 +88,7 @@ def profile(path, backend, *, catalog=False):
             if not any(str(binary).endswith(suffix) for suffix in EXTENSION_SUFFIXES):
                 raise RuntimeError('Native provenance did not resolve to an extension binary')
             native_hash = hashlib.sha256(binary.read_bytes()).hexdigest()
-        return {'backend': backend, 'rows': count, 'items': len(items), 'digest': expected, 'streaming': streaming,
+        return {'backend': backend, 'source': source, 'rows': count, 'items': len(items), 'digest': expected, 'streaming': streaming,
                 'fetch_rows': fetching, 'reduce_materialized': reduction, 'profile': text.getvalue(),
                 'native_sha256': native_hash, 'python': sys.version}
     finally:
