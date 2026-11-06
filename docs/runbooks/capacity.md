@@ -82,6 +82,18 @@ heartbeat or a 30-second dashboard refresh.
 
 ## Paired reducer measurements
 
+For stage diagnosis, dispatch **tests** with `progress_profile=true` and
+`capacity=false`. One disposable Mac profiles three alternating Python/Rust pairs
+over 492,480 synthetic all-video events. The `progress-profile` artifact contains
+streaming replay, SQLite materialization and materialized-reducer CPU/wall times,
+cProfile call tables, matching-progress digests and worker guard observations.
+Each worker stops after 120 seconds, five sustained seconds above 70% host CPU,
+1 GiB RSS or less than 1 GiB available memory. Host preparation disables indexing
+and requires 60 quiet seconds within five minutes, only on the disposable runner.
+Materialization and profiling change costs, so these stage times are not additive
+and never replace HTTP acceptance. No synthetic database is uploaded; the CLI
+refuses an ordinary local or self-hosted runner before creating output.
+
 Manually dispatch the existing **tests** workflow with `capacity=true`. It runs
 on disposable macOS 15 runners using the pinned pilot dependencies and a Rust
 wheel built from that checkout. It never accepts a serving URL or credentials.
