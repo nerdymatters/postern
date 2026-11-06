@@ -1,8 +1,33 @@
 import json
+import sqlite3
 
 import pytest
 
 from scripts import progress_profile
+
+
+@pytest.mark.parametrize('backend', ['python', 'rust'])
+def test_completed_capacity_catalog_drives_quiet_replay(tmp_path, monkeypatch, backend):
+    if backend == 'rust':
+        pytest.importorskip('postern_progress_native')
+    monkeypatch.setenv('POSTERN_PROGRESS_BACKEND', backend)
+    path = tmp_path/'http-fixture.sqlite3'
+    progress_profile.seed(path, readers=2, events_per_reader=12)
+    with sqlite3.connect(path) as db:
+        db.row_factory = sqlite3.Row
+        for identity, status in [('published', 'published'), ('hidden', 'archived')]:
+            db.execute("INSERT INTO posts(id,title,body,status,created_at,created_by) VALUES (?,?,'',?,1,'synthetic')",
+                       (identity, identity, status))
+        for identity, post in [('actual-video', 'published'), ('hidden-video', 'hidden')]:
+            db.execute("INSERT INTO items(id,post_id,filename,kind,sha256,bytes,pages,derive_status,sort) "
+                       "VALUES (?,?,?,'video','synthetic',1,0,'ready',0)", (identity, post, identity))
+            db.execute('INSERT INTO video_metadata VALUES (?,30)', (identity,))
+        db.execute("UPDATE events SET item_id='actual-video'")
+        expected = progress_profile.digest(progress_profile.progress.history(db, {
+            'actual-video': {'kind': 'video', 'pages': 0, 'duration_seconds': 30}}))
+    result = progress_profile.profile(path, backend, catalog=True)
+    assert result['items'] == 1 and result['rows'] == 24
+    assert result['digest'] == expected
 
 
 @pytest.mark.parametrize('backend', ['python', 'rust'])

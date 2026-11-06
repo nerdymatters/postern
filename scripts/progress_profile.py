@@ -51,26 +51,32 @@ def measure(operation):
                    'cpu_ms': (time.process_time()-cpu)*1000}
 
 
-def profile(path, backend):
+def profile(path, backend, *, catalog=False):
     os.environ['POSTERN_PROGRESS_BACKEND'] = backend
     progress_backend.selected()
     db = sqlite3.connect(path.as_uri()+'?mode=ro', uri=True)
     db.row_factory = sqlite3.Row
     db.execute('PRAGMA query_only=ON')
     try:
-        streamed, streaming = measure(lambda: progress.history(db, ITEMS))
+        # The request profiler reuses its completed synthetic HTTP database.
+        # Preserve that fixture's catalog instead of assuming the tiny seed's ID.
+        items = {row['id']: dict(row) for row in db.execute(
+            "SELECT i.id,i.kind,i.pages,v.duration_seconds FROM items i "
+            "JOIN posts p ON p.id=i.post_id LEFT JOIN video_metadata v ON v.item_id=i.id "
+            "WHERE p.status='published'")} if catalog else ITEMS
+        streamed, streaming = measure(lambda: progress.history(db, items))
         rows, fetching = measure(lambda: list(db.execute(SQL)))
         expected = digest(streamed)
         del streamed
-        operation = (lambda: progress._reduce_python(ITEMS, rows)) if backend == 'python' else (
-            lambda: progress_backend.native().reduce(progress_backend.metadata(ITEMS), iter(rows), progress._evidence))
+        operation = (lambda: progress._reduce_python(items, rows)) if backend == 'python' else (
+            lambda: progress_backend.native().reduce(progress_backend.metadata(items), iter(rows), progress._evidence))
         reduced, reduction = measure(operation)
         if digest(reduced) != expected:
             raise RuntimeError('Materialized and streaming progress differ')
         count = len(rows)
         del rows, reduced
         recorder = cProfile.Profile()
-        recorded = recorder.runcall(progress.history, db, ITEMS)
+        recorded = recorder.runcall(progress.history, db, items)
         if digest(recorded) != expected:
             raise RuntimeError('Profiled and unprofiled progress differ')
         text = io.StringIO()
@@ -81,7 +87,7 @@ def profile(path, backend):
             if not any(str(binary).endswith(suffix) for suffix in EXTENSION_SUFFIXES):
                 raise RuntimeError('Native provenance did not resolve to an extension binary')
             native_hash = hashlib.sha256(binary.read_bytes()).hexdigest()
-        return {'backend': backend, 'rows': count, 'digest': expected, 'streaming': streaming,
+        return {'backend': backend, 'rows': count, 'items': len(items), 'digest': expected, 'streaming': streaming,
                 'fetch_rows': fetching, 'reduce_materialized': reduction, 'profile': text.getvalue(),
                 'native_sha256': native_hash, 'python': sys.version}
     finally:
@@ -93,7 +99,7 @@ def worker(output, mode, path, backend):
         seed(path)
         result = {'seeded_events': 228*2160}
     else:
-        result = profile(path, backend)
+        result = profile(path, backend, catalog=mode == 'capacity-profile')
     output.write_text(json.dumps(result, indent=2)+'\n')
 
 
