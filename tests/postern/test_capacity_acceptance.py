@@ -1,12 +1,14 @@
 """Acceptance cannot be inferred from an incomplete synthetic HTTP workload."""
 import argparse
 import asyncio
+import gc
 import hashlib
 import importlib
 import importlib.machinery
 import json
 import shutil
 import time
+import weakref
 
 import httpx
 import pytest
@@ -139,7 +141,23 @@ def test_short_mixed_workload_cannot_pass_without_progress_and_dashboard(tmp_pat
     args = argparse.Namespace(scenario='mixed', users=1, roster=1, seconds=10,
                               history_hours=0, ramp_seconds=0, video_mbps=1.5,
                               cloud_delay=0, with_reader=False)
+    original_request = capacity.Metrics.request
+    video_responses, retained_between_requests = [], []
+
+    async def observe(self, client, label, method, path, **kwargs):
+        response = await original_request(self, client, label, method, path, **kwargs)
+        if label == 'video_range' and response is not None:
+            video_responses.append(weakref.ref(response))
+        if label == 'health' and video_responses:
+            # Value: protects=idle load-generator clients do not retain 4 MiB
+            # bodies after checking them; real HTTP and byte checks still run.
+            gc.collect()
+            retained_between_requests.append(sum(ref() is not None for ref in video_responses))
+        return response
+
+    monkeypatch.setattr(capacity.Metrics, 'request', observe)
     assert asyncio.run(capacity.run(args)) is False
+    assert retained_between_requests and max(retained_between_requests) == 0
     report = json.loads(next(tmp_path.glob('.context/capacity/*/report.json')).read_text())
     assert report['aborted'] is None
     assert report['integrity']['progress_matches_acknowledged_requests'] is True

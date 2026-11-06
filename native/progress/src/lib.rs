@@ -108,22 +108,91 @@ fn intervals(ranges: &[(f64, f64)], duration: f64) -> Vec<(f64, f64)> {
     merged
 }
 
+// Decode evidence without retaining unrelated audit metadata. Unlike
+// IgnoredAny, walk nested values through deserialize_any so malformed values
+// and the JSON recursion limit still take the Python compatibility path.
+struct Discard;
+impl<'de> serde::Deserialize<'de> for Discard {
+    fn deserialize<D: serde::Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
+        decoder.deserialize_any(Discard)
+    }
+}
+impl<'de> serde::de::Visitor<'de> for Discard {
+    type Value = Discard;
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("a JSON value")
+    }
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<Self::Value, E> {
+        Ok(self)
+    }
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<Self::Value, E> {
+        Ok(self)
+    }
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<Self::Value, E> {
+        Ok(self)
+    }
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<Self::Value, E> {
+        Ok(self)
+    }
+    fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<Self::Value, E> {
+        Ok(self)
+    }
+    fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+        Ok(self)
+    }
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+        while seq.next_element::<Discard>()?.is_some() {}
+        Ok(self)
+    }
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        while map.next_entry::<Discard, Discard>()?.is_some() {}
+        Ok(self)
+    }
+}
+struct Payload {
+    detail: Value,
+}
+impl<'de> serde::Deserialize<'de> for Payload {
+    fn deserialize<D: serde::Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
+        struct Object;
+        impl<'de> serde::de::Visitor<'de> for Object {
+            type Value = Payload;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("an audit object")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Payload, A::Error> {
+                let mut detail = Value::Object(serde_json::Map::new());
+                while let Some(key) = map.next_key::<String>()? {
+                    if key == "detail" {
+                        detail = map.next_value()?;
+                    } else {
+                        map.next_value::<Discard>()?;
+                    }
+                }
+                Ok(Payload { detail })
+            }
+        }
+        decoder.deserialize_map(Object)
+    }
+}
+fn parse_payload(text: &str) -> Option<Payload> {
+    serde_json::from_str(text).ok()
+}
+
 // None means use the Python reference parser for unusual historical JSON, preserving
 // NaN handling, arbitrary integers, malformed-data exceptions and ignored extra fields.
 fn evidence(row: &Row, item: &Item) -> Option<Evidence> {
     if row.kind == "view_requested" {
         return Some((vec![], vec![], false));
     }
-    let value: Value = serde_json::from_str(&row.payload).ok()?;
-    let object = value.as_object()?;
+    let object = parse_payload(&row.payload)?;
     if row.kind == "item_open" {
         return Some((vec![], vec![], true));
     }
-    let empty = serde_json::Map::new();
-    let detail = match object.get("detail") {
-        None => &empty,
-        Some(v) => v.as_object()?,
-    };
+    let detail = object.detail.as_object()?;
     if row.kind == "video_progress" && item.kind == "video" {
         let mut pairs = vec![];
         if let Some(value) = detail.get("ranges") {
@@ -325,6 +394,46 @@ fn postern_progress_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn selective_payload_keeps_full_json_validation_and_last_duplicate_detail() {
+        let nested = format!(
+            r#"{{"detail":{{"page":1}},"unused":{}0{}}}"#,
+            "[".repeat(130),
+            "]".repeat(130)
+        );
+        let cases = [
+            "{}",
+            r#"{"detail":null}"#,
+            "null",
+            "[]",
+            "[{}]",
+            r#"{"detail":{"page":1},"detail":{"page":2}}"#,
+            r#"{"det\u0061il":{"page":2},"unused":[true,false,null,3,1.5,{"x":"y"}]}"#,
+            r#"{"detail":{"page":1},"unused":"\ud800"}"#,
+            r#"{"detail":{"page":1},"unused":1e999}"#,
+            r#"{"detail":{"page":1},"unused":[}"#,
+            r#"{"detail":{"page":1}} trailing"#,
+            &nested,
+        ];
+        for text in cases {
+            // The previous full-Value decoder is an independent oracle for the
+            // fast parser's success/fallback boundary, including ignored fields.
+            let reference = serde_json::from_str::<Value>(text).ok().and_then(|value| {
+                value.as_object().map(|object| {
+                    object
+                        .get("detail")
+                        .cloned()
+                        .unwrap_or_else(|| Value::Object(serde_json::Map::new()))
+                })
+            });
+            assert_eq!(
+                parse_payload(text).map(|value| value.detail),
+                reference,
+                "{text}"
+            );
+        }
+    }
 
     #[test]
     fn interval_union_keeps_the_existing_half_second_tolerance() {

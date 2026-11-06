@@ -359,6 +359,7 @@ async def run(args):
                             headers={'Range': 'bytes=0-65535'})
                         if response is not None and response.status_code == 206 and response.content != bytes(range(256))*256:
                             bad_video_bodies += 1
+                        del response
                         now = time.monotonic()-began
                         if now-elapsed >= 15:
                             ranges = [[elapsed, now]]
@@ -423,6 +424,9 @@ async def run(args):
                                 hashlib.sha256(body.content).digest() != range_digest or
                                 body.headers.get('content-range') != f'bytes 0-{CHUNK-1}/{CHUNK*2}'):
                                 bad_video_bodies += 1
+                            # Idle synthetic clients must not retain the last 4 MiB
+                            # body in the same process whose serving RSS we sample.
+                            del body
                             next_range += CHUNK*8/(args.video_mbps*1_000_000)
                         if now >= next_progress and now >= 15:
                             end = min(now, elapsed+30)
