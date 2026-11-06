@@ -132,7 +132,15 @@ starting the batch. A five-minute readiness deadline fails the job without
 starting measurements. Indexing output and the readiness samples are retained.
 This prepared-host environment differs from earlier unconditioned measurements;
 compare backends within the same batch. Ordinary CI and office settings are unchanged.
-Every report, stdout/stderr and exit code is retained, including failures. The
+History setup writes at most 128 events per transaction, retaining the ordinary
+1.5-second audit deadline. It creates the same event count, ranges and timeline
+before measurement starts. `setup.json` records operation count, maximum queue
+and commit time, and the phase/reader/chunk of a failed write. Setup failure still
+fails the attempt and never starts the measured workload; no automatic retry is used.
+Transport failures retain their exception class in `transport_errors`, alongside
+the existing failed request counts, without exception messages or request URLs.
+
+Every report, setup receipt, stdout/stderr and exit code is retained, including failures. The
 `capacity-*` artifacts also contain dependency versions and the checked-out
 revision. A green job means functional coverage passed; it does **not** mean
 performance acceptance. Review all six reports against these preselected bars:

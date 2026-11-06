@@ -37,6 +37,7 @@ from postern import progress_backend
 
 ROOT = Path(__file__).resolve().parents[1]
 VIDEO, PDF = 'capacity-video', 'capacity-pdf'
+SEED_BATCH_ROWS = 128
 HEALTH = {'process': 'up', 'permissions': 'ready', 'audit': 'ready',
           'backup': 'current', 'storage': 'ready'}
 
@@ -131,6 +132,7 @@ class Metrics:
         self.writer_commit = defaultdict(list)
         self.active = Counter()
         self.host_cpu_diagnostics = []
+        self.transport_errors = defaultdict(Counter)
 
     async def request(self, client, label, method, path, **kwargs):
         started = time.monotonic()
@@ -140,8 +142,9 @@ class Metrics:
             self.statuses[label][str(response.status_code)] += 1
             self.bytes += len(response.content)
             return response
-        except httpx.HTTPError:
+        except httpx.HTTPError as error:
             self.statuses[label]['transport_error'] += 1
+            self.transport_errors[label][type(error).__name__] += 1
             return None
         finally:
             self.active[label] -= 1
@@ -156,6 +159,7 @@ class Metrics:
                 'event_loop_lag_ms': distribution(self.lag), 'process_rss_mib': distribution(self.rss),
                 'whole_host_idle_percent': distribution(self.host_idle),
                 'host_cpu_diagnostics': self.host_cpu_diagnostics,
+                'transport_errors': {label: dict(errors) for label, errors in self.transport_errors.items()},
                 'writer_queue_depth': distribution(self.queue_depth),
                 'writer_by_caller': {owner: {'operation_cpu_ms': distribution(values),
                                              'queue_ms': distribution(self.writer_queue[owner]),
@@ -163,7 +167,24 @@ class Metrics:
                                      for owner, values in list(self.writer_operations.items())}}
 
 
-def seed(service, roster, history_hours, existing_reader=None):
+def seed(service, roster, history_hours, existing_reader=None, diagnostics=None):
+    diagnostics = diagnostics if diagnostics is not None else {}
+    diagnostics.update(operations=0, queue_ms_max=0, commit_ms_max=0)
+
+    def write(operation, phase, **position):
+        future = service.db.submit(operation)
+        try:
+            return future.result(10)
+        except BaseException as error:
+            diagnostics['failure'] = {'phase': phase, **position, 'error': type(error).__name__,
+                                      'queue_ms': getattr(future, 'queue_ms', None),
+                                      'commit_ms': getattr(future, 'commit_ms', None)}
+            raise
+        finally:
+            diagnostics['operations'] += 1
+            for field in ('queue_ms', 'commit_ms'):
+                diagnostics[field+'_max'] = max(diagnostics[field+'_max'], getattr(future, field, 0))
+
     """All identities/history/media are fictional, including pre-enrolled sessions."""
     fixture = ROOT/'tests/fixtures/page.jpg'
     for identity in (VIDEO, PDF):
@@ -188,7 +209,7 @@ def seed(service, roster, history_hours, existing_reader=None):
             db.execute("INSERT INTO items(id,post_id,filename,kind,sha256,bytes,pages,derive_status,sort) VALUES (?,?,?,?,?,?,?,'ready',0)",
                        (identity, identity, identity, kind, hashlib.sha256(identity.encode()).hexdigest(), CHUNK*2 if kind == 'video' else fixture.stat().st_size, 0 if kind == 'video' else 1))
         db.execute('INSERT INTO video_metadata VALUES (?,?)', (VIDEO, 12*3600))
-    service.db.submit(initial).result(10)
+    write(initial, 'sessions_and_catalog')
     if existing_reader is not None:
         # A synthetic already-enrolled reader for coexistence tests. Newly
         # enrolling accounts still use the real sanitizer/confirmation worker.
@@ -205,7 +226,7 @@ def seed(service, roster, history_hours, existing_reader=None):
                        "VALUES (?,?,?,?,?,?,'active',?,?,?,'{}')",
                        (identity, emails[existing_reader], binding, session, now, now+86400,
                         drive_id, digest, service.config.selfie_notice_version))
-        service.db.submit(existing).result(10)
+        write(existing, 'existing_reader')
     # One synthetic 12-hour timeline. Nine hours corresponds to 2,160 events per reader.
     count = int(history_hours*240)
     if count:
@@ -213,20 +234,23 @@ def seed(service, roster, history_hours, existing_reader=None):
         # this last creates an orphan row for every event and then clears the
         # entire history in one bounded writer transaction. No workload is active
         # yet; this is synthetic prior-confirmation metadata, not recovery proof.
-        service.db.submit(lambda db: db.execute(
+        write(lambda db: db.execute(
             'INSERT INTO batches(id,drive_id,sha256,bytes,count,created_at,confirmed_at,summary_confirmed) VALUES (?,?,?,?,?,?,?,1)',
-            ('synthetic-seed', 'synthetic-seed', '0'*64, 0, roster*count, now-86400, now-1))).result(10)
+            ('synthetic-seed', 'synthetic-seed', '0'*64, 0, roster*count, now-86400, now-1)), 'confirmed_history_batch')
     for reader, email in enumerate(emails):
-        def history(db):
-            last_seq = db.execute('SELECT COALESCE(MAX(seq),0) FROM events').fetchone()[0]
-            for n in range(count):
-                event(db, 'video_progress', {'email': email, 'id': f'session{reader}'},
-                      item_id=VIDEO, post_id=VIDEO, detail={'ranges': [[n*15, n*15+15]]},
-                      timestamp=now-86400+n*15)
-            # Mark seeded history as already exported so fake-cloud export measures only new traffic.
-            db.execute("UPDATE events SET batch_id='synthetic-seed' WHERE seq>?", (last_seq,))
-        if count:
-            service.db.submit(history).result(10)
+        # Keep fixture transactions below the same admission deadline as live
+        # writes. Chunking changes setup only, never the history or measured load.
+        for start in range(0, count, SEED_BATCH_ROWS):
+            end = min(start+SEED_BATCH_ROWS, count)
+            def history(db):
+                last_seq = db.execute('SELECT COALESCE(MAX(seq),0) FROM events').fetchone()[0]
+                for n in range(start, end):
+                    event(db, 'video_progress', {'email': email, 'id': f'session{reader}'},
+                          item_id=VIDEO, post_id=VIDEO, detail={'ranges': [[n*15, n*15+15]]},
+                          timestamp=now-86400+n*15)
+                # Fake-cloud export measures only new traffic, not prior history.
+                db.execute("UPDATE events SET batch_id='synthetic-seed' WHERE seq>?", (last_seq,))
+            write(history, 'history', reader=reader, start=start, end=end)
     return tokens
 
 
@@ -244,11 +268,17 @@ async def run(args):
     store.put_file = delayed_put
     config = Config(data_dir=folder/'data', mode='demo', preview=True, selfie_enabled=args.scenario == 'enrollment')
     service = Service(config, store=store)
+    setup = {'status': 'running'}
     try:
-        tokens = await asyncio.to_thread(seed, service, roster, args.history_hours, args.users if args.with_reader else None)
-    except BaseException:
+        tokens = await asyncio.to_thread(seed, service, roster, args.history_hours,
+                                        args.users if args.with_reader else None, setup)
+        setup['status'] = 'completed'
+    except BaseException as error:
+        setup.update(status='failed', error=type(error).__name__)
         await asyncio.to_thread(service.db.close)
         raise
+    finally:
+        (folder/'setup.json').write_text(json.dumps(setup, indent=2)+'\n')
     metrics = Metrics()
     recording = False
     original_submit = service.db.submit

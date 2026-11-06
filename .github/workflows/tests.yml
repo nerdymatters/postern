@@ -102,6 +102,7 @@ jobs:
             .context/progress-profile/*.txt
             .context/progress-profile/*.stdout
             .context/progress-profile/*.stderr
+            .context/capacity/*/setup.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
@@ -202,6 +203,7 @@ jobs:
           # Reports and execution receipts only; synthetic media/databases stay on the runner.
           path: |
             .context/capacity/*/report.json
+            .context/capacity/*/setup.json
             .context/capacity/*.stdout
             .context/capacity/*.stderr
             .context/capacity/*.exit
