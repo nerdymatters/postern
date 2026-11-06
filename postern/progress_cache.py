@@ -29,7 +29,8 @@ class HistoryCache:
 
     def clear(self):
         self.checkpoint, self.stamp = [], None
-        self.watermark = self.retained_bytes = 0
+        self.watermark = None
+        self.retained_bytes = 0
 
     def diagnostics(self):
         with self.lock:
@@ -54,9 +55,12 @@ class HistoryCache:
         module = progress_backend.native()
         roster = tuple(row[0] for row in db.execute('SELECT email FROM members ORDER BY email'))
         generation = db.execute('SELECT value FROM progress_generation WHERE id=1').fetchone()[0]
-        maximum = db.execute('SELECT COALESCE(MAX(seq),0) FROM progress_events').fetchone()[0]
+        maximum = db.execute('SELECT MAX(seq) FROM progress_events').fetchone()[0]
         stamp = (db.progress_file, tuple(sorted(metadata)), roster, generation)
-        reuse = self.stamp == stamp and maximum >= self.watermark
+        # Empty history has no watermark: zero and negative sequence values are
+        # valid old-writer inputs and must be included on the first continuation.
+        reuse = (self.stamp == stamp and self.watermark is not None
+                 and maximum is not None and maximum >= self.watermark)
         sql = ("SELECT e.email,e.item_id,e.type,e.ts,e.payload FROM progress_events e "
                "JOIN members m ON m.email=e.email WHERE e.type IN "
                "('page_served','item_summary','video_progress','item_open','view_requested')")

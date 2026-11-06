@@ -192,3 +192,16 @@ def test_owner_path_change_rebuilds_and_append_uses_primary_key_range(owner, tmp
     finally:
         owner.path = original_path
         other.close()
+
+
+@pytest.mark.parametrize('sequence,append_before_read', [(0, False), (-1, True), (-(2**63), True)])
+def test_empty_checkpoint_accepts_nonpositive_history(owner, sequence, append_before_read):
+    cache = HistoryCache(owner)
+    assert read(owner, cache) == {}
+    write(owner, lambda db: raw(db, sequence, 'first', 0))
+    if append_before_read:
+        write(owner, lambda db: raw(db, 1, 'positive', 1))
+    expected = {0, 1} if append_before_read else {0}
+    assert read(owner, cache)['reader', 'pdf']['pages'] == expected
+    write(owner, lambda db: raw(db, 2, 'later', 2))
+    assert read(owner, cache)['reader', 'pdf']['pages'] == expected | {2}
