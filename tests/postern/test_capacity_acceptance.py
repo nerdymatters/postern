@@ -7,6 +7,7 @@ import importlib
 import importlib.machinery
 import json
 import shutil
+import sqlite3
 import time
 import weakref
 from types import SimpleNamespace
@@ -15,6 +16,7 @@ import httpx
 import pytest
 
 from scripts import capacity
+from postern.db import AuditUnavailable
 
 
 @pytest.fixture(autouse=True)
@@ -144,6 +146,8 @@ def test_health_failures_preserve_report(isolated_signin, tmp_path, monkeypatch,
     assert passed is False and report['functional_checks_passed'] is False
     expected_status = 'transport_error' if fault == 'timeout' else '503' if fault == 'status' else '200'
     assert report['requests']['health']['statuses'][expected_status] >= 1
+    if fault == 'timeout':
+        assert report['transport_errors']['health']['ReadTimeout'] >= 1
     assert report['workload_coverage']['passed'] is True
     if phase != 'final':
         assert report['aborted'] == 'isolated health check failed; rehearsal stopped'
@@ -219,24 +223,56 @@ def test_seeded_history_never_builds_an_orphan_backlog(tmp_path):
                                store=capacity.FakeStore(tmp_path/'cloud'))
     original_submit = service.db.submit
     orphan_counts = []
+    inserted_per_transaction = []
     def observed_submit(operation):
         def observed(db):
+            before = db.execute('SELECT COUNT(*) FROM events').fetchone()[0]
             result = operation(db)
+            inserted_per_transaction.append(db.execute('SELECT COUNT(*) FROM events').fetchone()[0]-before)
             orphan_counts.append(db.execute('SELECT COUNT(*) FROM health_orphan_events').fetchone()[0])
             return result
         return original_submit(observed)
     service.db.submit = observed_submit
     try:
-        capacity.seed(service, 2, .1)
+        diagnostics = {}
+        capacity.seed(service, 2, 1.1, diagnostics=diagnostics)
         assert orphan_counts and max(orphan_counts) == 0
+        assert max(inserted_per_transaction) <= 128
         def inspect(db):
             return (db.execute('SELECT COUNT(*) FROM events').fetchone()[0],
                     tuple(db.execute('SELECT count,summary_confirmed FROM batches').fetchone()),
                     db.execute('SELECT COUNT(*) FROM events WHERE batch_id IS NULL').fetchone()[0])
-        assert service.db.read(inspect) == (48, (48, 1), 0)
+        assert service.db.read(inspect) == (528, (528, 1), 0)
+        for reader in range(2):
+            recorded = service.db.read(lambda db: list(db.execute(
+                'SELECT ts,payload FROM events WHERE email=? ORDER BY seq', (f'reader{reader}@example.invalid',))))
+            assert [json.loads(row['payload'])['detail']['ranges'] for row in recorded] == [
+                [[n*15, n*15+15]] for n in range(264)]
+            assert [row['ts']-recorded[0]['ts'] for row in recorded] == [n*15 for n in range(264)]
+        assert diagnostics['operations'] == 8 and 'failure' not in diagnostics
+        assert diagnostics['commit_ms_max'] > 0
+        assert service.db.deadline == 1.5
         assert not service.db.failed
     finally:
         service.db.close()
+
+
+def test_seed_failure_retains_position_and_does_not_start_load(isolated_signin, tmp_path, monkeypatch):
+    isolated_signin.history_hours = 1
+    def broken(*args, **kwargs):
+        raise sqlite3.OperationalError('controlled fixture write failure')
+    monkeypatch.setattr(capacity, 'event', broken)
+    with pytest.raises(AuditUnavailable):
+        asyncio.run(capacity.run(isolated_signin))
+    folder = next(tmp_path.glob('.context/capacity/*'))
+    setup = json.loads((folder/'setup.json').read_text())
+    assert setup['status'] == 'failed' and setup['error'] == 'AuditUnavailable'
+    assert setup['failure'] == {'phase': 'history', 'reader': 0, 'start': 0, 'end': 128,
+                                'error': 'AuditUnavailable', 'queue_ms': None, 'commit_ms': None}
+    assert setup['operations'] == 3
+    assert not (folder/'report.json').exists()
+    with sqlite3.connect(folder/'data/postern.sqlite3') as db:
+        assert db.execute('SELECT COUNT(*) FROM events').fetchone()[0] == 0
 
 
 def test_fast_enrollment_keeps_reader_until_progress_is_saved(tmp_path, monkeypatch):
