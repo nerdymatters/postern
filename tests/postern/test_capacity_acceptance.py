@@ -9,6 +9,7 @@ import json
 import shutil
 import time
 import weakref
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -34,6 +35,23 @@ def isolated_signin(tmp_path, monkeypatch):
     return argparse.Namespace(scenario='signin', users=1, roster=1, seconds=10,
                               history_hours=0, ramp_seconds=0, video_mbps=1.5,
                               cloud_delay=0, with_reader=False)
+
+
+def test_process_cpu_attribution_uses_identity_and_deltas(monkeypatch):
+    def processes(attributes):
+        assert attributes == ['pid', 'name', 'create_time', 'cpu_times']
+        return iter([
+            SimpleNamespace(info={'pid': 1, 'name': 'worker', 'create_time': 10,
+                                  'cpu_times': SimpleNamespace(user=2, system=1)}),
+            SimpleNamespace(info={'pid': 2, 'name': 'inaccessible', 'create_time': 11, 'cpu_times': None}),
+        ])
+    monkeypatch.setattr(capacity.psutil, 'process_iter', processes)
+    assert capacity.process_cpu_snapshot() == {(1, 10): ('worker', 3)}
+    before = {(1, 10): ('worker', 3), (2, 11): ('old', 50), (3, 12): ('reset', 10)}
+    after = {(1, 10): ('worker', 5), (2, 20): ('reused pid', 80), (3, 12): ('reset', 1), (4, 13): ('new', 8)}
+    assert capacity.process_cpu_changes(before, after, .5) == [
+        {'pid': 1, 'name': 'worker', 'cpu_percent_one_core': 400.0}]
+    assert capacity.process_cpu_changes(before, after, 0) == []
 
 
 def test_sustained_cpu_guard_rejects_otherwise_complete_workload(isolated_signin, tmp_path, monkeypatch):
@@ -66,6 +84,10 @@ def test_sustained_cpu_guard_rejects_otherwise_complete_workload(isolated_signin
     assert report['workload_coverage']['passed'] is True
     assert report['whole_host_idle_percent']['count'] >= 10
     assert report['whole_host_idle_percent']['max'] == 0
+    diagnostics = report['host_cpu_diagnostics']
+    assert diagnostics and len(diagnostics) <= 10
+    assert any(sample.get('active_requests', {}).get('signin') == 1 for sample in diagnostics)
+    assert all(sample['host_cpu_percent'] == 100 for sample in diagnostics)
 
 
 @pytest.mark.parametrize('phase,fault', [
@@ -172,6 +194,8 @@ def test_short_mixed_workload_cannot_pass_without_progress_and_dashboard(tmp_pat
     backend = capacity.progress_backend.selected()
     assert report['runtime']['backend'] == backend
     assert report['runtime']['revision'] is None  # The owned fixture root is not a git checkout.
+    assert report['process_rss_after_setup_mib'] > 0
+    assert report['host_cpu_diagnostics'] == []  # Quiet functional sensor; real CPU accounting remains.
     expected_hash = None
     if backend == 'rust':
         extension = importlib.import_module('postern_progress_native.postern_progress_native')

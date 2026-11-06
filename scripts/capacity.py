@@ -66,6 +66,26 @@ def distribution(values):
         for name, fraction in [('p50', .5), ('p95', .95), ('p99', .99), ('max', 1)]}}
 
 
+def process_cpu_snapshot():
+    """Diagnostic counters only: no arguments, environment or command lines."""
+    result = {}
+    for process in psutil.process_iter(['pid', 'name', 'create_time', 'cpu_times']):
+        info = process.info
+        if any(info.get(key) is None for key in ('pid', 'create_time', 'cpu_times')):
+            continue  # Exited or inaccessible processes cannot be attributed.
+        result[info['pid'], info['create_time']] = (
+            info['name'], info['cpu_times'].user + info['cpu_times'].system)
+    return result
+
+
+def process_cpu_changes(before, after, seconds):
+    """One-core percentages; only processes observed at both ends are comparable."""
+    changes = [{'pid': pid, 'name': name, 'cpu_percent_one_core': round(100*(cpu-before[key][1])/seconds, 2)}
+               for key, (name, cpu) in after.items() if key in before and cpu >= before[key][1]
+               for pid, _created in [key]] if seconds > 0 else []
+    return sorted(changes, key=lambda row: (-row['cpu_percent_one_core'], row['pid']))[:5]
+
+
 def workload_coverage(args, statuses, acknowledged_progress):
     """Missing traffic is a failed rehearsal, even if every request made succeeded."""
     if args.scenario == 'signin':
@@ -109,9 +129,12 @@ class Metrics:
         self.writer_operations = defaultdict(list)
         self.writer_queue = defaultdict(list)
         self.writer_commit = defaultdict(list)
+        self.active = Counter()
+        self.host_cpu_diagnostics = []
 
     async def request(self, client, label, method, path, **kwargs):
         started = time.monotonic()
+        self.active[label] += 1
         try:
             response = await client.request(method, path, **kwargs)
             self.statuses[label][str(response.status_code)] += 1
@@ -121,6 +144,7 @@ class Metrics:
             self.statuses[label]['transport_error'] += 1
             return None
         finally:
+            self.active[label] -= 1
             self.latencies[label].append((time.monotonic()-started)*1000)
 
     def report(self):
@@ -131,6 +155,7 @@ class Metrics:
                 'queue_ms': distribution(self.queue), 'commit_ms': distribution(self.commit),
                 'event_loop_lag_ms': distribution(self.lag), 'process_rss_mib': distribution(self.rss),
                 'whole_host_idle_percent': distribution(self.host_idle),
+                'host_cpu_diagnostics': self.host_cpu_diagnostics,
                 'writer_queue_depth': distribution(self.queue_depth),
                 'writer_by_caller': {owner: {'operation_cpu_ms': distribution(values),
                                              'queue_ms': distribution(self.writer_queue[owner]),
@@ -283,6 +308,7 @@ async def run(args):
         if not server.started:
             raise RuntimeError('Isolated server startup timed out')
         process = psutil.Process()
+        rss_after_setup = process.memory_info().rss/1024**2
         psutil.cpu_percent()
         stop = asyncio.Event()
         async with httpx.AsyncClient(trust_env=False, timeout=2) as guard:
@@ -295,6 +321,7 @@ async def run(args):
             nonlocal aborted
             next_health = time.monotonic()+5
             busy_samples = 0
+            previous_processes = None
             while not stop.is_set():
                 before = time.monotonic()
                 await asyncio.sleep(.5)
@@ -304,6 +331,27 @@ async def run(args):
                 idle = 100-psutil.cpu_percent()
                 metrics.host_idle.append(idle)
                 busy_samples = busy_samples+1 if idle < 30 else 0
+                if idle < 30:
+                    observed_at = time.monotonic()
+                    try:
+                        current_processes = process_cpu_snapshot()
+                        if previous_processes is not None:
+                            previous_at, previous_snapshot = previous_processes
+                            metrics.host_cpu_diagnostics.append({
+                                'elapsed_seconds': round(observed_at-started, 3),
+                                'host_cpu_percent': round(100-idle, 2),
+                                'interval_seconds': round(observed_at-previous_at, 3),
+                                'active_requests': {k: v for k, v in metrics.active.items() if v},
+                                'processes': process_cpu_changes(previous_snapshot, current_processes, observed_at-previous_at),
+                                'snapshot_ms': round((time.monotonic()-observed_at)*1000, 3),
+                            })
+                        previous_processes = observed_at, current_processes
+                    except psutil.Error as error:
+                        metrics.host_cpu_diagnostics.append({'unavailable': type(error).__name__})
+                        previous_processes = None
+                    metrics.host_cpu_diagnostics[:] = metrics.host_cpu_diagnostics[-10:]
+                else:
+                    previous_processes = None
                 metrics.queue_depth.append(service.db.queue.qsize())
                 if rss > 1024 or psutil.virtual_memory().available < 1024**3:
                     aborted = 'memory safety threshold'
@@ -499,6 +547,7 @@ async def run(args):
         report = {'scenario': vars(args), 'elapsed_seconds': round(elapsed, 3),
                   'runtime': runtime,
                   'process_cpu_seconds': cpu_seconds, 'main_thread_cpu_seconds': main_cpu_seconds,
+                  'process_rss_after_setup_mib': round(rss_after_setup, 3),
                   'other_threads_cpu_seconds': max(0, cpu_seconds-main_cpu_seconds),
                   'roster': roster, 'seeded_history_events': roster*int(args.history_hours*240),
                   'aborted': aborted, 'health': health_body, 'integrity': integrity,
@@ -507,6 +556,7 @@ async def run(args):
                   'live_health_guard_enabled': guard_live, **metrics.report(),
                   'limitations': ['Loopback HTTP; client and server share one process and event loop.',
                                   'CPU excludes fixture seeding, startup, shutdown and converter subprocesses; sampled RSS includes prior fixture allocation.',
+                                  'Host CPU diagnostics retain the last ten busy intervals and five busiest visible processes per interval; short-lived/inaccessible processes may be missing. One-core percentages are not whole-host percentages.',
                                   'Writer operation CPU excludes SQLite commit; background caller labels identify task ownership, not exclusive job CPU.',
                                   'Synthetic sessions; selfies disabled for mixed workload, real sanitizer/face check with a public-domain test portrait in enrollment.',
                                   'Fake cloud with configured artificial delay; no actual Google authentication or quotas measured.',
