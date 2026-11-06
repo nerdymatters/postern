@@ -101,6 +101,14 @@ retain the underlying capacity report and all spans, including failed attempts.
 These two instrumented attempts diagnose waiting; they are not a replacement for
 the three uninstrumented acceptance pairs. No email, payload or credential is
 included in the spans, and wrappers are removed when the diagnostic ends.
+After a successful attempt has stopped its server and closed the writer, a
+guarded fresh process profiles replay, row fetching and materialized reduction
+on that same synthetic database. `quiet-replay.json` and its guard receipt
+separate fixture costs from traffic costs; shutdown can also checkpoint the WAL,
+so this is not an identical live storage state. The profiler reads the fixture's
+published catalog. These additional timings do not enter the HTTP report or
+replace any acceptance target. A quiet-profile failure fails the diagnostic
+while preserving the preceding capacity report and request spans.
 
 Manually dispatch the existing **tests** workflow with `capacity=true`. It runs
 on disposable macOS 15 runners using the pinned pilot dependencies and a Rust
