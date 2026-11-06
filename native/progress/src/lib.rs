@@ -1,12 +1,21 @@
 //! Pure history reduction. Python owns SQL selection, snapshots, authorization and writes.
 //! Only a bounded chunk crosses the Python boundary; no paths, database handles or credentials.
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyFloat, PyList, PySet};
+use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PySet};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
 const CHUNK: usize = 256;
 type Evidence = (Vec<i64>, Vec<(f64, f64)>, bool);
+type Checkpoint = (
+    String,
+    String,
+    Vec<i64>,
+    Vec<(f64, f64)>,
+    bool,
+    u64,
+    Option<f64>,
+);
 
 #[derive(Clone)]
 struct Item {
@@ -246,25 +255,53 @@ fn evidence(row: &Row, item: &Item) -> Option<Evidence> {
     Some((vec![], vec![], false))
 }
 
-fn apply(state: &mut State, row: &Row, data: Evidence) {
+fn apply(state: &mut State, row: &Row, data: Evidence) -> PyResult<()> {
     if row.kind == "view_requested" {
-        state.attempts += 1;
-        return;
+        state.attempts = state
+            .attempts
+            .checked_add(1)
+            .ok_or_else(|| pyo3::exceptions::PyOverflowError::new_err("attempt count overflow"))?;
+        return Ok(());
     }
     if row.kind == "item_open" {
         state.opened = true;
     }
     state.pages.extend(data.0);
     state.ranges.extend(data.1);
+    Ok(())
 }
 
-#[pyfunction]
-fn reduce<'py>(
+fn portable_clock(clock: &Bound<'_, PyAny>) -> PyResult<f64> {
+    let invalid =
+        || pyo3::exceptions::PyValueError::new_err("incremental replay requires portable clocks");
+    if clock.is_instance_of::<PyBool>() {
+        return Err(invalid());
+    }
+    let number = if clock.is_instance_of::<PyInt>() {
+        // Check the exact integer before float conversion can round2**53+1 down.
+        let integer = clock.extract::<i64>()?;
+        if integer <= 0 || integer > (1_i64 << 53) {
+            return Err(invalid());
+        }
+        integer as f64
+    } else if clock.is_instance_of::<PyFloat>() {
+        clock.extract::<f64>()?
+    } else {
+        return Err(invalid());
+    };
+    if !number.is_finite() || number <= 0.0 || number > (1_u64 << 53) as f64 {
+        return Err(invalid());
+    }
+    Ok(number)
+}
+
+fn reduce_inner<'py>(
     py: Python<'py>,
     metadata: Vec<(String, String, i64, f64)>,
     rows: &Bound<'py, PyAny>,
     compatibility: &Bound<'py, PyAny>,
-) -> PyResult<Bound<'py, PyDict>> {
+    checkpoint: Option<Vec<Checkpoint>>,
+) -> PyResult<(Bound<'py, PyDict>, Vec<Checkpoint>)> {
     let items: HashMap<_, _> = metadata
         .into_iter()
         .map(|(id, kind, pages, duration)| {
@@ -280,6 +317,39 @@ fn reduce<'py>(
         .collect();
     let mut iterator = rows.try_iter()?;
     let mut states: HashMap<(String, String), State> = HashMap::new();
+    let incremental = checkpoint.is_some();
+    if let Some(checkpoint) = checkpoint {
+        for (email, id, pages, ranges, opened, attempts, last) in checkpoint {
+            let item = items.get(&id).ok_or_else(|| {
+                pyo3::exceptions::PyValueError::new_err("checkpoint item absent from metadata")
+            })?;
+            if last.is_some_and(|n| !n.is_finite() || n <= 0.0 || n > (1_u64 << 53) as f64)
+                || intervals(&ranges, item.duration) != ranges
+                || (item.kind != "video" && !ranges.is_empty())
+                || pages.iter().any(|p| {
+                    item.kind == "video"
+                        || *p < 0
+                        || *p >= if item.kind == "photo" { 1 } else { item.pages }
+                })
+            {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "noncanonical checkpoint",
+                ));
+            }
+            let state = State {
+                pages: pages.into_iter().collect(),
+                ranges,
+                opened,
+                attempts,
+                last: last.map(Timestamp::Number),
+            };
+            if states.insert((email, id), state).is_some() {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "duplicate checkpoint key",
+                ));
+            }
+        }
+    }
     let maximum = py.import("builtins")?.getattr("max")?;
     loop {
         let mut chunk = Vec::with_capacity(CHUNK);
@@ -341,6 +411,9 @@ fn reduce<'py>(
             }
         }
         for (row, data) in chunk.into_iter().zip(parsed) {
+            if incremental {
+                portable_clock(row.ts.bind(py))?;
+            }
             let state = states
                 .entry((row.email.clone(), row.item.clone()))
                 .or_default();
@@ -348,7 +421,7 @@ fn reduce<'py>(
             if data.2 {
                 activity_time(py, state, &row, &maximum)?;
             }
-            apply(state, &row, data);
+            apply(state, &row, data)?;
         }
         py.check_signals()?;
         if exhausted {
@@ -365,8 +438,25 @@ fn reduce<'py>(
             .collect::<Vec<_>>()
     });
     let result = PyDict::new(py);
+    let mut checkpoint = Vec::new();
     let sum = py.import("builtins")?.getattr("sum")?;
     for (email, id, state, ranges) in finished {
+        if incremental {
+            let last = match &state.last {
+                Some(Timestamp::Number(n)) => Some(*n),
+                Some(Timestamp::Legacy(value)) => Some(value.bind(py).extract::<f64>()?),
+                None => None,
+            };
+            checkpoint.push((
+                email.clone(),
+                id.clone(),
+                state.pages.iter().copied().collect(),
+                ranges.clone(),
+                state.opened,
+                state.attempts,
+                last,
+            ));
+        }
         let value = PyDict::new(py);
         value.set_item("pages", PySet::new(py, state.pages)?)?;
         value.set_item("opened", state.opened)?;
@@ -381,13 +471,49 @@ fn reduce<'py>(
         value.set_item("watched_seconds", sum.call1((lengths,))?)?;
         result.set_item((email, id), value)?;
     }
-    Ok(result)
+    Ok((result, checkpoint))
+}
+
+#[pyfunction]
+fn reduce<'py>(
+    py: Python<'py>,
+    metadata: Vec<(String, String, i64, f64)>,
+    rows: &Bound<'py, PyAny>,
+    compatibility: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyDict>> {
+    Ok(reduce_inner(py, metadata, rows, compatibility, None)?.0)
+}
+
+#[pyfunction]
+fn reduce_incremental<'py>(
+    py: Python<'py>,
+    metadata: Vec<(String, String, i64, f64)>,
+    rows: &Bound<'py, PyAny>,
+    compatibility: &Bound<'py, PyAny>,
+    checkpoint: &Bound<'py, PyList>,
+) -> PyResult<(Bound<'py, PyDict>, Vec<Checkpoint>)> {
+    // Validate before Vec<f64> extraction can coerce a nonportable integer.
+    for entry in checkpoint.iter() {
+        let clock = entry.get_item(6)?;
+        if !clock.is_none() {
+            portable_clock(&clock)?;
+        }
+    }
+    reduce_inner(
+        py,
+        metadata,
+        rows,
+        compatibility,
+        Some(checkpoint.extract()?),
+    )
 }
 
 #[pymodule]
 fn postern_progress_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("API_VERSION", 1)?;
     m.add_function(wrap_pyfunction!(reduce, m)?)?;
+    m.add("CHECKPOINT_VERSION", 1)?;
+    m.add_function(wrap_pyfunction!(reduce_incremental, m)?)?;
     Ok(())
 }
 

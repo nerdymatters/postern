@@ -25,7 +25,7 @@ from .pg import literal, MigrationError
 
 # Rebuildable runtime metadata is optional in source snapshots and is not part
 # of the immutable format-1 checkpoint inventory.
-DERIVED={'health_orphan_events', 'progress_events'}
+DERIVED={'health_orphan_events', 'progress_events', 'progress_generation'}
 TABLES=set(re.findall(r'CREATE TABLE IF NOT EXISTS (\w+)',SCHEMA))-DERIVED
 OMITTED={'video_tickets'}
 

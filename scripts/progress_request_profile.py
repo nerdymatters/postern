@@ -10,6 +10,7 @@ import sys
 import time
 
 from postern import progress, progress_backend, service
+from postern.progress_cache import HistoryCache
 from scripts import capacity, progress_profile
 
 
@@ -17,6 +18,7 @@ from scripts import capacity, progress_profile
 def capture_spans():
     spans = []
     history, dashboard = progress.history, service.dashboard
+    checkpoint = HistoryCache.history
     request = service.Service.training_progress
 
     def timed(function, label):
@@ -47,11 +49,13 @@ def capture_spans():
     progress.history = replay
     service.dashboard = timed(dashboard, 'dashboard_worker')
     service.Service.training_progress = requested
+    HistoryCache.history = timed(checkpoint, 'roster_checkpoint')
     try:
         yield spans
     finally:
         progress.history, service.dashboard = history, dashboard
         service.Service.training_progress = request
+        HistoryCache.history = checkpoint
 
 
 async def run(output, *, quiet_profile=False):

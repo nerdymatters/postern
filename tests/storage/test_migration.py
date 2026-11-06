@@ -22,11 +22,16 @@ FORMAT1_TABLES = set('batches events items members meta operations posts quiz_dr
 
 @pytest.mark.parametrize('upgraded', [False, True])
 @pytest.mark.parametrize('progress_upgraded', [False, True])
-def test_checkpoint_export_keeps_format1_inventory_with_optional_health_metadata(tmp_path, upgraded, progress_upgraded):
+@pytest.mark.parametrize('checkpoint_upgraded', [False, True])
+def test_checkpoint_export_keeps_format1_inventory_with_optional_health_metadata(tmp_path, upgraded, progress_upgraded, checkpoint_upgraded):
     path = tmp_path/'source.sqlite3'
     conn = sqlite3.connect(path)
     try:
         conn.executescript(SCHEMA)
+        if not checkpoint_upgraded:
+            for (name,) in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'progress_generation_%'").fetchall():
+                conn.execute(f'DROP TRIGGER {name}')
+            conn.execute('DROP TABLE progress_generation')
         if not upgraded:
             for (name,) in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'health_%'").fetchall():
                 conn.execute(f'DROP TRIGGER {name}')
@@ -43,7 +48,7 @@ def test_checkpoint_export_keeps_format1_inventory_with_optional_health_metadata
         manifest = load_manifest(bundle, digest)
         assert set(manifest['counts']) == FORMAT1_TABLES
         assert manifest['counts']['events'] == 1
-        assert all(json.loads(line)['table'] not in {'health_orphan_events', 'progress_events'}
+        assert all(json.loads(line)['table'] not in {'health_orphan_events', 'progress_events', 'progress_generation'}
                    for line in (bundle/'rows.jsonl').read_bytes().splitlines())
         assert hashlib.sha256(path.read_bytes()).hexdigest() == before
         conn.execute('CREATE TABLE unexpected(id TEXT)')
