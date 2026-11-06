@@ -5,6 +5,16 @@ room, quiz completion checks and staff progress report. Python remains the
 default. This is an incremental server migration; production cutover and the
 rest of the server remain open in the [remaining migration checklist](../../ROADMAP.md#remaining-migration-checklist).
 
+With `POSTERN_PROGRESS_BACKEND=rust`, reading-room, quiz-completion and staff-report
+snapshots share one dedicated read worker. This limits simultaneous SQLite/native
+history replays; requests waiting behind a roster scan can still take longer.
+Each operation opens its own read-only connection and retains its existing
+snapshot and authorization checks. Cancelling a request does not release a worker
+that is still reading. Shutdown cancels queued reads and waits for the active read
+before closing the database. Selecting `python` at restart restores both the
+original reducer and the shared-pool read scheduling. The scheduling change still
+requires the representative capacity measurements below before cutover.
+
 ## Measurements and scope
 
 Measured November 1, 2026 on the office Mac (8 logical CPUs, 16 GiB RAM).
