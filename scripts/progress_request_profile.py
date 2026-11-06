@@ -15,6 +15,62 @@ from scripts import capacity, progress_profile
 
 
 @contextmanager
+def capture_memory():
+    """Tag existing RSS observations without changing measurement or acceptance."""
+    record = {'samples': [], 'boundaries': [], 'dropped_samples': 0}
+    phase = 'startup'
+    began = time.monotonic()
+    initialize, start = capacity.Metrics.__init__, service.Service.start
+    verify = capacity.verify_dashboard
+
+    def boundary(label):
+        record['boundaries'].append({'phase': label, 'elapsed_seconds': time.monotonic()-began,
+            'rss_mib': capacity.psutil.Process().memory_info().rss/1024**2})
+
+    class Samples(list):
+        def __init__(self, metrics):
+            super().__init__()
+            self.metrics = metrics
+
+        def append(self, rss):
+            super().append(rss)
+            if len(record['samples']) < 1000:
+                record['samples'].append({'phase': phase, 'elapsed_seconds': time.monotonic()-began,
+                    'rss_mib': rss, 'active_requests': {k: v for k, v in self.metrics.active.items() if v}})
+            else:
+                record['dropped_samples'] += 1
+
+    def initialized(metrics):
+        initialize(metrics)
+        metrics.rss = Samples(metrics)
+
+    async def started(instance):
+        nonlocal phase
+        boundary('startup_begin')
+        await start(instance)
+        boundary('startup_end')
+        phase = 'workload'
+
+    async def verified(*args, **kwargs):
+        nonlocal phase
+        phase = 'verification'
+        boundary('verification_begin')
+        try:
+            return await verify(*args, **kwargs)
+        finally:
+            boundary('verification_end')
+            phase = 'cleanup'
+
+    capacity.Metrics.__init__, service.Service.start = initialized, started
+    capacity.verify_dashboard = verified
+    try:
+        yield record
+    finally:
+        capacity.Metrics.__init__, service.Service.start = initialize, start
+        capacity.verify_dashboard = verify
+
+
+@contextmanager
 def capture_spans():
     spans = []
     history, dashboard = progress.history, service.dashboard
@@ -66,7 +122,7 @@ async def run(output, *, quiet_profile=False):
                               cloud_delay=0, with_reader=False)
     record = {'status': 'running', 'limits': 'One diagnostic attempt, not three-pair acceptance. Timing wrappers add overhead.'}
     fixture = None
-    with capture_spans() as spans:
+    with capture_spans() as spans, capture_memory() as memory:
         try:
             try:
                 passed = await capacity.run(args)
@@ -99,6 +155,7 @@ async def run(output, *, quiet_profile=False):
             raise
         finally:
             record['spans'] = spans
+            record['memory'] = memory
             (output/'report.json').write_text(json.dumps(record, indent=2)+'\n')
 
 

@@ -10,6 +10,10 @@ on:
         description: Run isolated paired Python/Rust capacity measurements
         type: boolean
         default: false
+      sustained_fault_load:
+        description: Exercise sustained disclosure, media, export and rollback faults in isolation
+        type: boolean
+        default: false
       progress_profile:
         description: Profile synthetic replay stages on one isolated Mac
         type: boolean
@@ -104,6 +108,84 @@ jobs:
             .context/progress-profile/*.stderr
             .context/capacity/*/setup.json
             .context/capacity/*/startup-failure.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+  fault-load:
+    if: github.event_name == 'workflow_dispatch' && inputs.sustained_fault_load
+    runs-on: macos-15
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        backend: [python, rust]
+    env:
+      POSTERN_PROGRESS_BACKEND: ${{ matrix.backend }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Install measured runtime
+        env:
+          CARGO_BUILD_JOBS: '2'
+        run: |
+          python -m pip install -r requirements-pilot.lock
+          python -m pip install --no-deps -e .
+          rustup toolchain install 1.98.1 --profile minimal
+          python -m pip install --no-deps ./native/progress
+          mkdir -p .context/fault-load
+          python -m pip freeze > .context/fault-load/dependencies.txt
+          git rev-parse HEAD > .context/fault-load/revision.txt
+      - name: Install fixture tools
+        run: brew install poppler ffmpeg
+      - name: Prepare the disposable profiling host
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_ACTIONS:-}" = true
+          test "${RUNNER_ENVIRONMENT:-}" = github-hosted
+          test "$(uname -s)" = Darwin
+          { sudo -n /usr/bin/mdutil -a -i off; } > .context/fault-load/indexing.stdout 2> .context/fault-load/indexing.stderr
+          /usr/bin/mdutil -a -s >> .context/fault-load/indexing.stdout
+          python - <<'PY'
+          import json, time
+          from pathlib import Path
+          import psutil
+          started = time.monotonic()
+          quiet_since = None
+          samples = []
+          ready = False
+          while time.monotonic() - started < 300:
+              cpu = psutil.cpu_percent(interval=1)
+              now = time.monotonic()
+              quiet_since = (quiet_since if quiet_since is not None else now) if cpu <= 70 else None
+              samples.append({'elapsed_seconds': now-started, 'host_cpu_percent': cpu})
+              ready = quiet_since is not None and now-quiet_since >= 60
+              Path('.context/fault-load/host-readiness.json').write_text(json.dumps({
+                  'ready': ready, 'samples': samples}, indent=2)+'\n')
+              if ready:
+                  break
+          if not ready:
+              raise SystemExit('Disposable host did not reach the required quiet period')
+          PY
+      - name: Exercise sustained synthetic faults and current-database rollback
+        run: python -m scripts.progress_fault_load --representative --output .context/fault-load/result
+      - name: Preserve fault receipts including failures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fault-load-${{ matrix.backend }}
+          path: |
+            .context/fault-load/result/report.json
+            .context/fault-load/*.json
+            .context/fault-load/*.txt
+            .context/fault-load/*.stdout
+            .context/fault-load/*.stderr
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
