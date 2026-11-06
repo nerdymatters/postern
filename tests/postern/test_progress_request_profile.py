@@ -1,4 +1,5 @@
 import asyncio
+import json
 import sqlite3
 
 import pytest
@@ -34,3 +35,27 @@ def test_request_failure_restores_every_wrapper(monkeypatch):
     assert module.service.Service.training_progress is failed
     assert spans[0]['stage'] == 'service_request'
     assert 'thread_cpu_ms' not in spans[0]
+
+
+@pytest.mark.parametrize('reports,cleanup_error', [(1, True), (0, False), (2, False), (1, False)])
+def test_report_collection_includes_cleanup_failures(tmp_path, monkeypatch, reports, cleanup_error):
+    module = progress_request_profile
+    monkeypatch.setattr(module.capacity, 'ROOT', tmp_path)
+    async def measured(args):
+        for index in range(reports):
+            folder = tmp_path/f'.context/capacity/run-{index}'
+            folder.mkdir(parents=True)
+            (folder/'report.json').write_text(json.dumps({'sample': index}))
+        if cleanup_error:
+            raise RuntimeError('original cleanup failure')
+        return True
+    monkeypatch.setattr(module.capacity, 'run', measured)
+    output = tmp_path/'output'
+    if cleanup_error or reports != 1:
+        with pytest.raises(RuntimeError, match='original cleanup failure' if cleanup_error else 'fresh capacity report'):
+            asyncio.run(module.run(output))
+    else:
+        assert asyncio.run(module.run(output)) is True
+    record = json.loads((output/'report.json').read_text())
+    assert record['status'] == ('completed' if reports == 1 and not cleanup_error else 'failed')
+    assert record.get('capacity') == ({'sample': 0} if reports == 1 else None)

@@ -63,11 +63,20 @@ async def run(output):
     record = {'status': 'running', 'limits': 'One diagnostic attempt, not three-pair acceptance. Timing wrappers add overhead.'}
     with capture_spans() as spans:
         try:
-            passed = await capacity.run(args)
-            after = set((capacity.ROOT/'.context/capacity').glob('*/report.json'))-before
-            if len(after) != 1:
+            try:
+                passed = await capacity.run(args)
+            finally:
+                # Cleanup can raise after the harness writes its report. Preserve
+                # that evidence without replacing the original failure.
+                after = set((capacity.ROOT/'.context/capacity').glob('*/report.json'))-before
+                record['fresh_report_count'] = len(after)
+                if len(after) == 1:
+                    try:
+                        record['capacity'] = json.loads(after.pop().read_text())
+                    except (OSError, ValueError) as error:
+                        record['report_error'] = type(error).__name__
+            if 'capacity' not in record:
                 raise RuntimeError('Expected exactly one fresh capacity report')
-            record['capacity'] = json.loads(after.pop().read_text())
             record['status'] = 'completed' if passed else 'failed'
             return passed
         except BaseException as error:
