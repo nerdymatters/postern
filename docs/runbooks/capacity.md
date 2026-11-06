@@ -93,6 +93,14 @@ and requires 60 quiet seconds within five minutes, only on the disposable runner
 Materialization and profiling change costs, so these stage times are not additive
 and never replace HTTP acceptance. No synthetic database is uploaded; the CLI
 refuses an ordinary local or self-hosted runner before creating output.
+For request diagnosis, dispatch with `progress_request_profile=true`, leaving
+`progress_profile` and `capacity` false. This runs one Python and one Rust mixed-50
+attempt with the original capacity guards. Nested spans distinguish replay and dashboard-worker wall/thread
+CPU time from the enclosing service request's wall time. The `request-*` reports
+retain the underlying capacity report and all spans, including failed attempts.
+These two instrumented attempts diagnose waiting; they are not a replacement for
+the three uninstrumented acceptance pairs. No email, payload or credential is
+included in the spans, and wrappers are removed when the diagnostic ends.
 
 Manually dispatch the existing **tests** workflow with `capacity=true`. It runs
 on disposable macOS 15 runners using the pinned pilot dependencies and a Rust
