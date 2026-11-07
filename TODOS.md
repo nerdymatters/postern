@@ -104,6 +104,43 @@ before production cutover.
 and acceptance targets precede the first implementation. Urgent production and
 security fixes still take precedence.
 
+### Measure the Rust progress checkpoint on production-shaped data before RS-07
+
+**What:** Before the live Rust pilot, replay a read-only copy of the office database
+with the v0.23.0 Rust backend. Record the checkpoint's retained bytes, full and
+incremental report times and their CPU, and whether it stays under the 16 MiB budget.
+
+**Why:** Both acceptance fixtures publish only two items. The real catalog has many
+chapters, documents and videos. Past the budget, the checkpoint silently stops being
+retained and every report becomes a full replay: correct, but slower and with no
+signal in production.
+
+**Context:** Owner decision D3 (Nov 7): make this a pilot precondition instead of
+changing code in v0.23.0. Use a fresh SQLite backup copy, never the live file.
+Expose `HistoryCache.diagnostics()` in the pilot's evidence. If the budget is
+exceeded, track retained size incrementally or raise the budget with measured RSS.
+
+**Effort:** S
+**Priority:** P1
+**Depends on:** v0.23.0 installed with the matching 0.2.0 native wheel
+
+### Version the progress projection schema before changing it
+
+**What:** Record a projection schema version in the database. On a mismatch,
+recreate `progress_events`, `progress_generation` and their triggers, then rebuild.
+
+**Why:** Startup checks only that these objects exist, and the schema uses `CREATE
+... IF NOT EXISTS`. A later release that changes a trigger body or a column would
+silently keep the v0.23.0 definition on upgraded databases.
+
+**Context:** Owner decision D2 (Nov 7): v0.23.0 is the first release with these
+objects, so it is unaffected. Treat a missing version marker as the v0.23.0
+definitions. Add an upgrade test that starts from the stored older definitions.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** The next change to the projection schema
+
 ### Verify concentrated native catalog workloads before production enablement
 
 **What:** Improve and benchmark resource listing when a member can see few or no

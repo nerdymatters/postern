@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.23.0 — Faster staff progress with optional incremental Rust evidence (2026-11-07)
+
+### Changed
+
+- Load reading progress and the Staff progress report from a compact copy of the progress events. Both backends use it once it is built. The full audit log stays authoritative and is still exported unchanged. On an existing database, the writer builds the copy in idle time after the first start, and reads use the full log until it is ready. If the copy's tables or triggers go missing, startup discards and rebuilds it. It never trusts an incomplete copy.
+- Keep a bounded, per-person evidence checkpoint for the Staff progress report when the optional Rust backend is selected, so each report reads only new activity. Catalog, roster or history changes make it rebuild from the full record. In the representative 50-reader test, the Rust report's p95 was 42 ms, against 3.14 s for Python, with 33% less CPU. Python remains the default and the rollback path; see the [capacity protocol](docs/runbooks/capacity.md#incremental-dashboard-candidate-protocol) for the bars and the retained failures.
+- Require version 0.2.0 of the optional native wheel. It adds the checkpoint interface, and selecting Rust with an older wheel now fails at startup instead of serving.
+
+### Added
+
+- Validate capacity and sustained faults on disposable hosted Macs. Capacity reports now label memory by startup, workload and verification. The fault rehearsal holds report disclosures while session, role and consent change. It also covers missing media, a failed and retried export, and a same-database Python rollback, all under reader traffic.
+
+### Rollback
+
+- Rolling serving code back to v0.22.1 keeps the current database, including the compact tables and triggers, which go on mirroring writes. That release's offline checkpoint exporter rejects upgraded databases, so keep the v0.23.0 exporter; see [checkpoint compatibility](docs/runbooks/postgres-rehearsal.md).
+
 ## 0.22.1 — Pending-backup health performance (2026-11-05)
 
 ### Fixed
