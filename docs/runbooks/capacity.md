@@ -76,6 +76,11 @@ a fresh Python replay of authoritative events. Its status appears in
 `integrity.raw_python_dashboard_matches`; it does not count toward workload
 coverage, measured request latencies or comparable CPU. Its elapsed time is
 reported under `verification`, and sampled memory still includes it.
+`process_rss_by_phase_mib` labels the same samples as startup, workload or
+verification. `process_rss_startup_workload_peak_mib` is the largest startup or
+workload sample. The raw Python comparison runs in the measured process after
+traffic stops, so its allocations appear only under verification and in the
+all-phase `process_rss_mib`. Every resource guard still covers verification.
 
 During consecutive busy host samples, `host_cpu_diagnostics` keeps the last ten
 intervals with active request counts, snapshot cost and the five busiest visible
@@ -201,7 +206,8 @@ does not reclassify them:
 ### Incremental-dashboard candidate protocol
 
 Registered November 6 before the integrated candidate's HTTP measurements under
-the user's standing advance approval. Keep the same five scenarios, three
+the user's standing advance approval; the owner explicitly confirmed this
+Rust-target, Python-control choice later on November 6. Keep the same five scenarios, three
 alternating pairs, roster, history, pacing, correctness requirements and all
 non-dashboard latency targets. The two-second dashboard p95 target applies to
 Rust. Record Python's full dashboard distribution and known miss as the unchanged
@@ -215,6 +221,19 @@ deadline, and issue no benchmark-only warm request. Mixed correctness additional
 requires the post-workload raw Python dashboard comparison. All other original
 gates remain. Retain every attempt and report first-request latency and cache
 counts. Previous campaigns and their original analyzer are unchanged.
+
+The first full campaign on this protocol failed only its mixed-50 memory bar:
+two Rust peaks exceeded Python by 36.9 and 43.2 MiB, over the 32 MiB allowance.
+That analyzer took each report's all-phase maximum, which included the
+post-workload raw Python comparison. A later phase-labelled mixed-50 diagnostic
+put Rust's startup/workload peak at 280.3 MiB and its verification peak at
+347.7 MiB; Python's were 376.4 and 389.0 MiB. In Rust mode, that comparison is
+the process's only full Python replay. Subsequent campaigns compare peak RSS over
+startup and workload, as this protocol specifies, using
+`process_rss_startup_workload_peak_mib`, with the same 32 MiB allowance. A report
+without that field fails. The all-phase and verification peaks are reported
+alongside it, and every resource guard still covers verification. The failed
+campaign remains failed, and no attempt is reclassified.
 
 This is an isolated synthetic load comparison, not full RS-06 acceptance. Role
 changes/revocation, consent, quiz/certificate, media failures, export and recovery
