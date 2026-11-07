@@ -556,6 +556,9 @@ Before a production pilot:
    database, current activity, configuration, private training and branding.
    Install the optional wheel in the candidate environment and validate
    `POSTERN_PROGRESS_BACKEND=rust` there before switching the serving service.
+   For the incremental report, first replay a fresh read-only copy of the live
+   database. Record the checkpoint size against its 16 MiB budget, and the full
+   and incremental report times (see TODOS).
 3. Set `POSTERN_PROGRESS_BACKEND` in the existing API job's persistent environment.
    For launchd, back up that exact plist, preserve its label and other settings,
    and update its `EnvironmentVariables` entry. Reload the job definition with
