@@ -587,6 +587,25 @@ award time and name, unchanged durable event bytes and unchanged schema.
 A brief production activation was rolled back during the first live pilot above;
 the sustained production rollout remains pending.
 
+## Representative acceptance and v0.23.0 rollout, November 7
+
+On candidate `b18b6b2`, all 30 paired attempts passed the incremental protocol
+and its recorded addenda
+([run](https://github.com/nerdymatters/postern/actions/runs/42403436385)).
+At 50 readers, Rust's dashboard p95 was 42 ms, against 3.14 s for Python, and
+comparable CPU was 33% lower. Rust's startup-plus-workload memory peak was
+33–85 MiB below Python's. Representative sustained fault-load passed on both
+backends, as did same-database Python rollback. See the
+[capacity protocol](capacity.md#incremental-dashboard-candidate-protocol) for
+the bars and the retained failures.
+
+The first v0.23.0 start on an existing database creates the compact projection
+and its triggers before readiness. The writer then fills the projection in idle
+time, and reads stay on `events` until that rebuild finishes. Python remains the
+default. Install the matching 0.2.0 native wheel before any Rust pilot; Python
+serving does not load it. For a code rollback, keep the current database and its
+derived tables, and keep the v0.23.0 checkpoint exporter.
+
 ## Remaining performance work
 
 As recorded in the [November 5 roadmap update](../../ROADMAP.md#rust-server-migration),

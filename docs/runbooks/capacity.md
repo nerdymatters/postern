@@ -235,6 +235,17 @@ without that field fails. The all-phase and verification peaks are reported
 alongside it, and every resource guard still covers verification. The failed
 campaign remains failed, and no attempt is reclassified.
 
+The campaign on the post-review candidate then missed one target. At 50 readers,
+the median paired catalog p95 ratio was 0.813 against the required 0.80. Every
+other bar passed. Across three campaigns on unchanged Rust catalog code, this
+ratio was 0.63, 0.71 and 0.81. Rust's catalog p95 stayed at 42–50 ms. Python's
+varied with how much its own multi-second dashboard replays contended for the
+interpreter. On November 7 the owner chose to treat catalog as a no-regression
+family. It must stay within Python+max(20%, 25 ms) and under two seconds.
+Mixed workloads still need at least 20% lower paired-median dashboard p95 and
+comparable CPU. That campaign remains failed; the next one used the same
+application code under the amended bar.
+
 This is an isolated synthetic load comparison, not full RS-06 acceptance. Role
 changes/revocation, consent, quiz/certificate, media failures, export and recovery
 still need controlled checks under concurrent load; ordinary compatibility CI
