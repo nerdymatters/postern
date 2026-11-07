@@ -121,7 +121,14 @@ class Database:
             db.row_factory = sqlite3.Row
             for pragma in ['journal_mode=WAL', 'synchronous=FULL', 'fullfsync=ON', 'busy_timeout=1000', 'foreign_keys=ON']:
                 db.execute('PRAGMA ' + pragma)
+            projection_complete = progress_store.complete(db)
             db.executescript(SCHEMA)
+            if not projection_complete and progress_store.started(db):
+                # Someone removed a rebuildable table or trigger. Writes may be
+                # missing from the projection, so rebuild it before trusting it.
+                db.execute('BEGIN IMMEDIATE')
+                progress_store.reset(db)
+                db.commit()
             if not db.execute("SELECT 1 FROM meta WHERE key='health_orphans_v1'").fetchone():
                 # Backfill once before readiness. A failed/interrupted transaction
                 # leaves no marker and will be rebuilt on the next startup.

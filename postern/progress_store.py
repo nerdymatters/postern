@@ -52,10 +52,24 @@ AFTER UPDATE OF seq,id,email,item_id,type,ts,payload ON events BEGIN
     INSERT INTO progress_events(seq,id,email,item_id,type,ts,payload) SELECT NEW.seq,NEW.id,NEW.email,NEW.item_id,NEW.type,NEW.ts,{_NEW_PAYLOAD}
         WHERE NEW.type IN ({_KINDS_SQL});
 END;
+-- UPDATE OF does not fire when a statement moves a row through rowid, oid or
+-- _rowid_ without naming seq. Mirror every sequence change regardless of spelling.
+CREATE TRIGGER IF NOT EXISTS progress_event_rowid AFTER UPDATE ON events
+WHEN OLD.seq IS NOT NEW.seq BEGIN
+    DELETE FROM progress_events WHERE seq IN (OLD.seq,NEW.seq) OR id IN (OLD.id,NEW.id);
+    INSERT INTO progress_events(seq,id,email,item_id,type,ts,payload) SELECT NEW.seq,NEW.id,NEW.email,NEW.item_id,NEW.type,NEW.ts,{_NEW_PAYLOAD}
+        WHERE NEW.type IN ({_KINDS_SQL});
+END;
 CREATE TRIGGER IF NOT EXISTS progress_event_delete AFTER DELETE ON events BEGIN
-    DELETE FROM progress_events WHERE seq=OLD.seq;
+    DELETE FROM progress_events WHERE seq=OLD.seq OR id=OLD.id;
 END;
 '''
+OBJECTS = frozenset({
+    ('table', 'progress_events'), ('table', 'progress_generation'),
+    ('trigger', 'progress_generation_delete'), ('trigger', 'progress_generation_update'),
+    ('trigger', 'progress_generation_insert'), ('trigger', 'progress_event_insert'),
+    ('trigger', 'progress_event_update'), ('trigger', 'progress_event_rowid'),
+    ('trigger', 'progress_event_delete')})
 
 
 def ordinary_json(value, depth=0):
@@ -121,6 +135,28 @@ def compact_created(db, identity, kind):
 
 def ready(db):
     return db.execute('SELECT 1 FROM meta WHERE key=? AND value=?', (READY, 'true')).fetchone() is not None
+
+
+def complete(db):
+    """Whether every projection table and trigger exists. Check before SCHEMA recreates them."""
+    rows = db.execute("SELECT type,name FROM sqlite_schema WHERE type IN ('table','trigger') AND name LIKE 'progress%'")
+    return OBJECTS <= {(kind, name) for kind, name in rows}
+
+
+def started(db):
+    return db.execute('SELECT 1 FROM meta WHERE key IN (?,?) LIMIT 1', (READY, CURSOR)).fetchone() is not None
+
+
+def reset(db):
+    """Forget a projection that may have missed writes and rebuild it from events.
+
+    A removed table or trigger leaves the authoritative marker behind. Run inside one
+    writer transaction after SCHEMA has recreated every object; reads use events
+    until the rebuild completes again.
+    """
+    db.execute('DELETE FROM meta WHERE key IN (?,?)', (READY, CURSOR))
+    db.execute('DELETE FROM progress_events')
+    db.execute('UPDATE progress_generation SET value=value+1 WHERE id=1')
 
 
 def pending(db):

@@ -2,6 +2,7 @@
 import json
 import sqlite3
 import threading
+import time
 
 import pytest
 
@@ -341,4 +342,81 @@ def test_idle_rebuild_failure_rolls_back_and_restarts_without_stopping_audit(tmp
         assert database.progress_rebuild_error is None
         assert database.read(lambda db: db.execute('SELECT count(*) FROM progress_events').fetchone()[0]) == 2
     finally:
+        database.close()
+
+
+def test_rowid_alias_moves_and_deletes_keep_projection(monkeypatch, backend):
+    # Value: protects=a sequence change spelled through rowid/oid/_rowid_ is mirrored, and a
+    # later delete cannot leave stale evidence; fails_when=only UPDATE OF seq is observed;
+    # seam=raw SQL as an old writer or operator would issue it; no_claim=cache timing.
+    with connection() as db:
+        db.execute("INSERT INTO members VALUES ('active','A','reader')")
+        finish(db)
+        raw(db, 'moved', seq=1, payload='{"detail":{"page":0}}')
+        raw(db, 'kept', seq=2, payload='{"detail":{"page":1}}')
+        finish(db)
+        generation = db.execute('SELECT value FROM progress_generation').fetchone()[0]
+        for alias, target in (('rowid', 50), ('oid', 60), ('_rowid_', 70)):
+            db.execute(f"UPDATE events SET {alias}=? WHERE id='moved'", (target,))
+            finish(db)
+            assert ([tuple(row) for row in db.execute('SELECT seq,id FROM progress_events ORDER BY seq')]
+                    == [tuple(row) for row in db.execute("SELECT seq,id FROM events ORDER BY seq")])
+            assert db.execute('SELECT value FROM progress_generation').fetchone()[0] > generation
+            generation = db.execute('SELECT value FROM progress_generation').fetchone()[0]
+            assert progress_store.source(db) == 'progress_events'
+            equivalent(monkeypatch, db)
+        db.execute("DELETE FROM events WHERE id='moved'")
+        finish(db)
+        assert [tuple(row) for row in db.execute('SELECT seq,id FROM progress_events')] == [(2, 'kept')]
+        assert progress_store.source(db) == 'progress_events'
+        assert sorted(equivalent(monkeypatch, db, email='active')[1][('active', 'pdf')]['pages']) == [1]
+
+
+@pytest.mark.parametrize('removal', ['read_table', 'generation_table', 'event_trigger'])
+def test_missing_projection_objects_rebuild_from_events(tmp_path, monkeypatch, removal):
+    # Value: protects=a removed rebuildable table or trigger cannot leave the authoritative
+    # ready marker trusting an empty or incomplete projection; fails_when=startup recreates
+    # the objects but keeps the marker; seam=pre-startup SQL surgery on a stopped database;
+    # no_claim=live schema changes while a service is running.
+    path = tmp_path/'surgery.sqlite3'
+    with connection(path) as db:
+        db.execute("INSERT INTO members VALUES ('active','A','reader')")
+        raw(db, 'first', seq=1, payload='{"detail":{"page":0}}')
+        raw(db, 'second', seq=2, payload='{"detail":{"page":2}}')
+        finish(db)
+        if removal == 'read_table':
+            db.execute('DROP TABLE progress_events')
+        elif removal == 'generation_table':
+            db.execute('DROP TABLE progress_generation')
+        else:
+            db.execute('DROP TRIGGER progress_event_insert')
+            raw(db, 'unmirrored', seq=3, payload='{"detail":{"page":3}}')
+        db.commit()
+    gate, entered = threading.Event(), threading.Event()
+    original = progress_store.rebuild_batch
+    def held(db, limit=128):
+        entered.set()
+        assert gate.wait(5)
+        return original(db, limit)
+    monkeypatch.setattr(progress_store, 'rebuild_batch', held)
+    database = Database(path)
+    try:
+        assert entered.wait(5)
+        # Before the rebuild finishes, reads use authoritative events, not a stale marker.
+        assert database.read(progress_store.source) == 'events'
+        gate.set()
+        deadline = time.monotonic()+5
+        while database.read(progress_store.source) != 'progress_events':
+            assert time.monotonic() < deadline, 'Projection was not rebuilt'
+            database.submit(lambda db: None).result(3)
+        projected = database.read(lambda db: progress.history(db, ITEMS, email='active'))
+        with monkeypatch.context() as patch:
+            patch.setattr(progress_store, 'source', lambda db: 'events')
+            authoritative = database.read(lambda db: progress.history(db, ITEMS, email='active'))
+        assert projected == authoritative
+        expected = [0, 2, 3] if removal == 'event_trigger' else [0, 2]
+        assert sorted(projected[('active', 'pdf')]['pages']) == expected
+        assert database.read(progress_store.complete)
+    finally:
+        gate.set()
         database.close()
