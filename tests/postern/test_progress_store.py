@@ -2,7 +2,6 @@
 import json
 import sqlite3
 import threading
-import time
 
 import pytest
 
@@ -392,12 +391,15 @@ def test_missing_projection_objects_rebuild_from_events(tmp_path, monkeypatch, r
             db.execute('DROP TRIGGER progress_event_insert')
             raw(db, 'unmirrored', seq=3, payload='{"detail":{"page":3}}')
         db.commit()
-    gate, entered = threading.Event(), threading.Event()
+    gate, entered, rebuilt = threading.Event(), threading.Event(), threading.Event()
     original = progress_store.rebuild_batch
     def held(db, limit=128):
         entered.set()
         assert gate.wait(5)
-        return original(db, limit)
+        complete = original(db, limit)
+        if complete:
+            rebuilt.set()
+        return complete
     monkeypatch.setattr(progress_store, 'rebuild_batch', held)
     database = Database(path)
     try:
@@ -405,10 +407,9 @@ def test_missing_projection_objects_rebuild_from_events(tmp_path, monkeypatch, r
         # Before the rebuild finishes, reads use authoritative events, not a stale marker.
         assert database.read(progress_store.source) == 'events'
         gate.set()
-        deadline = time.monotonic()+5
-        while database.read(progress_store.source) != 'progress_events':
-            assert time.monotonic() < deadline, 'Projection was not rebuilt'
-            database.submit(lambda db: None).result(3)
+        assert rebuilt.wait(5), 'Projection was not rebuilt'
+        database.submit(lambda db: None).result(3)  # Wait for the rebuild's commit.
+        assert database.read(progress_store.source) == 'progress_events'
         projected = database.read(lambda db: progress.history(db, ITEMS, email='active'))
         with monkeypatch.context() as patch:
             patch.setattr(progress_store, 'source', lambda db: 'events')
