@@ -421,3 +421,43 @@ def test_missing_projection_objects_rebuild_from_events(tmp_path, monkeypatch, r
     finally:
         gate.set()
         database.close()
+
+
+def test_fresh_database_projection_is_ready_before_first_request(tmp_path):
+    # Value: protects=new installs read the compact table from the first request;
+    # fails_when=the synchronous empty-history ready marker before readiness is removed or
+    # gated wrongly; why_new=other tests start from existing events and wait for idle rebuild;
+    # seam=none; no_claim=does not cover installs that already have events.
+    database = Database(tmp_path/'fresh.sqlite3')
+    try:
+        assert database.read(progress_store.source) == 'progress_events'
+        assert database.read(progress_store.ready)
+        assert database.progress_rebuild_error is None
+    finally:
+        database.close()
+
+
+def test_read_connection_drops_progress_owner_when_file_is_replaced(tmp_path, monkeypatch):
+    # Value: protects=evidence from a connection opened during a file replacement is never
+    # retained by the owner's cache; fails_when=Database.read ignores the before/after inode
+    # comparison; why_new=cache tests construct ReadConnection owners directly; seam=none;
+    # no_claim=does not prove an actual concurrent rename race.
+    import pathlib
+    database = Database(tmp_path/'owned.sqlite3')
+    try:
+        seen = lambda db: (db.progress_owner, db.progress_file)
+        owner, stamp = database.read(seen)
+        assert owner is database and stamp[0] == str((tmp_path/'owned.sqlite3').resolve())
+        original, calls = pathlib.Path.stat, []
+        def moved(self, *args, **kwargs):
+            result = original(self, *args, **kwargs)
+            calls.append(1)
+            if len(calls) > 1:  # The file is replaced after the read's first identity check.
+                return type('Stat', (), {'st_dev': result.st_dev, 'st_ino': result.st_ino + 1})()
+            return result
+        monkeypatch.setattr(pathlib.Path, 'stat', moved)
+        owner, _ = database.read(seen)
+        assert owner is None
+    finally:
+        monkeypatch.undo()
+        database.close()
