@@ -44,7 +44,7 @@ described in [Architecture](docs/architecture.md).
 |---|---|---|
 | M0 Launch preparation | In progress; parallel with M1 | Current deployment baseline |
 | M1 Accounts and profiles | Production pilot passed; registration closed | M0 launch checks before release |
-| Rust server migration | P1; v0.22.0 traced reducer pilot passed; health-query candidate in validation | Complete RS-05–RS-09 below; Python still serves production |
+| Rust server migration | P1; RS-06 representative acceptance passed for the v0.23.0 incremental report candidate | RS-07 live pilot, then RS-08–RS-09; Python still serves production |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
 | M2 Private spaces and resource catalog | Isolated metadata/onboarding implemented; content integration and hosting pending | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
@@ -167,18 +167,46 @@ its background workers. Python remains the production default.
 
 - [x] Implement and release the first reducer with Python/Rust parity tests.
 - [x] Meet the reducer CPU/time targets and rehearse actual-document cutover and
-  rollback, preserving staff activity (latest: 77 events and 23 page events).
+  rollback, preserving staff activity (latest November 6: 40 events and eight
+  document-page events, rechecked after Python restoration).
 - [x] Enable bounded health timings and localize the recurring delay to the
   shared health database queries.
-- [ ] **RS-05 — Finish the health-query fix.** Validate exact pending/confirmed/
-  orphan semantics, startup migration, write cost and old-code rollback; review,
-  run clean CI, ship, then verify the recurring live probe burst. Current work
-  is an isolated candidate; production has not changed.
-- [ ] **RS-06 — Complete representative acceptance.** Finish RS-01's request
-  p50/p95/error, CPU/RSS, audit-queue and job attribution. Exercise the remaining
-  role/revocation, consent, quiz/certificate, media, export and recovery cases
-  under measured load. Retain the two-second health and 70% host CPU guards;
-  run heavy concurrency on an isolated runner.
+- [x] **RS-05 — Finish the health-query fix.** Released in v0.22.1 after
+  parity, startup, write-cost, checkpoint/rollback checks, review and clean CI.
+  The Python rollout preserved 234,691 events. A three-minute live capture
+  included 108 complete requests and three bursts of 8–10 requests: query time
+  at most 8.9 ms and server response at most 81.3 ms. The fresh Rust document
+  pilot preserved all 40 events, including eight page reads, across rollback;
+  all 28 traced Rust health requests completed, maximum response 25.4 ms.
+  Python remains the serving default; sustained acceptance remains open.
+- [x] **RS-06 — Complete representative acceptance.** The owner chose to apply
+  the two-second dashboard target to Rust, with Python kept as the measured
+  correctness and rollback control. All earlier failed campaigns stay failed.
+  On candidate `b18b6b2`, all 30 paired attempts passed
+  ([run](https://github.com/nerdymatters/postern/actions/runs/42403436385)).
+  At 50 readers:
+  - Rust's dashboard p95 was 42 ms, against 3.14 s for Python.
+  - Comparable CPU was 33% lower (45% at 25 readers).
+  - Rust's startup-plus-workload memory peak was 33–85 MiB below Python's.
+  - Raw-replay parity, durable progress, health and every guard held.
+
+  The memory window was corrected before measurement: only the post-load raw
+  Python check had raised Rust's all-phase peak.
+
+  After one narrow miss, the owner made catalog a no-regression family. At
+  50 readers its median ratio had come in at 0.813, against a 0.80 target.
+  Rust stayed faster: ratios 0.82 and 0.69 in the accepted run.
+
+  Sustained fault-load at representative size passed on both backends:
+  - held report disclosures, then session, role and consent refusals;
+  - quiz import, missing media, and failed export with retry;
+  - same-database Python rollback preserving all 493,214 events and every
+    reader's standing.
+
+  Independent review found no blocker. Its two confirmed defects are fixed and
+  tested: a removed projection table or trigger is now rebuilt, and rowid-alias
+  moves are mirrored. See the
+  [capacity protocol](docs/runbooks/capacity.md#incremental-dashboard-candidate-protocol).
 - [ ] **RS-07 — Make the first reducer the serving default.** Use the reviewed
   release, backup, single-writer checks and fresh benchmark; confirm real staff
   behavior, observe sustained operation, and retain a tested Python fallback.

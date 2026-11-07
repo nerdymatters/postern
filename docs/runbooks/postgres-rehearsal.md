@@ -97,13 +97,15 @@ functions for a later controlled migration adapter. It has no production CLI.
 1. `export_legacy(database, installation, objects, output)` reads a SQLite snapshot
    through a read-only connection. `installation` is a deliberately assigned UUID;
    `objects` maps each catalog SHA-256 to a previously obtained original file.
-   Derived `health_orphan_events` metadata is optional in the source snapshot and
-   excluded from format-1 bundles; older snapshots and bundles remain supported.
+   Derived `health_orphan_events`, `progress_events` and `progress_generation`
+   metadata is optional in the source snapshot and excluded from format-1 bundles;
+   older snapshots and bundles remain supported.
    It refuses any other unexpected table set and verifies every copied catalog original's
    length and digest. It writes private files in a new bundle directory.
-   After rolling serving code back to v0.22.0, use the newer checkpoint exporter
-   for snapshots of an upgraded database: the v0.22.0 exporter rejects the added
-   derived table. Do not remove live metadata to accommodate that older tool.
+   After rolling serving code back to an earlier release, use the newest checkpoint
+   exporter for snapshots of an upgraded database. The v0.22.0 exporter rejects the
+   health table; v0.22.1 and earlier reject the progress tables. Do not remove live
+   metadata to accommodate an older tool.
 2. The bundle contains a versioned manifest, streamed `rows.jsonl` and hash-named
    originals. Each record has a canonical envelope with its original column
    values; event payload strings are preserved without normalization. The returned

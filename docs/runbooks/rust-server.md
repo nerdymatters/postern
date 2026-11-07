@@ -5,6 +5,18 @@ room, quiz completion checks and staff progress report. Python remains the
 default. This is an incremental server migration; production cutover and the
 rest of the server remain open in the [remaining migration checklist](../../ROADMAP.md#remaining-migration-checklist).
 
+With `POSTERN_PROGRESS_BACKEND=rust`, reading-room, quiz-completion and staff-report
+snapshots share one dedicated read worker. This limits simultaneous SQLite/native
+history replays. The all-staff report retains bounded incremental evidence as
+described below; a required rebuild can still delay requests behind it.
+Each operation opens its own read-only connection and retains its existing
+snapshot and authorization checks. Cancelling a request does not release a worker
+that is still reading. Shutdown cancels queued reads and waits for the active read
+before closing the database. Selecting `python` at restart restores both the
+original reducer and the shared-pool read scheduling. The scheduling change still
+requires the [representative capacity measurements](capacity.md#paired-reducer-measurements)
+before cutover.
+
 ## Measurements and scope
 
 Measured November 1, 2026 on the office Mac (8 logical CPUs, 16 GiB RAM).
@@ -58,7 +70,7 @@ releases. No staff identities or event payloads were copied into the baseline.
 
 ```mermaid
 flowchart LR
-    A[Python authorization and read snapshot] --> B[Unchanged SQLite selection]
+    A[Python authorization and read snapshot] --> B[SQLite: compact inputs or audit history]
     B --> C[Rust: parse and reduce batches of 256 rows]
     C --> D[Python response construction]
     D --> E[Existing reauthorization and audit admission]
@@ -84,6 +96,85 @@ never becomes a successful partial result.
 
 The original Python hot loop remains intact for rollback. A helper refactor
 was measured to add overhead and was removed from that path.
+
+### Compact progress inputs
+
+Both backends can read the rebuildable `progress_events` table in the same SQLite
+snapshot as the catalog and roster. It preserves selection fields and only the
+JSON detail needed for progress. Full audit events remain authoritative and are
+still exported unchanged. Triggers mirror inserts, updates, deletes and identity
+replacements, including writes by an older release. Export-only `batch_id`
+updates do not rewrite this table. The derived table is excluded from format-1
+migration bundles, so old snapshots and bundles retain their existing inventory.
+
+Existing databases use the original event query until rebuilding completes.
+The writer rebuilds only after a 100 ms idle queue interval, with at most 128 rows
+and a 25 ms budget checked between rows. SQLite caps each derived payload at
+64 KiB before Python materializes it. Oversized payloads stay authoritative in
+`events`; the derived row is marked ineligible. The budget is cooperative, not
+a hard bound on a single SQLite operation or filesystem commit. The cursor and
+completion marker commit with each batch, so interruption resumes safely.
+An unsuccessful batch rolls back, logs `Progress read table rebuild paused`, and
+keeps the original read path active; startup retries unfinished work.
+Do not remove `progress_events`, `progress_generation` or their triggers while
+any release uses the database: the completion marker lives in `meta`, and a
+missing trigger lets writes skip the derived copy. If startup finds any of them
+missing after rebuilding has begun or finished, it recreates them, discards the
+derived rows and marker, and rebuilds from `events`. Reads use `events` until
+that rebuild completes. Moves through `rowid`, `oid` or `_rowid_` are mirrored
+like named `seq` updates, and deletes match the event's sequence or identity.
+
+The smaller table may produce a different query plan. Any pending or exceptional
+input keeps **all** history reads on the original query: this includes malformed
+or deeply nested JSON, BLOB payloads, large numbers and nonpositive or legacy
+timestamps. This conservatively preserves order-sensitive historical results
+and exceptions. Ordinary old-writer rows become eligible after idle processing.
+Check `meta.progress_inputs_v1` for completion and `progress_events.portable`
+for classification: `-1` pending, `0` original-query fallback, `1` eligible.
+The source switches only when rebuilding is complete and every row is eligible.
+
+Selecting `python` still restores the original reducer and read scheduling;
+it also uses eligible compact inputs. Rolling back to an older release reads
+the full events table, while the installed triggers keep the derived copy current.
+This adds disk and write work. Read-speed microbenchmarks are diagnostic only;
+the unchanged paired HTTP, memory, durability and compatibility gates remain
+required before rollout.
+
+### Incremental staff-report evidence
+
+The Rust service primes a disposable checkpoint during normal startup when both
+the compact history and catalog metadata are eligible. Subsequent reports replay
+only events after the saved sequence through the native `CHECKPOINT_VERSION=1`
+interface. Install the matching wheel before selecting Rust; an old or missing
+interface refuses selection before the writer starts. Reader-specific queries
+still use full native replay. Python retains its original reducer and scheduling.
+
+The checkpoint stores page sets, merged interval evidence, attempts, opened state
+and activity clocks, never percentages or a finished HTTP response. Each request
+reads its current roster, catalog, quiz and certificate state in one read-only WAL
+snapshot and retains the final authorization/audit gate. A failed replay never
+publishes a new checkpoint or sequence. Responses cannot mutate saved evidence.
+
+One service owns one cache. Only that Database's actual `mode=ro` read connections
+can retain results. A writable transaction remains ineligible even after setting
+`query_only`. File identity, item metadata, roster and the derived
+`progress_generation` counter form its invalidation key; older snapshots rebuild
+when necessary. Triggers invalidate old-event updates/deletes, replacements and
+out-of-order inserts. Export-only updates do not invalidate it. The generation
+table is also excluded from format-1 migration inventories.
+
+Retained checkpoint and key data are conservatively capped at 16 MiB, with only
+16 recent row-count diagnostics. An oversized result is returned completely but
+is not retained; this cap does not bound temporary full-replay allocations.
+Legacy/unready history and nonportable metadata keep their original full replay
+and request-time errors. They are not primed at startup. Cache loss, Python
+rollback and process restart cannot lose durable progress.
+
+Startup priming is measured separately and included in comparable CPU for the
+[next candidate protocol](capacity.md#incremental-dashboard-candidate-protocol).
+History repairs and catalog changes may require an expensive rebuild; the steady
+workload target does not promise a two-second repair. This mechanism remains
+subject to compatibility, memory, startup, representative-load and live gates.
 
 ## Performance acceptance
 
@@ -130,7 +221,7 @@ In a development checkout with the project's test dependencies installed:
 # Run builds and rehearsals sequentially, preferably away from the serving Mac.
 CARGO_BUILD_JOBS=1 nice -n 10 .venv/bin/python -m pip wheel --no-deps ./native/progress --wheel-dir .context/rust-wheels
 # Install the wheel matching this host from .context/rust-wheels.
-.venv/bin/python -m pip install --no-deps .context/rust-wheels/postern_progress_native-0.1.0-cp311-abi3-macosx_11_0_arm64.whl
+.venv/bin/python -m pip install --no-deps .context/rust-wheels/postern_progress_native-0.2.0-cp311-abi3-macosx_11_0_arm64.whl
 POSTERN_PROGRESS_BACKEND=rust nice -n 10 .venv/bin/python -m pytest tests/native tests/postern/test_progress_backend.py tests/postern/test_progress.py tests/postern/test_training_progress.py -q
 nice -n 10 .venv/bin/python -m scripts.progress_benchmark --output .context/progress-benchmark
 ```
@@ -483,9 +574,11 @@ Before a production pilot:
 5. Roll back by persisting `POSTERN_PROGRESS_BACKEND=python` and reloading the
    same job definition as in step 3 against the **current** database. Verify
    the loaded environment is Python; health alone does not identify the backend.
-   Recheck health and activity
-   recorded during the Rust window. This slice has no schema migration and
-   needs no database restore; restoring an older backup would lose new activity.
+   Recheck health and activity recorded during the Rust window. Compact inputs
+   add rebuildable tables, indexes and triggers; backend rollback keeps this
+   additive metadata and needs no database restore. Restoring an older backup
+   would lose new activity. See [compact progress inputs](#compact-progress-inputs)
+   for rollback to an older application release.
 
 The disposable-data rehearsal starts Python, restarts with Rust, records new
 page activity and a first exam pass/saved certificate name, then closes and
@@ -493,6 +586,25 @@ reopens the service with Python. It checks page coverage, certificate number,
 award time and name, unchanged durable event bytes and unchanged schema.
 A brief production activation was rolled back during the first live pilot above;
 the sustained production rollout remains pending.
+
+## Representative acceptance and v0.23.0 rollout, November 7
+
+On candidate `b18b6b2`, all 30 paired attempts passed the incremental protocol
+and its recorded addenda
+([run](https://github.com/nerdymatters/postern/actions/runs/42403436385)).
+At 50 readers, Rust's dashboard p95 was 42 ms, against 3.14 s for Python, and
+comparable CPU was 33% lower. Rust's startup-plus-workload memory peak was
+33–85 MiB below Python's. Representative sustained fault-load passed on both
+backends, as did same-database Python rollback. See the
+[capacity protocol](capacity.md#incremental-dashboard-candidate-protocol) for
+the bars and the retained failures.
+
+The first v0.23.0 start on an existing database creates the compact projection
+and its triggers before readiness. The writer then fills the projection in idle
+time, and reads stay on `events` until that rebuild finishes. Python remains the
+default. Install the matching 0.2.0 native wheel before any Rust pilot; Python
+serving does not load it. For a code rollback, keep the current database and its
+derived tables, and keep the v0.23.0 checkpoint exporter.
 
 ## Remaining performance work
 

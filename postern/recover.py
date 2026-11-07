@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 import time
 
-from . import quiz
+from . import quiz, progress_store
 from .config import Config, private_json
 from .db import Database, set_meta
 from .derive import Deriver, DeriveError
@@ -85,6 +85,8 @@ def import_events(db, events, batch_id=None):
                              row.get('item_id'), row.get('view_id'), int(row.get('summary', True)),
                              json.dumps(payload), batch_id))
         imported += cursor.rowcount
+        if cursor.rowcount:
+            progress_store.compact_created(db, row['event_id'], row['event'])
         if cursor.rowcount and row['event'] == 'quiz_attempt':
             quiz.record(db, db.execute('SELECT email,ts,seq,payload FROM events WHERE id=?', (row['event_id'],)).fetchone())
     return imported

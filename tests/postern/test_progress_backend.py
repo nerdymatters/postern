@@ -26,10 +26,12 @@ def test_python_needs_no_native_module_and_invalid_selection_fails_early(monkeyp
     progress_backend.native.cache_clear()
 
 
-def test_incompatible_module_refuses_selection(monkeypatch):
+@pytest.mark.parametrize('api,checkpoint,method', [(99, 1, True), (1, None, True), (1, 99, True), (1, 1, False)])
+def test_incompatible_module_refuses_selection(monkeypatch, api, checkpoint, method):
     from types import SimpleNamespace
     progress_backend.native.cache_clear()
-    monkeypatch.setattr(progress_backend.importlib, 'import_module', lambda _: SimpleNamespace(API_VERSION=99))
+    monkeypatch.setattr(progress_backend.importlib, 'import_module', lambda _: SimpleNamespace(
+        API_VERSION=api, CHECKPOINT_VERSION=checkpoint, reduce_incremental=(lambda *args: None) if method else None))
     monkeypatch.setenv('POSTERN_PROGRESS_BACKEND', 'rust')
     with pytest.raises(RuntimeError, match='incompatible'):
         progress_backend.selected()
@@ -62,6 +64,8 @@ def test_restart_rollback_keeps_activity_and_certificate(config, store, clock, m
                 view = open_view(client, reader, item)
                 assert client.get(f"/api/views/{view['id']}/page/0.jpg", headers=reader).status_code == 200
             elif phase == 1:
+                assert service.progress_history.full_replays == 1
+                assert service.progress_history.retained_bytes > 0
                 view = open_view(client, reader, item)
                 assert client.get(f"/api/views/{view['id']}/page/2.jpg", headers=reader).status_code == 200
                 service.db.submit(lambda db: import_events(db, [
@@ -84,6 +88,45 @@ def test_restart_rollback_keeps_activity_and_certificate(config, store, clock, m
                 assert service.db.read(lambda db: db.execute('PRAGMA schema_version').fetchone()[0]) == schema
             else:
                 assert progress['opened_pages'] == [0]
+
+
+@native_required
+def test_failed_startup_prime_closes_writer_and_progress_executor(config, store, clock, monkeypatch):
+    from fastapi.testclient import TestClient
+    from postern.app import create_app
+    monkeypatch.setenv('POSTERN_PROGRESS_BACKEND', 'rust')
+    service = Service(config, store=store, clock=clock)
+    def failed(*args):
+        raise RuntimeError('injected checkpoint failure')
+    monkeypatch.setattr(progress_backend.native(), 'reduce_incremental', failed)
+    with pytest.raises(RuntimeError, match='injected checkpoint failure'):
+        with TestClient(create_app(config, service=service)):
+            pytest.fail('startup failure must not admit requests')
+    assert not service.db.thread.is_alive()
+    assert service.progress_history.stamp is None
+    with pytest.raises(RuntimeError, match='shutdown'):
+        service.progress_executor.submit(lambda: None)
+
+
+@native_required
+def test_legacy_catalog_error_stays_at_request_boundary_after_restart(config, store, clock, monkeypatch):
+    from fastapi.testclient import TestClient
+    from postern.app import create_app
+    monkeypatch.setenv('POSTERN_PROGRESS_BACKEND', 'rust')
+    first = Service(config, store=store, clock=clock)
+    with TestClient(create_app(config, service=first)) as client:
+        admin = sign_in(client, ADMIN)
+        _post, item = ready_post(client, admin, first, pages=3)
+        first.db.submit(lambda db: (
+            event(db, 'page_served', email=READER, item_id=item, detail={'page': 0}),
+            db.execute('UPDATE items SET pages=? WHERE id=?', ('legacy', item)))).result(5)
+    restarted = Service(config, store=store, clock=clock)
+    with TestClient(create_app(config, service=restarted)) as client:
+        assert restarted.progress_history.stamp is None
+        assert client.get('/health').status_code == 200
+        with pytest.raises(TypeError):
+            client.get('/api/admin/progress', headers=admin)
+    assert not restarted.db.thread.is_alive()
 
 
 @native_required
@@ -131,7 +174,8 @@ def test_native_replay_does_not_bypass_final_disclosure_gate(client, service, mo
     admin = sign_in(client, ADMIN)
     ready_post(client, admin, service)
     module = progress_backend.native()
-    original = module.reduce
+    method = 'reduce_incremental' if service.progress_history is not None else 'reduce'
+    original = getattr(module, method)
     def interrupt(*args):
         result = original(*args)
         if interruption == 'revoke':
@@ -146,7 +190,7 @@ def test_native_replay_does_not_bypass_final_disclosure_gate(client, service, mo
                 return future
             monkeypatch.setattr(service.db, 'submit', failed)
         return result
-    monkeypatch.setattr(module, 'reduce', interrupt)
+    monkeypatch.setattr(module, method, interrupt)
     response = client.get('/api/admin/progress', headers=admin)
     assert response.status_code == status
     assert 'people' not in response.json()

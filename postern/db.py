@@ -11,7 +11,9 @@ import sqlite3
 import threading
 import time
 import json
+import logging
 import uuid
+from . import progress_store
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -81,11 +83,15 @@ END;
 CREATE TRIGGER IF NOT EXISTS health_batch_delete AFTER DELETE ON batches BEGIN
   INSERT OR REPLACE INTO health_orphan_events SELECT seq,id,ts,batch_id FROM events WHERE batch_id=OLD.id;
 END;
-'''
+''' + progress_store.SCHEMA
 
 
 class AuditUnavailable(Exception):
     pass
+
+
+class ReadConnection(sqlite3.Connection):
+    """Internal provenance for connections opened read-only by Database.read."""
 
 
 class Database:
@@ -94,6 +100,7 @@ class Database:
         self.queue = queue.Queue(maxsize=capacity)
         self.ready = concurrent.futures.Future()
         self.failed = False
+        self.progress_rebuild_error = None
         self.thread = threading.Thread(target=self._worker, name='postern-writer', daemon=True)
         self.thread.start()
         self.settings = self.ready.result(timeout=10)
@@ -114,7 +121,14 @@ class Database:
             db.row_factory = sqlite3.Row
             for pragma in ['journal_mode=WAL', 'synchronous=FULL', 'fullfsync=ON', 'busy_timeout=1000', 'foreign_keys=ON']:
                 db.execute('PRAGMA ' + pragma)
+            projection_complete = progress_store.complete(db)
             db.executescript(SCHEMA)
+            if not projection_complete and progress_store.started(db):
+                # Someone removed a rebuildable table or trigger. Writes may be
+                # missing from the projection, so rebuild it before trusting it.
+                db.execute('BEGIN IMMEDIATE')
+                progress_store.reset(db)
+                db.commit()
             if not db.execute("SELECT 1 FROM meta WHERE key='health_orphans_v1'").fetchone():
                 # Backfill once before readiness. A failed/interrupted transaction
                 # leaves no marker and will be rebuilt on the next startup.
@@ -124,9 +138,31 @@ class Database:
                     FROM events e LEFT JOIN batches b ON b.id=e.batch_id WHERE e.batch_id IS NOT NULL AND b.id IS NULL''')
                 db.execute("INSERT INTO meta(key,value) VALUES('health_orphans_v1','true')")
                 db.commit()
+            if not progress_store.ready(db) and not db.execute('SELECT 1 FROM events LIMIT 1').fetchone():
+                db.execute('BEGIN IMMEDIATE')
+                progress_store.rebuild_batch(db)
+                db.commit()
+            rebuild_pending = progress_store.pending(db)
             self.ready.set_result({p: db.execute('PRAGMA '+p).fetchone()[0] for p in ['journal_mode','synchronous','fullfsync','busy_timeout']})
             while True:
-                job = self.queue.get()
+                try:
+                    job = self.queue.get(timeout=.1 if rebuild_pending else None)
+                except queue.Empty:
+                    # Existing installations keep reading authoritative events
+                    # until this bounded, resumable projection is complete. Only
+                    # spend idle writer time; queued audit work always goes first.
+                    try:
+                        db.execute('BEGIN IMMEDIATE')
+                        rebuild_pending = not progress_store.rebuild_batch(db)
+                        db.commit()
+                    except Exception as error:
+                        db.rollback()
+                        self.progress_rebuild_error = type(error).__name__
+                        rebuild_pending = False  # retry on next startup, retain raw fallback
+                        logging.getLogger(__name__).warning(
+                            'Progress read table rebuild paused (%s); audit history remains active',
+                            self.progress_rebuild_error)
+                    continue
                 if job is None:
                     break
                 queued, operation, future = job
@@ -139,6 +175,10 @@ class Database:
                     started = time.monotonic()
                     db.execute('BEGIN IMMEDIATE')
                     result = operation(db)
+                    # Raw recovery/old-style writes may have introduced inputs
+                    # needing classification. The partial index makes this cheap.
+                    if self.progress_rebuild_error is None and not rebuild_pending:
+                        rebuild_pending = progress_store.pending(db)
                     db.commit()
                     future.queue_ms = (started - queued) * 1000
                     future.commit_ms = (time.monotonic() - started) * 1000
@@ -163,8 +203,16 @@ class Database:
     def read(self, operation):
         # A connection's `with` block ends its transaction but never closes it. Unclosed readers kept
         # their file descriptors while the writer stayed open, until the API hit its open-file limit.
-        db = sqlite3.connect(f'file:{self.path}?mode=ro', uri=True, timeout=1)
+        path = self.path.resolve()
+        before = path.stat()
+        db = sqlite3.connect(path.as_uri()+'?mode=ro', uri=True, timeout=1,
+                             factory=ReadConnection)
         try:
+            after = path.stat()
+            # Do not retain progress from a connection opened during a file
+            # replacement. Ordinary reads still return their own SQL snapshot.
+            db.progress_owner = self if (before.st_dev, before.st_ino) == (after.st_dev, after.st_ino) else None
+            db.progress_file = (str(path), before.st_dev, before.st_ino)
             db.row_factory = sqlite3.Row
             db.execute('PRAGMA query_only=ON')
             return operation(db)
@@ -217,4 +265,5 @@ def event(db, kind, context=None, *, post_id=None, item_id=None, view_id=None, d
                'ip': context.get('ip'), 'user_agent': context.get('user_agent'), 'detail': detail, 'summary': summary}
     db.execute('INSERT INTO events(id,ts,type,email,post_id,item_id,view_id,summary,payload) VALUES (?,?,?,?,?,?,?,?,?)',
                (identity, ts, kind, payload['email'], post_id, item_id, view_id, int(summary), json.dumps(payload)))
+    progress_store.compact_created(db, identity, kind)
     return identity

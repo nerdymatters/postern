@@ -16,7 +16,9 @@ def native():
         module = importlib.import_module('postern_progress_native')
     except ImportError as error:
         raise RuntimeError('Rust progress requested; install the verified postern-progress-native wheel or select python') from error
-    if getattr(module, 'API_VERSION', None) != 1:
+    if (getattr(module, 'API_VERSION', None) != 1
+            or getattr(module, 'CHECKPOINT_VERSION', None) != 1
+            or not callable(getattr(module, 'reduce_incremental', None))):
         raise RuntimeError('Rust progress module has an incompatible API version')
     return module
 

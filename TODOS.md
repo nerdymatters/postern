@@ -68,13 +68,29 @@ parity, write-cost and rollback checks. Do not mask the cost with stale health o
 a wider deadline. Sustained/representative acceptance and remaining compatibility
 checks stay open before changing the serving default.
 
-**Current round:** an isolated health-query candidate uses indexed unbatched and
-unconfirmed-batch reads plus transactionally maintained orphan metadata. Exact
-parity, checkpoint compatibility and copied-history read/write measurements pass.
-All six CI jobs passed on candidate commit `2798542`; final release-commit CI,
-release and guarded live-burst verification remain required before completing rollout.
+**Current round (Nov 6–7):** RS-06 representative acceptance passed for the
+incremental staff-report candidate. Next is RS-07:
+1. Install v0.23.0 with Python active.
+2. Run the guarded live pilot, which needs local administrator authentication
+   and an actual staff document check.
+3. Observe sustained Rust operation before changing the default.
+
 The [remaining migration checklist](ROADMAP.md#remaining-migration-checklist)
-separates this fix, sustained reducer acceptance and the remaining server ports.
+lists RS-07–RS-09.
+
+**Review follow-ups (not release blockers):**
+- Startup priming has no deadline. A native fault while priming fails startup,
+  instead of failing one request. Consider a bounded prime that falls back to
+  request-time replay.
+- One progress worker serves both reader snapshots and admin full replays. A
+  rebuild after invalidation delays reader requests behind it.
+- One nonportable row, such as a payload over 64 KiB, keeps every history read on
+  the original query, with no signal. Surface it in diagnostics.
+- A transient error in an idle rebuild batch pauses rebuilding until restart.
+  Retry with backoff.
+- The cache stamp relies on file identity and generation. The runbook forbids
+  restoring an older database into the same file; a per-database token would
+  make reuse fail closed anyway.
 
 **Compatibility:** Preserve API responses, authorization/revocation, durable
 audit admission, single-writer/job ownership, training progress and certificate

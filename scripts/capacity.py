@@ -10,10 +10,14 @@ import argparse
 import asyncio
 from collections import Counter, defaultdict
 import hashlib
+from importlib.machinery import EXTENSION_SUFFIXES
 import json
 import math
+import platform
 from pathlib import Path
 import socket
+import subprocess
+import sys
 import time
 import uuid
 
@@ -29,15 +33,69 @@ from postern.service import Service
 from postern.storage import FakeStore
 from postern.video import CHUNK
 from postern.selfie import device_hash
+from postern import progress, progress_backend
 
 ROOT = Path(__file__).resolve().parents[1]
 VIDEO, PDF = 'capacity-video', 'capacity-pdf'
+SEED_BATCH_ROWS = 128
+HEALTH = {'process': 'up', 'permissions': 'ready', 'audit': 'ready',
+          'backup': 'current', 'storage': 'ready'}
+
+
+def health_payload(response):
+    if response is None:
+        return {}
+    try:
+        return response.json()
+    except ValueError:
+        return {}
 
 
 def progress_key(email, ranges):
     # The API normalizes 0.0 to 0 at the beginning of an interval. Compare
     # numeric endpoints, not their JSON spelling, while retaining exact values.
     return email, tuple((float(a), float(b)) for a, b in ranges)
+
+
+async def verify_dashboard(service, port, token, stop):
+    """After traffic stops, compare HTTP output with fresh raw Python evidence.
+
+    This extra correctness request is outside measured workload CPU/latencies;
+    it never counts as workload coverage. Resource guards remain active.
+    """
+    class RawHistory:
+        def history(self, db, items):
+            return progress._reduce_python(items, db.execute(
+                "SELECT e.email,e.item_id,e.type,e.ts,e.payload FROM events e "
+                "JOIN members m ON m.email=e.email WHERE e.type IN "
+                "('page_served','item_summary','video_progress','item_open','view_requested')"))
+    def reference(db):
+        db.execute('BEGIN')
+        # A guard racing verification can interrupt this disposable SQL replay.
+        db.set_progress_handler(lambda: int(stop.is_set()), 1000)
+        return progress.dashboard(db, service.permissions.quizzes, service.final_exam,
+            default_group=service.config.branding.default_group,
+            certificate_prefix=service.config.branding.certificate_prefix, history_cache=RawHistory())
+    started = time.monotonic()
+    failure = None
+    if stop.is_set():
+        return {'raw_python_dashboard_matches': False, 'elapsed_seconds': 0, 'skipped': 'resource guard'}
+    async with httpx.AsyncClient(trust_env=False, timeout=15) as client:
+        try:
+            response = await client.get(f'http://127.0.0.1:{port}/api/admin/progress',
+                                        headers={'Authorization': 'Bearer '+token})
+            if stop.is_set():
+                return {'raw_python_dashboard_matches': False, 'elapsed_seconds': time.monotonic()-started,
+                        'skipped': 'resource guard'}
+            expected = await service.read_progress(reference)
+            matches = response.status_code == 200 and response.json() == expected
+        except Exception as error:
+            # Verification faults fail the attempt without discarding the
+            # completed workload's measurements. Keep only the exception class.
+            failure = type(error).__name__
+            matches = False
+    return {'raw_python_dashboard_matches': matches, 'elapsed_seconds': time.monotonic()-started,
+            'error': failure}
 
 
 def distribution(values):
@@ -50,6 +108,54 @@ def distribution(values):
         for name, fraction in [('p50', .5), ('p95', .95), ('p99', .99), ('max', 1)]}}
 
 
+def process_cpu_snapshot():
+    """Diagnostic counters only: no arguments, environment or command lines."""
+    result = {}
+    for process in psutil.process_iter(['pid', 'name', 'create_time', 'cpu_times']):
+        info = process.info
+        if any(info.get(key) is None for key in ('pid', 'create_time', 'cpu_times')):
+            continue  # Exited or inaccessible processes cannot be attributed.
+        result[info['pid'], info['create_time']] = (
+            info['name'], info['cpu_times'].user + info['cpu_times'].system)
+    return result
+
+
+def process_cpu_changes(before, after, seconds):
+    """One-core percentages; only processes observed at both ends are comparable."""
+    changes = [{'pid': pid, 'name': name, 'cpu_percent_one_core': round(100*(cpu-before[key][1])/seconds, 2)}
+               for key, (name, cpu) in after.items() if key in before and cpu >= before[key][1]
+               for pid, _created in [key]] if seconds > 0 else []
+    return sorted(changes, key=lambda row: (-row['cpu_percent_one_core'], row['pid']))[:5]
+
+
+def workload_coverage(args, statuses, acknowledged_progress):
+    """Missing traffic is a failed rehearsal, even if every request made succeeded."""
+    if args.scenario == 'signin':
+        required = {'signin': ('200', args.users)}
+    elif args.scenario == 'enrollment':
+        required = {'selfie_capture': ('202', args.users), 'selfie_status': ('200', args.users),
+                    'enrollment_ready': ('confirmed', args.users)}
+        if args.with_reader:
+            required.update(existing_reader_open=('200', 1), existing_reader_player=('200', 1),
+                            existing_reader_range=('206', 1), existing_reader_progress=('200', 1))
+    else:
+        required = {'open_view': ('200', args.users*2), 'player': ('200', args.users),
+                    'video_range': ('206', args.users), 'progress': ('200', args.users),
+                    'catalog': ('200', args.users), 'page': ('200', math.ceil(args.users/5)),
+                    'dashboard': ('200', 1)}
+    counts = {label: {'status': status, 'minimum': minimum,
+                      'observed': statuses.get(label, {}).get(status, 0)}
+              for label, (status, minimum) in required.items()}
+    missing = [label for label, count in counts.items() if count['observed'] < count['minimum']]
+    expected_readers = ({f'reader{i}@example.invalid' for i in range(args.users)}
+                        if args.scenario == 'mixed' else
+                        {f'reader{args.users}@example.invalid'} if args.with_reader else set())
+    actual_readers = {email for (email, _), count in acknowledged_progress.items() if count > 0}
+    missing_readers = sorted(expected_readers - actual_readers)
+    return {'passed': not missing and not missing_readers, 'families': counts,
+            'missing': missing, 'readers_without_progress': missing_readers}
+
+
 class Metrics:
     def __init__(self):
         self.latencies = defaultdict(list)
@@ -60,34 +166,78 @@ class Metrics:
         self.commit = []
         self.lag = []
         self.rss = []
+        # The same observations, labelled by the harness phase that was active.
+        # Post-workload verification runs a raw Python replay in this process.
+        self.rss_phases = defaultdict(list)
         self.host_idle = []
         self.queue_depth = []
+        self.writer_operations = defaultdict(list)
+        self.writer_queue = defaultdict(list)
+        self.writer_commit = defaultdict(list)
+        self.active = Counter()
+        self.host_cpu_diagnostics = []
+        self.transport_errors = defaultdict(Counter)
 
     async def request(self, client, label, method, path, **kwargs):
         started = time.monotonic()
+        self.active[label] += 1
         try:
             response = await client.request(method, path, **kwargs)
             self.statuses[label][str(response.status_code)] += 1
             self.bytes += len(response.content)
             return response
-        except httpx.HTTPError:
+        except httpx.HTTPError as error:
             self.statuses[label]['transport_error'] += 1
+            self.transport_errors[label][type(error).__name__] += 1
             return None
         finally:
+            self.active[label] -= 1
             self.latencies[label].append((time.monotonic()-started)*1000)
 
+    def sample_rss(self, phase, rss):
+        self.rss.append(rss)
+        self.rss_phases[phase].append(rss)
+
     def report(self):
+        startup_workload = self.rss_phases.get('startup', [])+self.rss_phases.get('workload', [])
         return {'requests': {label: {'latency_ms': distribution(values),
                                     'statuses': dict(self.statuses[label])}
                              for label, values in self.latencies.items()},
                 'body_bytes': self.bytes, 'audit_ms': distribution(self.audit),
                 'queue_ms': distribution(self.queue), 'commit_ms': distribution(self.commit),
                 'event_loop_lag_ms': distribution(self.lag), 'process_rss_mib': distribution(self.rss),
+                'process_rss_by_phase_mib': {phase: distribution(values)
+                                             for phase, values in self.rss_phases.items()},
+                'process_rss_startup_workload_peak_mib': (round(max(startup_workload), 3)
+                                                          if startup_workload else None),
                 'whole_host_idle_percent': distribution(self.host_idle),
-                'writer_queue_depth': distribution(self.queue_depth)}
+                'host_cpu_diagnostics': self.host_cpu_diagnostics,
+                'transport_errors': {label: dict(errors) for label, errors in self.transport_errors.items()},
+                'writer_queue_depth': distribution(self.queue_depth),
+                'writer_by_caller': {owner: {'operation_cpu_ms': distribution(values),
+                                             'queue_ms': distribution(self.writer_queue[owner]),
+                                             'commit_ms': distribution(self.writer_commit[owner])}
+                                     for owner, values in list(self.writer_operations.items())}}
 
 
-def seed(service, roster, history_hours, existing_reader=None):
+def seed(service, roster, history_hours, existing_reader=None, diagnostics=None):
+    diagnostics = diagnostics if diagnostics is not None else {}
+    diagnostics.update(operations=0, queue_ms_max=0, commit_ms_max=0)
+
+    def write(operation, phase, **position):
+        future = service.db.submit(operation)
+        try:
+            return future.result(10)
+        except BaseException as error:
+            diagnostics['failure'] = {'phase': phase, **position, 'error': type(error).__name__,
+                                      'queue_ms': getattr(future, 'queue_ms', None),
+                                      'commit_ms': getattr(future, 'commit_ms', None)}
+            raise
+        finally:
+            diagnostics['operations'] += 1
+            for field in ('queue_ms', 'commit_ms'):
+                diagnostics[field+'_max'] = max(diagnostics[field+'_max'], getattr(future, field, 0))
+
     """All identities/history/media are fictional, including pre-enrolled sessions."""
     fixture = ROOT/'tests/fixtures/page.jpg'
     for identity in (VIDEO, PDF):
@@ -112,7 +262,7 @@ def seed(service, roster, history_hours, existing_reader=None):
             db.execute("INSERT INTO items(id,post_id,filename,kind,sha256,bytes,pages,derive_status,sort) VALUES (?,?,?,?,?,?,?,'ready',0)",
                        (identity, identity, identity, kind, hashlib.sha256(identity.encode()).hexdigest(), CHUNK*2 if kind == 'video' else fixture.stat().st_size, 0 if kind == 'video' else 1))
         db.execute('INSERT INTO video_metadata VALUES (?,?)', (VIDEO, 12*3600))
-    service.db.submit(initial).result(10)
+    write(initial, 'sessions_and_catalog')
     if existing_reader is not None:
         # A synthetic already-enrolled reader for coexistence tests. Newly
         # enrolling accounts still use the real sanitizer/confirmation worker.
@@ -129,27 +279,31 @@ def seed(service, roster, history_hours, existing_reader=None):
                        "VALUES (?,?,?,?,?,?,'active',?,?,?,'{}')",
                        (identity, emails[existing_reader], binding, session, now, now+86400,
                         drive_id, digest, service.config.selfie_notice_version))
-        service.db.submit(existing).result(10)
+        write(existing, 'existing_reader')
     # One synthetic 12-hour timeline. Nine hours corresponds to 2,160 events per reader.
     count = int(history_hours*240)
-    for reader, email in enumerate(emails):
-        def history(db):
-            last_seq = db.execute('SELECT COALESCE(MAX(seq),0) FROM events').fetchone()[0]
-            for n in range(count):
-                event(db, 'video_progress', {'email': email, 'id': f'session{reader}'},
-                      item_id=VIDEO, post_id=VIDEO, detail={'ranges': [[n*15, n*15+15]]},
-                      timestamp=now-86400+n*15)
-            # Mark seeded history as already exported so fake-cloud export measures only new traffic.
-            db.execute("UPDATE events SET batch_id='synthetic-seed' WHERE seq>?", (last_seq,))
-        if count:
-            service.db.submit(history).result(10)
     if count:
-        # Health joins events to batches. A dangling seed batch would incorrectly
-        # label all historical fixtures as an overdue backup, despite new exports
-        # succeeding. This is synthetic prior-confirmation metadata, not a recovery test.
-        service.db.submit(lambda db: db.execute(
+        # Establish confirmed history before assigning events to it. Inserting
+        # this last creates an orphan row for every event and then clears the
+        # entire history in one bounded writer transaction. No workload is active
+        # yet; this is synthetic prior-confirmation metadata, not recovery proof.
+        write(lambda db: db.execute(
             'INSERT INTO batches(id,drive_id,sha256,bytes,count,created_at,confirmed_at,summary_confirmed) VALUES (?,?,?,?,?,?,?,1)',
-            ('synthetic-seed', 'synthetic-seed', '0'*64, 0, roster*count, now-86400, now-1))).result(10)
+            ('synthetic-seed', 'synthetic-seed', '0'*64, 0, roster*count, now-86400, now-1)), 'confirmed_history_batch')
+    for reader, email in enumerate(emails):
+        # Keep fixture transactions below the same admission deadline as live
+        # writes. Chunking changes setup only, never the history or measured load.
+        for start in range(0, count, SEED_BATCH_ROWS):
+            end = min(start+SEED_BATCH_ROWS, count)
+            def history(db):
+                last_seq = db.execute('SELECT COALESCE(MAX(seq),0) FROM events').fetchone()[0]
+                for n in range(start, end):
+                    event(db, 'video_progress', {'email': email, 'id': f'session{reader}'},
+                          item_id=VIDEO, post_id=VIDEO, detail={'ranges': [[n*15, n*15+15]]},
+                          timestamp=now-86400+n*15)
+                # Fake-cloud export measures only new traffic, not prior history.
+                db.execute("UPDATE events SET batch_id='synthetic-seed' WHERE seq>?", (last_seq,))
+            write(history, 'history', reader=reader, start=start, end=end)
     return tokens
 
 
@@ -167,12 +321,42 @@ async def run(args):
     store.put_file = delayed_put
     config = Config(data_dir=folder/'data', mode='demo', preview=True, selfie_enabled=args.scenario == 'enrollment')
     service = Service(config, store=store)
+    setup = {'status': 'running'}
     try:
-        tokens = await asyncio.to_thread(seed, service, roster, args.history_hours, args.users if args.with_reader else None)
-    except BaseException:
+        tokens = await asyncio.to_thread(seed, service, roster, args.history_hours,
+                                        args.users if args.with_reader else None, setup)
+        setup['status'] = 'completed'
+    except BaseException as error:
+        setup.update(status='failed', error=type(error).__name__)
         await asyncio.to_thread(service.db.close)
         raise
+    finally:
+        (folder/'setup.json').write_text(json.dumps(setup, indent=2)+'\n')
     metrics = Metrics()
+    recording = False
+    original_submit = service.db.submit
+    def measured_submit(operation):
+        try:
+            caller = asyncio.current_task()
+        except RuntimeError:
+            caller = None
+        owner = (caller.get_coro().__qualname__ if caller in service.tasks else 'request_or_other')
+        measure = recording
+        def measured_operation(db):
+            before = time.thread_time()
+            try:
+                return operation(db)
+            finally:
+                if measure:
+                    metrics.writer_operations[owner].append((time.thread_time()-before)*1000)
+        future = original_submit(measured_operation)
+        def completed(done):
+            if measure and hasattr(done, 'commit_ms'):
+                metrics.writer_queue[owner].append(done.queue_ms)
+                metrics.writer_commit[owner].append(done.commit_ms)
+        future.add_done_callback(completed)
+        return future
+    service.db.submit = measured_submit
     expected_progress = Counter()
     bad_video_bodies = 0
     range_digest = hashlib.sha256(bytes(range(256))*(CHUNK//256)).digest()
@@ -182,33 +366,42 @@ async def run(args):
         try:
             return await original_write(operation, timing)
         finally:
-            if 'audit_ms' in timing:
+            if recording and 'audit_ms' in timing:
                 metrics.audit.append(timing['audit_ms'])
                 metrics.queue.append(timing['queue_ms'])
                 metrics.commit.append(timing['commit_ms'])
     service.write = measured_write
+    original_start = service.start
+    lifecycle_task = None
+    async def tracked_start():
+        nonlocal lifecycle_task
+        lifecycle_task = asyncio.current_task()
+        await original_start()
+    service.start = tracked_start
     app = create_app(config, service=service)
     sock = socket.socket()
     sock.bind(('127.0.0.1', 0))
     port = sock.getsockname()[1]
     server = uvicorn.Server(uvicorn.Config(app, log_level='error', access_log=False))
-    task = asyncio.create_task(server.serve(sockets=[sock]))
-    sampler = None
+    task = sampler = None
     started = time.monotonic()
     aborted = None
+    process = psutil.Process()
+    rss_after_setup = process.memory_info().rss/1024**2
+    metrics.sample_rss('startup', rss_after_setup)
+    psutil.cpu_percent()
+    stop = asyncio.Event()
+    startup = None
+    guard_phase = 'startup'
+    failure = None
+    async def serve():
+        try:
+            await server.serve(sockets=[sock])
+        except SystemExit as error:
+            # Uvicorn's startup refusal must not terminate the event loop before
+            # the harness can preserve evidence and close its owned resources.
+            raise RuntimeError(f'Isolated server exited during startup ({error.code})') from error
     try:
-        for _ in range(200):
-            if server.started:
-                break
-            if task.done():
-                await task
-                raise RuntimeError('Isolated server stopped during startup')
-            await asyncio.sleep(.05)
-        if not server.started:
-            raise RuntimeError('Isolated server startup timed out')
-        process = psutil.Process()
-        psutil.cpu_percent()
-        stop = asyncio.Event()
         async with httpx.AsyncClient(trust_env=False, timeout=2) as guard:
             try:
                 live = await guard.get('http://127.0.0.1:8790/health')
@@ -219,15 +412,38 @@ async def run(args):
             nonlocal aborted
             next_health = time.monotonic()+5
             busy_samples = 0
+            previous_processes = None
             while not stop.is_set():
                 before = time.monotonic()
                 await asyncio.sleep(.5)
                 metrics.lag.append(max(0, time.monotonic()-before-.5)*1000)
                 rss = process.memory_info().rss/1024**2
-                metrics.rss.append(rss)
+                metrics.sample_rss(guard_phase, rss)
                 idle = 100-psutil.cpu_percent()
                 metrics.host_idle.append(idle)
                 busy_samples = busy_samples+1 if idle < 30 else 0
+                if idle < 30:
+                    observed_at = time.monotonic()
+                    try:
+                        current_processes = process_cpu_snapshot()
+                        if previous_processes is not None:
+                            previous_at, previous_snapshot = previous_processes
+                            metrics.host_cpu_diagnostics.append({
+                                'elapsed_seconds': round(observed_at-started, 3),
+                                'phase': guard_phase,
+                                'host_cpu_percent': round(100-idle, 2),
+                                'interval_seconds': round(observed_at-previous_at, 3),
+                                'active_requests': {k: v for k, v in metrics.active.items() if v},
+                                'processes': process_cpu_changes(previous_snapshot, current_processes, observed_at-previous_at),
+                                'snapshot_ms': round((time.monotonic()-observed_at)*1000, 3),
+                            })
+                        previous_processes = observed_at, current_processes
+                    except psutil.Error as error:
+                        metrics.host_cpu_diagnostics.append({'unavailable': type(error).__name__})
+                        previous_processes = None
+                    metrics.host_cpu_diagnostics[:] = metrics.host_cpu_diagnostics[-10:]
+                else:
+                    previous_processes = None
                 metrics.queue_depth.append(service.db.queue.qsize())
                 if rss > 1024 or psutil.virtual_memory().available < 1024**3:
                     aborted = 'memory safety threshold'
@@ -235,7 +451,16 @@ async def run(args):
                 if busy_samples >= 10:
                     aborted = 'whole-host CPU reserve below 30% for five seconds'
                     stop.set()
-                if guard_live and time.monotonic() >= next_health:
+                if time.monotonic() >= next_health:
+                    if server.started:
+                        async with httpx.AsyncClient(trust_env=False, timeout=2) as isolated:
+                            probe = await metrics.request(isolated, 'health', 'GET', f'http://127.0.0.1:{port}/health')
+                            if probe is None or probe.status_code != 200 or health_payload(probe) != HEALTH:
+                                aborted = 'isolated health check failed; rehearsal stopped'
+                                stop.set()
+                    next_health = time.monotonic()+5
+                    if not guard_live:
+                        continue
                     async with httpx.AsyncClient(trust_env=False, timeout=2) as guard:
                         try:
                             live = await guard.get('http://127.0.0.1:8790/health')
@@ -247,11 +472,35 @@ async def run(args):
                     if not healthy:
                         aborted = 'live local health check failed; rehearsal stopped'
                         stop.set()
-                    next_health = time.monotonic()+5
-        sampler = asyncio.create_task(sample())
+        startup_started = started = time.monotonic()
+        startup_cpu, startup_main_cpu = time.process_time(), time.thread_time()
+        if rss_after_setup > 1024 or psutil.virtual_memory().available < 1024**3:
+            aborted = 'memory safety threshold'
+        if not aborted:
+            task = asyncio.create_task(serve())
+            sampler = asyncio.create_task(sample())
+        # The same resource and live-health guards cover normal service startup,
+        # including native checkpoint priming. No benchmark-only warm request.
+        while time.monotonic()-startup_started < 10 and not server.started and not aborted:
+            if task.done():
+                await task
+                raise RuntimeError('Isolated server stopped during startup')
+            await asyncio.sleep(.05)
+        metrics.sample_rss('startup', process.memory_info().rss/1024**2)
+        startup = {'elapsed_seconds': time.monotonic()-startup_started,
+                   'ready': server.started,
+                   'process_cpu_seconds': time.process_time()-startup_cpu,
+                   'main_thread_cpu_seconds': time.thread_time()-startup_main_cpu,
+                   'peak_rss_mib': max(metrics.rss)}
+        if not server.started or aborted or startup['elapsed_seconds'] > 10:
+            raise RuntimeError(aborted or 'Isolated server startup timed out')
         async with httpx.AsyncClient(base_url=f'http://127.0.0.1:{port}', timeout=15,
-                                     trust_env=False, limits=httpx.Limits(max_connections=args.users+5)) as client:
+                                     trust_env=False, limits=httpx.Limits(max_connections=args.users+5,
+                                                                         keepalive_expiry=4)) as client:
             started = time.monotonic()
+            cpu_started, main_cpu_started = time.process_time(), time.thread_time()
+            recording = True
+            guard_phase = 'workload'
             if args.scenario == 'signin':
                 await asyncio.gather(*(metrics.request(client, 'signin', 'POST', '/api/auth/demo',
                     json={'email': f'reader{i}@example.invalid', 'name': f'Reader {i}'}) for i in range(args.users)))
@@ -274,6 +523,7 @@ async def run(args):
                             headers={'Range': 'bytes=0-65535'})
                         if response is not None and response.status_code == 206 and response.content != bytes(range(256))*256:
                             bad_video_bodies += 1
+                        del response
                         now = time.monotonic()-began
                         if now-elapsed >= 15:
                             ranges = [[elapsed, now]]
@@ -303,6 +553,10 @@ async def run(args):
                 viewer = asyncio.create_task(existing_reader()) if args.with_reader else None
                 try:
                     await asyncio.gather(*(enroll(i) for i in range(args.users)))
+                    # Keep the already-enrolled reader active for the declared
+                    # observation window even when all enrollments finish early.
+                    while viewer and time.monotonic()-started < args.seconds and not stop.is_set():
+                        await asyncio.sleep(.1)
                 finally:
                     viewer_stop.set()
                     if viewer:
@@ -334,6 +588,9 @@ async def run(args):
                                 hashlib.sha256(body.content).digest() != range_digest or
                                 body.headers.get('content-range') != f'bytes 0-{CHUNK-1}/{CHUNK*2}'):
                                 bad_video_bodies += 1
+                            # Idle synthetic clients must not retain the last 4 MiB
+                            # body in the same process whose serving RSS we sample.
+                            del body
                             next_range += CHUNK*8/(args.video_mbps*1_000_000)
                         if now >= next_progress and now >= 15:
                             end = min(now, elapsed+30)
@@ -355,20 +612,35 @@ async def run(args):
                             reader.next_dashboard = now+30
                         await asyncio.sleep(.1)
                 await asyncio.gather(*(reader(i) for i in range(args.users)))
-            health = await client.get('/health')
-            health_body = health.json()
+            health = await metrics.request(client, 'health', 'GET', '/health', timeout=2)
+            health_body = health_payload(health)
+            if health is None or health.status_code != 200 or health_body != HEALTH:
+                aborted = aborted or 'final isolated health check failed; rehearsal stopped'
         elapsed = time.monotonic()-started
+        cpu_seconds, main_cpu_seconds = time.process_time()-cpu_started, time.thread_time()-main_cpu_started
+        recording = False
+        guard_phase = 'verification'
+        if args.scenario != 'mixed':
+            verification = {'raw_python_dashboard_matches': None, 'elapsed_seconds': 0}
+        elif aborted:
+            verification = {'raw_python_dashboard_matches': False, 'elapsed_seconds': 0,
+                            'skipped': 'workload aborted'}
+        else:
+            verification = await verify_dashboard(service, port, tokens[0], stop)
         stop.set()
+        await sampler  # Include any probe already in flight before deciding success.
         recorded_progress = await asyncio.to_thread(service.db.read, lambda db: Counter(
             progress_key(row['email'], json.loads(row['payload'])['detail']['ranges'])
             for row in db.execute("SELECT email,payload FROM events WHERE type='video_progress' AND seq>?",
                                   (roster*int(args.history_hours*240),))))
         integrity = {'video_body_mismatches': bad_video_bodies,
+                     'raw_python_dashboard_matches': verification['raw_python_dashboard_matches'],
                      'progress_matches_acknowledged_requests': recorded_progress == expected_progress,
                      'acknowledged_progress_records': sum(expected_progress.values()),
                      'persisted_progress_records': sum(recorded_progress.values())}
         no_errors = all(status in {'200', '202', '206', 'confirmed'}
                         for statuses in metrics.statuses.values() for status in statuses)
+        coverage = workload_coverage(args, metrics.statuses, expected_progress)
         if args.scenario == 'signin':
             complete = metrics.statuses['signin']['200'] == args.users
         elif args.scenario == 'enrollment':
@@ -379,16 +651,42 @@ async def run(args):
             complete = (metrics.statuses['open_view']['200'] == args.users*2 and
                         metrics.statuses['player']['200'] == args.users and
                         metrics.statuses['video_range']['206'] >= args.users)
-        functional_checks = (not aborted and no_errors and complete and not bad_video_bodies and
+        functional_checks = (not aborted and no_errors and complete and coverage['passed'] and not bad_video_bodies and
                              integrity['progress_matches_acknowledged_requests'] and
-                             health_body == {'process': 'up', 'permissions': 'ready', 'audit': 'ready',
-                                             'backup': 'current', 'storage': 'ready'})
+                             integrity['raw_python_dashboard_matches'] is not False and
+                             health_body == HEALTH)
+        revision = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True,
+                                  capture_output=True, check=False).stdout.strip() or None
+        backend = progress_backend.selected()
+        native_hash = None
+        if backend == 'rust':
+            # Maturin's package __file__ is a Python shim, not the reducer binary.
+            extension = sys.modules[progress_backend.native().reduce.__module__]
+            binary = Path(extension.__file__)
+            if not any(str(binary).endswith(suffix) for suffix in EXTENSION_SUFFIXES):
+                raise RuntimeError('Native reducer provenance did not resolve to an extension binary')
+            native_hash = hashlib.sha256(binary.read_bytes()).hexdigest()
+        runtime = {'backend': backend, 'revision': revision, 'python': platform.python_version(),
+                   'platform': platform.platform(), 'machine': platform.machine(),
+                   'logical_cpus': psutil.cpu_count(),
+                   'native_sha256': native_hash}
         report = {'scenario': vars(args), 'elapsed_seconds': round(elapsed, 3),
+                  'runtime': runtime, 'startup': startup, 'verification': verification,
+                  'comparable_process_cpu_seconds': startup['process_cpu_seconds']+cpu_seconds,
+                  'first_dashboard_ms': metrics.latencies['dashboard'][0] if metrics.latencies['dashboard'] else None,
+                  'progress_cache': service.progress_history.diagnostics() if service.progress_history else None,
+                  'process_cpu_seconds': cpu_seconds, 'main_thread_cpu_seconds': main_cpu_seconds,
+                  'process_rss_after_setup_mib': round(rss_after_setup, 3),
+                  'other_threads_cpu_seconds': max(0, cpu_seconds-main_cpu_seconds),
                   'roster': roster, 'seeded_history_events': roster*int(args.history_hours*240),
                   'aborted': aborted, 'health': health_body, 'integrity': integrity,
+                  'workload_coverage': coverage,
                   'functional_checks_passed': functional_checks,
                   'live_health_guard_enabled': guard_live, **metrics.report(),
                   'limitations': ['Loopback HTTP; client and server share one process and event loop.',
+                                  'Workload CPU and startup CPU are reported separately; comparable CPU adds both. Fixture seeding, post-workload correctness verification, shutdown and converter subprocesses are excluded. Sampled RSS covers startup, workload and verification and includes prior fixture allocation. process_rss_by_phase_mib separates those phases; process_rss_startup_workload_peak_mib excludes only the post-workload raw Python verification replay, which every resource guard still covers.',
+                                  'Host CPU diagnostics retain the last ten busy intervals and five busiest visible processes per interval; short-lived/inaccessible processes may be missing. One-core percentages are not whole-host percentages.',
+                                  'Writer operation CPU excludes SQLite commit; background caller labels identify task ownership, not exclusive job CPU.',
                                   'Synthetic sessions; selfies disabled for mixed workload, real sanitizer/face check with a public-domain test portrait in enrollment.',
                                   'Fake cloud with configured artificial delay; no actual Google authentication or quotas measured.',
                                   'Opaque byte fixture, not a playable video; no browser buffering measurement.',
@@ -396,16 +694,35 @@ async def run(args):
         (folder/'report.json').write_text(json.dumps(report, indent=2)+'\n')
         print(json.dumps({'report': str(folder/'report.json'), 'aborted': aborted,
                           'functional_checks_passed': functional_checks,
+                          'workload_coverage': coverage,
                           'requests': report['requests'], 'audit_ms': report['audit_ms'],
                           'event_loop_lag_ms': report['event_loop_lag_ms']}, indent=2))
         return functional_checks
+    except BaseException as error:
+        failure = error
+        if guard_phase == 'startup':
+            (folder/'startup-failure.json').write_text(json.dumps({
+                'functional_checks_passed': False, 'error': type(error).__name__,
+                'aborted': aborted, 'startup': startup,
+                'resources': metrics.report()}, indent=2)+'\n')
+        raise
     finally:
         if sampler:
             sampler.cancel()
             await asyncio.gather(sampler, return_exceptions=True)
         server.should_exit = True
-        await task
-        sock.close()
+        try:
+            if not server.started and lifecycle_task is not None and not lifecycle_task.done():
+                lifecycle_task.cancel()
+                await asyncio.gather(lifecycle_task, return_exceptions=True)
+            if task is not None:
+                result, = await asyncio.gather(task, return_exceptions=True)
+                if failure is None and isinstance(result, BaseException):
+                    raise result
+            else:
+                await service.close()
+        finally:
+            sock.close()
 
 
 def main():

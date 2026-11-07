@@ -327,7 +327,7 @@ def test_admin_progress_reports_quiz_standing_from_the_single_history_scan(clien
         db.set_trace_callback(statements.append)
         return dashboard(db, service.permissions.quizzes)
     result = service.db.read(inspect)
-    assert len([s for s in statements if 'FROM events' in s]) == 1
+    assert len([s for s in statements if 'FROM events e ' in s or 'FROM progress_events e ' in s]) == 1
     assert {p['email']: p['quizzes_passed'] for p in result['people']}[READER] == 1
 
 
@@ -587,7 +587,7 @@ def test_locks_and_standing_never_replay_a_long_attempt_history(client, service,
         quiz.require_unlocked(db, service.permissions.quizzes, 'reader', READER, 'SOP Chapter 2: Service Excellence')
         return quiz.records(db, READER)
     standing = service.db.read(inspect)[(READER, 1)]
-    assert not [s for s in statements if 'FROM events' in s]
+    assert not [s for s in statements if 'FROM events' in s or 'FROM progress_events' in s]
     assert (standing['attempts'], standing['best_score'], standing['passed_at']) == (300, 4, 1007)
     assert view(client, reader, catalog['SOP Chapter 2: Service Excellence'][1]).status_code == 200
 

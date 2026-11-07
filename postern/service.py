@@ -1,7 +1,9 @@
 from __future__ import annotations
 import asyncio
 import collections
+import concurrent.futures
 import contextlib
+import contextvars
 import hashlib
 import ipaddress
 import json
@@ -20,9 +22,10 @@ from .cache import SessionInvalidated
 from .stamp import stamp
 from .derive import Deriver, DeriveError
 from .storage import FakeStore, GoogleStore
-from .progress import annotate, dashboard, finished_items, unfinished
+from .progress import annotate, dashboard, dashboard_catalog, finished_items, unfinished
+from .progress_cache import HistoryCache
 from .categories import category_key, category_name
-from . import branding, exam, honors, quiz, selfie, training, progress_backend, health_trace
+from . import branding, exam, honors, quiz, selfie, training, progress_backend, progress_store, health_trace
 
 
 class Service:
@@ -64,6 +67,20 @@ class Service:
         self.export_error = None
         self.limits = {}
         self.health_recorder = health_trace.Recorder.configured(config.data_dir, progress_backend.selected())
+        # Concurrent SQLite/PyO3 replays amplify CPU and wall time. Keep the
+        # opt-in backend's read snapshots on one worker; Python rollback keeps
+        # its existing scheduling. A cancelled await cannot free a running slot.
+        self.progress_executor = (concurrent.futures.ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix='postern-progress')
+            if progress_backend.selected() == 'rust' else None)
+        self.progress_history = HistoryCache(self.db) if self.progress_executor is not None else None
+
+    async def read_progress(self, operation):
+        if self.progress_executor is None:
+            return await asyncio.to_thread(self.db.read, operation)
+        context = contextvars.copy_context()
+        return await asyncio.get_running_loop().run_in_executor(
+            self.progress_executor, context.run, self.db.read, operation)
 
     async def write(self, operation, timings=None):
         started=time.monotonic();future=self.db.submit(operation)
@@ -82,6 +99,17 @@ class Service:
         await self.write(lambda db: set_meta(db,'recovery_mode',self.config.recovery_mode or meta(db,'recovery_mode',False)))
         await self.backfill_quiz_seen()
         await self.refresh()
+        if self.progress_history is not None:
+            def prime(db):
+                db.execute('BEGIN')
+                # Legacy or unfinished history keeps its existing request-time
+                # full replay and errors; do not make it a new startup failure.
+                if progress_store.source(db) != 'progress_events':
+                    return
+                items = {item['id']: item for item in dashboard_catalog(db)}
+                if progress_backend.metadata(items) is not None:
+                    self.progress_history.history(db, items)
+            await self.read_progress(prime)
         self.tasks = [asyncio.create_task(self.refresh_loop()), asyncio.create_task(self.background_loop()), asyncio.create_task(self.sweep_loop())]
         if self.config.selfie_enabled:
             self.tasks.append(asyncio.create_task(selfie.loop(self)))
@@ -106,6 +134,9 @@ class Service:
         # Converter subprocesses are bounded; finish them before closing the writer.
         if self.derive_tasks:
             await asyncio.gather(*list(self.derive_tasks.values()),return_exceptions=True)
+        if self.progress_executor is not None:
+            await asyncio.to_thread(self.progress_executor.shutdown, wait=True, cancel_futures=True)
+            self.progress_history.clear()
         await asyncio.to_thread(self.cache.close)
         await asyncio.to_thread(self.db.close)
         if self.health_recorder is not None:
@@ -244,7 +275,7 @@ class Service:
             result['certificate'] = honors.certificate(db,context['email'], prefix=self.config.branding.certificate_prefix)
             return result
         try:
-            result = await asyncio.to_thread(self.db.read,snapshot)
+            result = await self.read_progress(snapshot)
         except (sqlite3.Error, OSError):
             raise Refusal(503, 'catalog_unavailable', 'Your training could not be loaded. Please try again shortly. / โหลดเนื้อหาการเรียนไม่สำเร็จ กรุณาลองใหม่อีกครั้งในอีกสักครู่')
         def disclose(db,ctx):
@@ -636,8 +667,8 @@ class Service:
             db.execute('BEGIN')
             ready(db, None)
             return dashboard(db, self.permissions.quizzes, self.final_exam, default_group=self.config.branding.default_group,
-                             certificate_prefix=self.config.branding.certificate_prefix)
-        result = await asyncio.to_thread(self.db.read, query)
+                             certificate_prefix=self.config.branding.certificate_prefix, history_cache=self.progress_history)
+        result = await self.read_progress(query)
         # A slow scan must not disclose data after permissions were revoked.
         await self.execute(request, ready, admin=True, event_name='training_progress_viewed')
         return result
@@ -671,7 +702,7 @@ class Service:
             db.execute('BEGIN')
             return finished_items(db, context['email'])
         try:
-            return await asyncio.to_thread(self.db.read, snapshot)
+            return await self.read_progress(snapshot)
         except (sqlite3.Error, OSError):
             raise Refusal(503, 'catalog_unavailable', 'Your reading progress could not be checked. Please try again shortly. / ตรวจความคืบหน้าการเรียนไม่สำเร็จ กรุณาลองใหม่อีกครั้งในอีกสักครู่')
 

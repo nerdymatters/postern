@@ -9,7 +9,7 @@ from .db import meta, rows
 from .video import intervals
 from .categories import category_name
 from .quiz import EXEMPT, chapter_number, finished, published, records, summary
-from . import exam, honors, progress_backend
+from . import exam, honors, progress_backend, progress_store
 
 
 def history(db, items, email=None, coverage=False):
@@ -18,7 +18,7 @@ def history(db, items, email=None, coverage=False):
     coverage=True reads only page and playback evidence for the given items, which is all
     that completion needs, through the (email, type, item_id) index.
     """
-    sql = "SELECT e.email,e.item_id,e.type,e.ts,e.payload FROM events e "
+    sql = f"SELECT e.email,e.item_id,e.type,e.ts,e.payload FROM {progress_store.source(db)} e "
     # Recovery can annotate an individual reader before the roster is restored.
     # Only the all-staff dashboard limits its scan to current members.
     if email is None:
@@ -182,17 +182,21 @@ def required_progress(items, quizzes, final):
             'total_steps': len(fractions)}
 
 
-def dashboard(db, bank=None, final_exam=None, *, default_group='Staff', certificate_prefix='PT'):
+def dashboard_catalog(db):
+    return rows(db, "SELECT i.id,i.post_id,i.filename,i.kind,i.pages,v.duration_seconds,"
+                      "p.title,p.category FROM items i JOIN posts p ON p.id=i.post_id "
+                      "LEFT JOIN video_metadata v ON v.item_id=i.id WHERE p.status='published' "
+                      "ORDER BY COALESCE(p.published_at,p.created_at),p.id,i.sort,i.id")
+
+
+def dashboard(db, bank=None, final_exam=None, *, default_group='Staff', certificate_prefix='PT', history_cache=None):
     """Current published material and current members; no hidden-post denominator."""
     bank = bank or {}
     incomplete = meta(db, 'history_incomplete', False)
     chapters = published(db)
-    catalog = rows(db, "SELECT i.id,i.post_id,i.filename,i.kind,i.pages,v.duration_seconds,"
-                      "p.title,p.category FROM items i JOIN posts p ON p.id=i.post_id "
-                      "LEFT JOIN video_metadata v ON v.item_id=i.id WHERE p.status='published' "
-                      "ORDER BY COALESCE(p.published_at,p.created_at),p.id,i.sort,i.id")
+    catalog = dashboard_catalog(db)
     items = {item['id']: item for item in catalog}
-    recorded = history(db, items)
+    recorded = history(db, items) if history_cache is None else history_cache.history(db, items)
     attempts = records(db)
     reading = chapter_items(db)
     mine = {}

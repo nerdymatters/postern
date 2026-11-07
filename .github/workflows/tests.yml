@@ -5,11 +5,298 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      capacity:
+        description: Run isolated paired Python/Rust capacity measurements
+        type: boolean
+        default: false
+      sustained_fault_load:
+        description: Exercise sustained disclosure, media, export and rollback faults in isolation
+        type: boolean
+        default: false
+      progress_profile:
+        description: Profile synthetic replay stages on one isolated Mac
+        type: boolean
+        default: false
+      progress_request_profile:
+        description: Profile request waiting under isolated mixed traffic
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
+  progress-profile:
+    if: github.event_name == 'workflow_dispatch' && (inputs.progress_profile || inputs.progress_request_profile)
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Install measured runtime
+        env:
+          CARGO_BUILD_JOBS: '2'
+        run: |
+          python -m pip install -r requirements-pilot.lock
+          python -m pip install --no-deps -e .
+          rustup toolchain install 1.98.1 --profile minimal
+          python -m pip install --no-deps ./native/progress
+          mkdir -p .context/progress-profile
+          python -m pip freeze > .context/progress-profile/dependencies.txt
+          git rev-parse HEAD > .context/progress-profile/revision.txt
+      - name: Install request fixture tools
+        if: inputs.progress_request_profile
+        run: brew install poppler ffmpeg
+      - name: Prepare the disposable profiling host
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_ACTIONS:-}" = true
+          test "${RUNNER_ENVIRONMENT:-}" = github-hosted
+          test "$(uname -s)" = Darwin
+          { sudo -n /usr/bin/mdutil -a -i off; } > .context/progress-profile/indexing.stdout 2> .context/progress-profile/indexing.stderr
+          /usr/bin/mdutil -a -s >> .context/progress-profile/indexing.stdout
+          python - <<'PY'
+          import json, time
+          from pathlib import Path
+          import psutil
+          started = time.monotonic()
+          quiet_since = None
+          samples = []
+          ready = False
+          while time.monotonic() - started < 300:
+              cpu = psutil.cpu_percent(interval=1)
+              now = time.monotonic()
+              quiet_since = (quiet_since if quiet_since is not None else now) if cpu <= 70 else None
+              samples.append({'elapsed_seconds': now-started, 'host_cpu_percent': cpu})
+              ready = quiet_since is not None and now-quiet_since >= 60
+              Path('.context/progress-profile/host-readiness.json').write_text(json.dumps({
+                  'ready': ready, 'samples': samples}, indent=2)+'\n')
+              if ready:
+                  break
+          if not ready:
+              raise SystemExit('Disposable host did not reach the required quiet period')
+          PY
+      - name: Profile three alternating pairs with worker guards
+        if: inputs.progress_profile
+        run: python -m scripts.progress_profile --output .context/progress-profile/results
+      - name: Profile request waiting and replay under mixed traffic
+        if: inputs.progress_request_profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=0
+          for backend in python rust; do
+            POSTERN_PROGRESS_BACKEND="$backend" python -m scripts.progress_request_profile \
+              --output ".context/progress-profile/request-$backend" || status=1
+          done
+          exit "$status"
+      - name: Preserve diagnostic receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: progress-profile
+          path: |
+            .context/progress-profile/**/*.json
+            .context/progress-profile/*.txt
+            .context/progress-profile/*.stdout
+            .context/progress-profile/*.stderr
+            .context/capacity/*/setup.json
+            .context/capacity/*/startup-failure.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+  fault-load:
+    if: github.event_name == 'workflow_dispatch' && inputs.sustained_fault_load
+    runs-on: macos-15
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        backend: [python, rust]
+    env:
+      POSTERN_PROGRESS_BACKEND: ${{ matrix.backend }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Install measured runtime
+        env:
+          CARGO_BUILD_JOBS: '2'
+        run: |
+          python -m pip install -r requirements-pilot.lock
+          python -m pip install --no-deps -e .
+          rustup toolchain install 1.98.1 --profile minimal
+          python -m pip install --no-deps ./native/progress
+          mkdir -p .context/fault-load
+          python -m pip freeze > .context/fault-load/dependencies.txt
+          git rev-parse HEAD > .context/fault-load/revision.txt
+      - name: Install fixture tools
+        run: brew install poppler ffmpeg
+      - name: Prepare the disposable profiling host
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_ACTIONS:-}" = true
+          test "${RUNNER_ENVIRONMENT:-}" = github-hosted
+          test "$(uname -s)" = Darwin
+          { sudo -n /usr/bin/mdutil -a -i off; } > .context/fault-load/indexing.stdout 2> .context/fault-load/indexing.stderr
+          /usr/bin/mdutil -a -s >> .context/fault-load/indexing.stdout
+          python - <<'PY'
+          import json, time
+          from pathlib import Path
+          import psutil
+          started = time.monotonic()
+          quiet_since = None
+          samples = []
+          ready = False
+          while time.monotonic() - started < 300:
+              cpu = psutil.cpu_percent(interval=1)
+              now = time.monotonic()
+              quiet_since = (quiet_since if quiet_since is not None else now) if cpu <= 70 else None
+              samples.append({'elapsed_seconds': now-started, 'host_cpu_percent': cpu})
+              ready = quiet_since is not None and now-quiet_since >= 60
+              Path('.context/fault-load/host-readiness.json').write_text(json.dumps({
+                  'ready': ready, 'samples': samples}, indent=2)+'\n')
+              if ready:
+                  break
+          if not ready:
+              raise SystemExit('Disposable host did not reach the required quiet period')
+          PY
+      - name: Exercise sustained synthetic faults and current-database rollback
+        run: python -m scripts.progress_fault_load --representative --output .context/fault-load/result
+      - name: Preserve fault receipts including failures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fault-load-${{ matrix.backend }}
+          path: |
+            .context/fault-load/result/report.json
+            .context/fault-load/*.json
+            .context/fault-load/*.txt
+            .context/fault-load/*.stdout
+            .context/fault-load/*.stderr
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+  capacity:
+    if: github.event_name == 'workflow_dispatch' && inputs.capacity
+    runs-on: macos-15
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        include:
+          - label: signin-50
+            args: --scenario signin --users 50 --seconds 120
+          - label: enrollment-10
+            args: --scenario enrollment --users 10 --seconds 120 --cloud-delay 1 --with-reader
+          - label: enrollment-25
+            args: --scenario enrollment --users 25 --seconds 120 --cloud-delay 1 --with-reader
+          - label: mixed-25
+            args: --scenario mixed --users 25 --seconds 120 --history-hours 9
+          - label: mixed-50
+            args: --scenario mixed --users 50 --seconds 120 --history-hours 9
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Install measured runtime
+        env:
+          CARGO_BUILD_JOBS: '2'
+        run: |
+          brew install poppler ffmpeg
+          python -m pip install -r requirements-pilot.lock
+          python -m pip install --no-deps -e .
+          rustup toolchain install 1.98.1 --profile minimal
+          python -m pip install --no-deps ./native/progress
+          mkdir -p .context/capacity
+          python -m pip freeze > .context/capacity/dependencies.txt
+          git rev-parse HEAD > .context/capacity/revision.txt
+      - name: Prepare the disposable measurement host
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This setting belongs only to this disposable benchmark VM.
+          test "${GITHUB_ACTIONS:-}" = true
+          test "${RUNNER_ENVIRONMENT:-}" = github-hosted
+          test "$(uname -s)" = Darwin
+          { sudo -n /usr/bin/mdutil -a -i off; } > .context/capacity/indexing.stdout 2> .context/capacity/indexing.stderr
+          /usr/bin/mdutil -a -s >> .context/capacity/indexing.stdout
+          python - <<'PY'
+          import json, time
+          from pathlib import Path
+          import psutil
+          samples = []
+          started = time.monotonic()
+          quiet_since = None
+          ready = False
+          while time.monotonic() - started < 300:
+              cpu = psutil.cpu_percent(interval=1)
+              now = time.monotonic()
+              quiet_since = (quiet_since if quiet_since is not None else now) if cpu <= 70 else None
+              samples.append({'elapsed_seconds': round(now-started, 3), 'host_cpu_percent': cpu})
+              ready = quiet_since is not None and now-quiet_since >= 60
+              Path('.context/capacity/host-readiness.json').write_text(json.dumps({
+                  'ready': ready, 'quiet_seconds_required': 60, 'deadline_seconds': 300,
+                  'max_host_cpu_percent': 70, 'samples': samples}, indent=2)+'\n')
+              if ready:
+                  break
+          if not ready:
+              raise SystemExit('Disposable host did not reach the required quiet period; no measurements started')
+          PY
+      - name: Measure three alternating pairs on this runner
+        env:
+          SCENARIO_ARGS: ${{ matrix.args }}
+        shell: bash
+        run: |
+          read -r -a args <<< "$SCENARIO_ARGS"
+          status=0
+          index=0
+          for backend in python rust rust python python rust; do
+            index=$((index + 1))
+            code=0
+            POSTERN_PROGRESS_BACKEND="$backend" python -m scripts.capacity "${args[@]}" \
+              > ".context/capacity/$index-$backend.stdout" \
+              2> ".context/capacity/$index-$backend.stderr" || code=$?
+            echo "$code" > ".context/capacity/$index-$backend.exit"
+            if [ "$code" -ne 0 ]; then status=1; fi
+          done
+          exit "$status"
+      - name: Preserve every measurement, including failures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: capacity-${{ matrix.label }}
+          # Reports and execution receipts only; synthetic media/databases stay on the runner.
+          path: |
+            .context/capacity/*/report.json
+            .context/capacity/*/setup.json
+            .context/capacity/*/startup-failure.json
+            .context/capacity/*.stdout
+            .context/capacity/*.stderr
+            .context/capacity/*.exit
+            .context/capacity/*.txt
+            .context/capacity/host-readiness.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
   pytest:
     # macOS, because the converter runs under sandbox-exec and the audit writer uses fullfsync.
     name: ${{ matrix.progress-backend == 'python' && 'pytest' || 'pytest-rust' }}
