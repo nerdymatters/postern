@@ -166,6 +166,9 @@ class Metrics:
         self.commit = []
         self.lag = []
         self.rss = []
+        # The same observations, labelled by the harness phase that was active.
+        # Post-workload verification runs a raw Python replay in this process.
+        self.rss_phases = defaultdict(list)
         self.host_idle = []
         self.queue_depth = []
         self.writer_operations = defaultdict(list)
@@ -191,13 +194,22 @@ class Metrics:
             self.active[label] -= 1
             self.latencies[label].append((time.monotonic()-started)*1000)
 
+    def sample_rss(self, phase, rss):
+        self.rss.append(rss)
+        self.rss_phases[phase].append(rss)
+
     def report(self):
+        startup_workload = self.rss_phases.get('startup', [])+self.rss_phases.get('workload', [])
         return {'requests': {label: {'latency_ms': distribution(values),
                                     'statuses': dict(self.statuses[label])}
                              for label, values in self.latencies.items()},
                 'body_bytes': self.bytes, 'audit_ms': distribution(self.audit),
                 'queue_ms': distribution(self.queue), 'commit_ms': distribution(self.commit),
                 'event_loop_lag_ms': distribution(self.lag), 'process_rss_mib': distribution(self.rss),
+                'process_rss_by_phase_mib': {phase: distribution(values)
+                                             for phase, values in self.rss_phases.items()},
+                'process_rss_startup_workload_peak_mib': (round(max(startup_workload), 3)
+                                                          if startup_workload else None),
                 'whole_host_idle_percent': distribution(self.host_idle),
                 'host_cpu_diagnostics': self.host_cpu_diagnostics,
                 'transport_errors': {label: dict(errors) for label, errors in self.transport_errors.items()},
@@ -376,7 +388,7 @@ async def run(args):
     aborted = None
     process = psutil.Process()
     rss_after_setup = process.memory_info().rss/1024**2
-    metrics.rss.append(rss_after_setup)
+    metrics.sample_rss('startup', rss_after_setup)
     psutil.cpu_percent()
     stop = asyncio.Event()
     startup = None
@@ -406,7 +418,7 @@ async def run(args):
                 await asyncio.sleep(.5)
                 metrics.lag.append(max(0, time.monotonic()-before-.5)*1000)
                 rss = process.memory_info().rss/1024**2
-                metrics.rss.append(rss)
+                metrics.sample_rss(guard_phase, rss)
                 idle = 100-psutil.cpu_percent()
                 metrics.host_idle.append(idle)
                 busy_samples = busy_samples+1 if idle < 30 else 0
@@ -474,7 +486,7 @@ async def run(args):
                 await task
                 raise RuntimeError('Isolated server stopped during startup')
             await asyncio.sleep(.05)
-        metrics.rss.append(process.memory_info().rss/1024**2)
+        metrics.sample_rss('startup', process.memory_info().rss/1024**2)
         startup = {'elapsed_seconds': time.monotonic()-startup_started,
                    'ready': server.started,
                    'process_cpu_seconds': time.process_time()-startup_cpu,
@@ -672,7 +684,7 @@ async def run(args):
                   'functional_checks_passed': functional_checks,
                   'live_health_guard_enabled': guard_live, **metrics.report(),
                   'limitations': ['Loopback HTTP; client and server share one process and event loop.',
-                                  'Workload CPU and startup CPU are reported separately; comparable CPU adds both. Fixture seeding, post-workload correctness verification, shutdown and converter subprocesses are excluded. Sampled RSS covers startup, workload and verification and includes prior fixture allocation.',
+                                  'Workload CPU and startup CPU are reported separately; comparable CPU adds both. Fixture seeding, post-workload correctness verification, shutdown and converter subprocesses are excluded. Sampled RSS covers startup, workload and verification and includes prior fixture allocation. process_rss_by_phase_mib separates those phases; process_rss_startup_workload_peak_mib excludes only the post-workload raw Python verification replay, which every resource guard still covers.',
                                   'Host CPU diagnostics retain the last ten busy intervals and five busiest visible processes per interval; short-lived/inaccessible processes may be missing. One-core percentages are not whole-host percentages.',
                                   'Writer operation CPU excludes SQLite commit; background caller labels identify task ownership, not exclusive job CPU.',
                                   'Synthetic sessions; selfies disabled for mixed workload, real sanitizer/face check with a public-domain test portrait in enrollment.',

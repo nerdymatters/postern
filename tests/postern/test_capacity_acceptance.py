@@ -503,6 +503,37 @@ def test_wrong_dashboard_output_fails_independent_raw_replay_check(isolated_sign
     assert report['process_cpu_seconds'] > 0
 
 
+def test_rss_phases_keep_verification_out_of_the_startup_workload_peak(isolated_signin, tmp_path, monkeypatch):
+    # Value: protects=the startup+workload memory window cannot absorb allocations made only by
+    # the post-workload raw Python check, while the all-phase distribution still keeps them;
+    # fails_when=samples lose their phase, verification enters the startup/workload peak or the
+    # all-phase distribution drops verification; seam=verification wrapper holding touched memory;
+    # no_claim=representative memory acceptance (one synthetic reader, real loopback HTTP).
+    args = isolated_signin
+    args.scenario, args.seconds = 'mixed', 17
+    original = capacity.verify_dashboard
+    held = []
+    async def verify(*verify_args):
+        held.append(bytearray(b'\x01')*(96*1024**2))  # Written pages, not lazily mapped zeros.
+        try:
+            await asyncio.sleep(1.6)  # At least two half-second guard samples.
+            return await original(*verify_args)
+        finally:
+            held.clear()
+    monkeypatch.setattr(capacity, 'verify_dashboard', verify)
+    assert asyncio.run(capacity.run(args)) is True
+    report = json.loads(next(tmp_path.glob('.context/capacity/*/report.json')).read_text())
+    assert report['integrity']['raw_python_dashboard_matches'] is True
+    phases = report['process_rss_by_phase_mib']
+    assert set(phases) == {'startup', 'workload', 'verification'}
+    assert sum(phase['count'] for phase in phases.values()) == report['process_rss_mib']['count']
+    assert report['process_rss_mib']['max'] == max(phase['max'] for phase in phases.values())
+    peak = report['process_rss_startup_workload_peak_mib']
+    assert peak == max(phases['startup']['max'], phases['workload']['max'])
+    assert report['startup']['peak_rss_mib'] <= peak+.001
+    assert phases['verification']['max'] >= peak+48
+
+
 def test_mixed_resource_abort_skips_additional_verification(isolated_signin, tmp_path, monkeypatch):
     args = isolated_signin
     args.scenario, args.seconds = 'mixed', 17
