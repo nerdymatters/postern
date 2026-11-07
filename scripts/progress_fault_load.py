@@ -142,6 +142,7 @@ def run(output, representative=False):
     lock = threading.Lock()
     health_lock = threading.Lock()
     serving = threading.Event()
+    expected_backup_delay = threading.Event()
     acknowledgments, counts = Counter(), Counter()
     page_times = {i: [] for i in range(1, users+1)}
     catalog_times = {i: [] for i in range(1, users+1)}
@@ -191,7 +192,12 @@ def run(output, representative=False):
                             try:
                                 response = health.get(app.url+'/health')
                                 sample['health_ms'] = (time.monotonic()-began)*1000
-                                if (response.status_code != 200 or response.json() != capacity.HEALTH
+                                sample['health_status'] = response.status_code
+                                sample['health_state'] = response.json()
+                                expected_states = [capacity.HEALTH]
+                                if expected_backup_delay.is_set():
+                                    expected_states.append({**capacity.HEALTH, 'backup': 'delayed'})
+                                if (response.status_code != 200 or sample['health_state'] not in expected_states
                                         or sample['health_ms'] > 2000):
                                     reason = 'health contract'
                             except Exception as error:
@@ -224,14 +230,15 @@ def run(output, representative=False):
             service.db.submit = original_submit
         assert not stop.is_set()
         def prepare(db):
+            now = time.time()
             db.execute("UPDATE posts SET category='SOP Chapter 1' WHERE id=?", (capacity.PDF,))
             db.execute("UPDATE posts SET category='SOP Chapter 2' WHERE id=?", (capacity.VIDEO,))
             import_events(db, [
-                {'event_id': 'fault-chapter-pass', 'event': 'quiz_attempt', 'ts': 100,
+                {'event_id': 'fault-chapter-pass', 'event': 'quiz_attempt', 'ts': now-2,
                  'email': 'reader1@example.invalid', 'detail': {'chapter': 1, 'score': 5, 'total': 5, 'passed': True}},
-                {'event_id': 'fault-final-pass', 'event': 'quiz_attempt', 'ts': 101,
+                {'event_id': 'fault-final-pass', 'event': 'quiz_attempt', 'ts': now-1,
                  'email': 'reader1@example.invalid', 'detail': {'chapter': 0, 'score': 20, 'total': 20, 'passed': True}},
-                {'event_id': 'fault-name', 'event': 'certificate_name', 'ts': 102,
+                {'event_id': 'fault-name', 'event': 'certificate_name', 'ts': now,
                  'email': 'reader1@example.invalid', 'detail': {'name': 'Synthetic Reader'}},
             ])
         service.db.submit(prepare).result(10)
@@ -309,7 +316,7 @@ def run(output, representative=False):
             assert not stop.is_set() and not phases_done.is_set()
             boundary_deadline = 60 if representative else 10
             original = service.read_progress
-            arrived = threading.Event()
+            arrived = [threading.Event() for _ in range(8)]
             state = {}
             async def install():
                 state['release'] = asyncio.Event()
@@ -318,20 +325,24 @@ def run(output, representative=False):
                     result = await original(operation)
                     if operation.__qualname__ == 'Service.training_progress.<locals>.query':
                         state['count'] += 1
-                        if state['count'] == 8:
-                            arrived.set()
+                        arrived[state['count']-1].set()
                         await asyncio.wait_for(state['release'].wait(), boundary_deadline+5)
                     return result
                 service.read_progress = hold
             app.call(install())
             before = report_count()
             with ThreadPoolExecutor(max_workers=8) as pool:
-                pending = [pool.submit(client.get, '/api/admin/progress', headers=headers[0],
-                                       timeout=boundary_deadline+5) for _ in range(8)]
+                pending = []
                 try:
                     wait_until = time.monotonic()+boundary_deadline
-                    while not arrived.wait(.1):
-                        assert not stop.is_set() and time.monotonic() < wait_until, 'Eight snapshots did not reach the boundary'
+                    # Prepare snapshots one at a time; all eight HTTP requests
+                    # remain pending together at the final disclosure boundary.
+                    # This controls the fault interleaving, not report throughput.
+                    for ready in arrived:
+                        pending.append(pool.submit(client.get, '/api/admin/progress', headers=headers[0],
+                                                   timeout=boundary_deadline+5))
+                        while not ready.wait(.1):
+                            assert not stop.is_set() and time.monotonic() < wait_until, 'Eight snapshots did not reach the boundary'
                     assert not any(f.done() for f in pending)
                     page(1)
                     if kind == 'role':
@@ -362,6 +373,29 @@ def run(output, representative=False):
 
         for kind in ('normal', 'role', 'revoke', 'consent'):
             disclosure(kind)
+        def drain_exports(frontier):
+            # Cancellation may leave an upload or its summary pending. Finish
+            # the captured prefix, while newer reader events may keep arriving.
+            deadline = time.monotonic()+30
+            attempts = 0
+            def pending(db):
+                return (db.execute('SELECT EXISTS(SELECT 1 FROM events WHERE batch_id IS NULL AND seq<=?)',
+                                   (frontier,)).fetchone()[0]
+                        or db.execute('SELECT EXISTS(SELECT 1 FROM batches WHERE confirmed_at IS NULL OR summary_confirmed=0)').fetchone()[0])
+            while service.db.read(pending):
+                assert not stop.is_set() and time.monotonic() < deadline, 'Export confirmation deadline or resource guard'
+                app.call(service.export(), timeout=min(15, deadline-time.monotonic()))
+                attempts += 1
+            return attempts
+        async def pause_export_loop():
+            tasks = [task for task in service.tasks if 'background_loop' in task.get_coro().__qualname__]
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+        app.call(pause_export_loop())
+        prior_exports = drain_exports(service.db.read(lambda db: db.execute('SELECT MAX(seq) FROM events').fetchone()[0]))
+        with health_lock:
+            expected_backup_delay.set()
         record['phase'] = 'quiz'
         second = client.get('/api/posts', headers=headers[2])
         second.raise_for_status()
@@ -402,13 +436,7 @@ def run(output, representative=False):
         assert counts['expected_media_refusals'] >= 1
         record['phases'].append({'phase': 'media', 'expected_refusals': counts['expected_media_refusals']})
 
-        async def pause_export_loop():
-            tasks = [task for task in service.tasks if 'background_loop' in task.get_coro().__qualname__]
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
         record['phase'] = 'export'
-        app.call(pause_export_loop())
         # Leave an unexported ordinary event so this phase cannot be a no-op.
         service.db.submit(lambda db: event(db, 'fault_probe', detail={'synthetic': True})).result(5)
         before_export = service.db.read(durable)
@@ -427,12 +455,23 @@ def run(output, representative=False):
             store.put_file = put
         assert service.db.read(lambda db: durable(db, before_export['maximum'])) == before_export
         assert service.db.read(lambda db: db.execute('SELECT count(*) FROM batches WHERE confirmed_at IS NULL').fetchone()[0]) >= 1
-        app.call(service.export())
+        began = time.monotonic()
+        delayed = client.get('/health', timeout=2)
+        assert (time.monotonic()-began <= 2 and delayed.status_code == 200
+                and delayed.json() == {**capacity.HEALTH, 'backup': 'delayed'})
+        retry_exports = drain_exports(before_export['maximum'])
         assert service.db.read(lambda db: db.execute('SELECT count(*) FROM batches WHERE confirmed_at IS NULL OR summary_confirmed=0').fetchone()[0]) == 0
+        with health_lock:
+            began = time.monotonic()
+            recovered = client.get('/health', timeout=2)
+            assert time.monotonic()-began <= 2 and recovered.status_code == 200 and recovered.json() == capacity.HEALTH
+            expected_backup_delay.clear()
         async def resume_export_loop():
             service.tasks.append(asyncio.create_task(service.background_loop()))
         app.call(resume_export_loop())
-        record['phases'].append({'phase': 'export', 'durable_before': before_export['count'], 'retry_confirmed': True})
+        record['phases'].append({'phase': 'export', 'durable_before': before_export['count'], 'retry_confirmed': True,
+                                'prior_export_calls': prior_exports, 'retry_export_calls': retry_exports,
+                                'health_during_outage': delayed.json(), 'health_after_retry': recovered.json()})
         phases_done.set()
         for future in readers:
             future.result(seconds+20)

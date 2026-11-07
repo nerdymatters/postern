@@ -329,10 +329,22 @@ one durable event. The positive report control admits eight reports and exactly
 eight audit events. Subsequent phases hold eight completed snapshots before
 revoking the synthetic admin session, role or consent; all must refuse without
 report data or report-view audit events while other readers continue.
+Snapshot preparation is staggered: the next report starts after the preceding
+one has reached the held disclosure boundary. All eight HTTP requests are then
+pending together. This controls the authorization interleaving; it does not test
+eight simultaneous full-history calculations or their throughput.
 
 The rehearsal imports quiz/certificate evidence during traffic, checks immediate
 lock/certificate updates and duplicate-import idempotence, injects missing media,
 and verifies failed export preserves events and pending batches before retry.
+Historical imported events correctly report backup health as `delayed` until
+confirmed. Only that field may differ during the controlled import/export
+window; the failed-export check requires `delayed`, and successful retry must
+restore `current`. Unexpected states and the two-second wall deadline still fail.
+Before that import, the rehearsal pauses the background exporter and finishes any
+batch it had already sealed. The deliberate failure and retry then act on the
+imported backlog, not on earlier unconfirmed work; retry must confirm every event
+up to the captured sequence before health may return to `current`.
 After traffic stops, fresh HTTP reports must equal raw Python replay. It then
 closes the application, retains the complete event identity/payload digest,
 and reopens the same current database with Python. Reader progress, quiz locks,

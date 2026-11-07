@@ -1,6 +1,7 @@
 """Deliberate serving/cleanup regressions must prevent a successful probe report."""
 import json
 import time
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +9,91 @@ import pytest
 from postern.auth import Refusal
 from postern import service as service_module
 from scripts import progress_fault_load as probe
+
+
+@pytest.mark.parametrize('pending_summary', [False, True])
+def test_export_pause_with_existing_batch_can_recover(tmp_path, monkeypatch, pending_summary):
+    original = probe.Running.call
+    injected = False
+    def call(app, coroutine, timeout=15):
+        nonlocal injected
+        is_pause = coroutine.__qualname__.endswith('pause_export_loop')
+        result = original(app, coroutine, timeout)
+        if is_pause and not injected:
+            injected = True
+            for _ in range(10):
+                remaining = app.service.db.read(lambda db: db.execute(
+                    'SELECT (SELECT count(*) FROM events WHERE batch_id IS NULL)+'
+                    '(SELECT count(*) FROM batches WHERE confirmed_at IS NULL OR summary_confirmed=0)').fetchone()[0])
+                if not remaining:
+                    break
+                original(app, app.service.export())
+            assert not remaining
+            app.service.db.submit(lambda db: probe.event(db, 'prior_batch', detail={'synthetic': True})).result(5)
+            name = 'append_summary' if pending_summary else 'put_file'
+            saved = getattr(app.service.store, name)
+            def failed(*args, **kwargs):
+                raise OSError('injected pre-import pending batch')
+            setattr(app.service.store, name, failed)
+            try:
+                with pytest.raises(OSError):
+                    original(app, app.service.export())
+            finally:
+                setattr(app.service.store, name, saved)
+            assert app.service.db.read(lambda db: db.execute(
+                'SELECT count(*) FROM batches WHERE confirmed_at IS NULL OR summary_confirmed=0').fetchone()[0]) == 1
+        return result
+    monkeypatch.setattr(probe.Running, 'call', call)
+    report = probe.run(tmp_path/'pending-batch')
+    assert injected and report['status'] == 'completed'
+
+
+@pytest.mark.parametrize('tamper', [None, {'audit': 'unavailable'}, {'storage': 'low'}])
+def test_historical_import_backup_delay_during_export_fault_is_expected(tmp_path, monkeypatch, tamper):
+    observed = threading.Event()
+    original_get, original_call = probe.httpx.Client.get, probe.Running.call
+    states = []
+    def get(client, url, **kwargs):
+        response = original_get(client, url, **kwargs)
+        if str(url).startswith('http://127.0.0.1:') and str(url).endswith('/health'):
+            if tamper and response.json().get('backup') == 'delayed':
+                response = probe.httpx.Response(200, json={**response.json(), **tamper}, request=response.request)
+            states.append(response.json())
+            if response.json().get('backup') == 'delayed':
+                observed.set()
+        return response
+    def call(app, coroutine, timeout=15):
+        try:
+            return original_call(app, coroutine, timeout)
+        except OSError:
+            assert observed.wait(8), 'Expected a health observation while the export remains failed'
+            raise
+    monkeypatch.setattr(probe.httpx.Client, 'get', get)
+    monkeypatch.setattr(probe.Running, 'call', call)
+    output = tmp_path/'historical-backup'
+    if tamper is None:
+        assert probe.run(output)['status'] == 'completed'
+        assert {**probe.capacity.HEALTH, 'backup': 'delayed'} in states
+    else:
+        with pytest.raises(AssertionError):
+            probe.run(output)
+        report = json.loads((output/'report.json').read_text())
+        assert report['status'] == 'failed' and 'health contract' in report['failures']
+
+
+def test_backup_delay_outside_import_export_window_fails(tmp_path, monkeypatch):
+    original = probe.httpx.Client.get
+    def delayed(client, url, **kwargs):
+        response = original(client, url, **kwargs)
+        if str(url).startswith('http://127.0.0.1:') and str(url).endswith('/health'):
+            return probe.httpx.Response(200, json={**response.json(), 'backup': 'delayed'}, request=response.request)
+        return response
+    monkeypatch.setattr(probe.httpx.Client, 'get', delayed)
+    output = tmp_path/'unexpected-backup'
+    with pytest.raises(AssertionError):
+        probe.run(output)
+    report = json.loads((output/'report.json').read_text())
+    assert report['status'] == 'failed' and 'health contract' in report['failures']
 
 
 def test_final_disclosure_bypass_fails_the_sustained_probe(tmp_path, monkeypatch):
