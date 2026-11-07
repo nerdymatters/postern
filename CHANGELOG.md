@@ -10,7 +10,7 @@
 
 ### Added
 
-- Validate capacity and sustained faults on disposable hosted Macs. Capacity reports now label memory by startup, workload and verification. The fault rehearsal holds report disclosures while session, role and consent change. It also covers missing media, a failed and retried export, and a same-database Python rollback, all under reader traffic.
+- Validate capacity and sustained faults on disposable hosted Macs. Capacity reports now label memory by startup, workload and verification. The fault rehearsal holds report disclosures while session, role and consent change, and covers missing media and a failed and retried export, all under reader traffic. After traffic stops, it checks raw-replay parity and a same-database Python rollback.
 
 ### Rollback
 

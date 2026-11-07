@@ -71,9 +71,10 @@ checks stay open before changing the serving default.
 **Current round (Nov 6–7):** RS-06 representative acceptance passed for the
 incremental staff-report candidate. Next is RS-07:
 1. Install v0.23.0 with Python active.
-2. Run the guarded live pilot, which needs local administrator authentication
+2. Measure the Rust checkpoint on a read-only copy of production data (below).
+3. Run the guarded live pilot, which needs local administrator authentication
    and an actual staff document check.
-3. Observe sustained Rust operation before changing the default.
+4. Observe sustained Rust operation before changing the default.
 
 The [remaining migration checklist](ROADMAP.md#remaining-migration-checklist)
 lists RS-07–RS-09.
@@ -107,8 +108,9 @@ security fixes still take precedence.
 ### Measure the Rust progress checkpoint on production-shaped data before RS-07
 
 **What:** Before the live Rust pilot, replay a read-only copy of the office database
-with the v0.23.0 Rust backend. Record the checkpoint's retained bytes, full and
-incremental report times and their CPU, and whether it stays under the 16 MiB budget.
+with the v0.23.0 Rust backend. Record the checkpoint's size before the budget check,
+full and incremental report times and their CPU, and whether it stays under the
+16 MiB budget.
 
 **Why:** Both acceptance fixtures publish only two items. The real catalog has many
 chapters, documents and videos. Past the budget, the checkpoint silently stops being
@@ -117,8 +119,11 @@ signal in production.
 
 **Context:** Owner decision D3 (Nov 7): make this a pilot precondition instead of
 changing code in v0.23.0. Use a fresh SQLite backup copy, never the live file.
-Expose `HistoryCache.diagnostics()` in the pilot's evidence. If the budget is
-exceeded, track retained size incrementally or raise the budget with measured RSS.
+Over budget, the cache clears itself, so `retained_bytes` reads 0. Measure the
+size with `retained_size()` on the native result instead. In
+`HistoryCache.diagnostics()`, `delta_replays` staying at 0 while
+`recent_row_counts` stays at full history means retention stopped. If the budget
+is exceeded, track retained size incrementally or raise it with measured RSS.
 
 **Effort:** S
 **Priority:** P1
