@@ -116,6 +116,13 @@ a hard bound on a single SQLite operation or filesystem commit. The cursor and
 completion marker commit with each batch, so interruption resumes safely.
 An unsuccessful batch rolls back, logs `Progress read table rebuild paused`, and
 keeps the original read path active; startup retries unfinished work.
+Do not remove `progress_events`, `progress_generation` or their triggers while
+any release uses the database: the completion marker lives in `meta`, and a
+missing trigger lets writes skip the derived copy. If startup finds any of them
+missing after rebuilding has begun or finished, it recreates them, discards the
+derived rows and marker, and rebuilds from `events`. Reads use `events` until
+that rebuild completes. Moves through `rowid`, `oid` or `_rowid_` are mirrored
+like named `seq` updates, and deletes match the event's sequence or identity.
 
 The smaller table may produce a different query plan. Any pending or exceptional
 input keeps **all** history reads on the original query: this includes malformed
