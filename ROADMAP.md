@@ -190,8 +190,10 @@ its background workers. Python remains the production default.
   - Rust's startup-plus-workload memory peak was 33–85 MiB below Python's.
   - Raw-replay parity, durable progress, health and every guard held.
 
-  The memory window was corrected before measurement: only the post-load raw
-  Python check had raised Rust's all-phase peak.
+  Memory was compared over startup and workload, a window set before that run
+  because the post-load raw Python check had raised Rust's all-phase peak. The
+  accepted run also met the original all-phase bar: the largest Rust excess was
+  30.6 MiB.
 
   After one narrow miss, the owner made catalog a no-regression family. At
   50 readers its median ratio had come in at 0.813, against a 0.80 target.

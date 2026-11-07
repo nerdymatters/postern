@@ -229,8 +229,9 @@ post-workload raw Python comparison. A later phase-labelled mixed-50 diagnostic
 put Rust's startup/workload peak at 280.3 MiB and its verification peak at
 347.7 MiB; Python's were 376.4 and 389.0 MiB. In Rust mode, that comparison is
 the process's only full Python replay. Subsequent campaigns compare peak RSS over
-startup and workload, as this protocol specifies, using
-`process_rss_startup_workload_peak_mib`, with the same 32 MiB allowance. A report
+startup and workload, the window the incremental protocol names, using
+`process_rss_startup_workload_peak_mib` with the same 32 MiB allowance. Until then,
+this runbook had described the sampled memory as including verification. A report
 without that field fails. The all-phase and verification peaks are reported
 alongside it, and every resource guard still covers verification. The failed
 campaign remains failed, and no attempt is reclassified.
@@ -241,10 +242,12 @@ other bar passed. Across three campaigns on unchanged Rust catalog code, this
 ratio was 0.63, 0.71 and 0.81. Rust's catalog p95 stayed at 42–50 ms. Python's
 varied with how much its own multi-second dashboard replays contended for the
 interpreter. On November 7 the owner chose to treat catalog as a no-regression
-family. It must stay within Python+max(20%, 25 ms) and under two seconds.
+family; the decision is recorded in the decision log. It must stay within
+Python+max(20%, 25 ms) and under two seconds.
 Mixed workloads still need at least 20% lower paired-median dashboard p95 and
 comparable CPU. That campaign remains failed; the next one used the same
-application code under the amended bar.
+application code under the amended bar and passed. It also met the original
+all-phase 32 MiB memory bar: the largest Rust excess was 30.6 MiB, at 50 readers.
 
 This is an isolated synthetic load comparison, not full RS-06 acceptance. Role
 changes/revocation, consent, quiz/certificate, media failures, export and recovery

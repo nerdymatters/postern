@@ -594,7 +594,9 @@ and its recorded addenda
 ([run](https://github.com/nerdymatters/postern/actions/runs/42403436385)).
 At 50 readers, Rust's dashboard p95 was 42 ms, against 3.14 s for Python, and
 comparable CPU was 33% lower. Rust's startup-plus-workload memory peak was
-33–85 MiB below Python's. Representative sustained fault-load passed on both
+33–85 MiB below Python's, and its all-phase peak stayed within the original
+32 MiB bar. Catalog became a no-regression family by owner decision after one
+narrow miss. Representative sustained fault-load passed on both
 backends, as did same-database Python rollback. See the
 [capacity protocol](capacity.md#incremental-dashboard-candidate-protocol) for
 the bars and the retained failures.
