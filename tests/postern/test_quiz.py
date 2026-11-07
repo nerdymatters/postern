@@ -327,7 +327,7 @@ def test_admin_progress_reports_quiz_standing_from_the_single_history_scan(clien
         db.set_trace_callback(statements.append)
         return dashboard(db, service.permissions.quizzes)
     result = service.db.read(inspect)
-    assert len([s for s in statements if 'FROM events e ' in s or 'FROM progress_events e ' in s]) == 1
+    assert len([s for s in statements if 'FROM events' in s or 'FROM progress_events e ' in s]) == 1
     assert {p['email']: p['quizzes_passed'] for p in result['people']}[READER] == 1
 
 

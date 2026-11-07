@@ -188,7 +188,7 @@ def test_current_roster_uses_one_event_scan_and_reports_post_item_kinds(client, 
         db.set_trace_callback(statements.append)
         return dashboard(db)
     service.db.read(inspect)
-    assert len([s for s in statements if 'FROM events e ' in s or 'FROM progress_events e ' in s]) == 1
+    assert len([s for s in statements if 'FROM events' in s or 'FROM progress_events e ' in s]) == 1
     report = client.get(f'/api/admin/posts/{post}/report', headers=admin).json()
     assert report['post']['items'][0]['kind'] == 'video'
     assert 'video playback was recorded' in report['meaning']
