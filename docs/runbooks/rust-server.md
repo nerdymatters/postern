@@ -5,7 +5,7 @@ room, quiz completion checks and staff progress report. Python remains the
 default. This is an incremental server migration; production cutover and the
 rest of the server remain open in the [remaining migration checklist](../../ROADMAP.md#remaining-migration-checklist).
 
-With `POSTERN_PROGRESS_BACKEND=rust`, reading-room, quiz-completion and staff-report
+With the Rust backend selected (see [cutover and rollback](#cutover-and-rollback)), reading-room, quiz-completion and staff-report
 snapshots share one dedicated read worker. This limits simultaneous SQLite/native
 history replays. The all-staff report retains bounded incremental evidence as
 described below; a required rebuild can still delay requests behind it.
@@ -542,10 +542,49 @@ the guarded live burst check must pass before closing RS-05.
 
 ## Cutover and rollback
 
-`POSTERN_PROGRESS_BACKEND=python` is the default. Explicit `rust` selection
-requires an installed module with API version 1; a missing or incompatible
-module, or an invalid setting, fails startup before the database writer starts.
-Runtime native errors propagate; there is no silent retry returning less data.
+Python is the default. At each API start the backend comes from, in order:
+`POSTERN_PROGRESS_BACKEND` in the launchd job's environment, then the owner's
+`progress-backend.json` beside the config file, then Python. Selecting `rust`
+requires an installed module with API version 1 and checkpoint version 1. A
+missing or incompatible module, an invalid setting, or a selection file that is
+unreadable or writable by anyone but the owner fails startup before the database
+writer starts. Runtime native errors propagate; there is no silent retry
+returning less data. Releases before v0.24.0 ignore the file and run Python.
+
+`progress-backend.json` lets the owner switch backends, and the watchdog switch
+back, with the ordinary verified restart (SIGTERM; launchd starts the API
+again). Neither needs administrator rights, because the file belongs to the
+owner and the launchd job is unchanged. An environment setting in the launchd
+job still overrides the file, so remove it once (step 3) before relying on the
+file.
+
+    .venv/bin/python -m postern.serve backend          # show the selection and the serving process
+    .venv/bin/python -m postern.serve backend rust     # select Rust for the next start
+    .venv/bin/python -m postern.serve backend python   # select Python for the next start
+
+At startup the API records its process, backend and the setting's source in
+`progress-backend-active.json` in the data directory, and writes
+`postern: progress backend <name> (<source>)` to its log.
+
+While the file selects Rust and the serving process started from it, the
+watchdog also guards the backend on every check:
+
+- three consecutive failed health checks;
+- API memory above 1,536 MiB on two consecutive checks;
+- API CPU above 90% of one core for ten consecutive checks (five minutes);
+- a read-only parity check about five minutes after the switch, then every 15
+  minutes: `python -m postern.progress_parity` replays the live history with both
+  reducers in one snapshot, and any difference is a breach. Three failed runs in
+  a row also count.
+
+On a breach it writes Python into the file with the reasons, re-verifies the API
+process (recorded pid, listening on the port, owned by the owner, running
+`postern.serve run`) and sends it SIGTERM, then sends one alert. It never selects
+Rust. An unreadable or unsafe selection that keeps the API from starting is also
+replaced with Python after three failed checks. A `limits` object in the file
+can set `max_rss_mib`, `max_cpu_percent`, `cpu_checks` and
+`parity_every_seconds`. While the launchd job's environment selects Rust, the
+watchdog can only alert.
 
 Before a production pilot:
 
@@ -559,29 +598,33 @@ Before a production pilot:
    For the incremental report, first replay a fresh read-only copy of the live
    database. Record the checkpoint size against its 16 MiB budget, and the full
    and incremental report times (see TODOS).
-3. Set `POSTERN_PROGRESS_BACKEND` in the existing API job's persistent environment.
-   For launchd, back up that exact plist, preserve its label and other settings,
-   and update its `EnvironmentVariables` entry. Reload the job definition with
-   the appropriate privileges: after setting `DOMAIN`, `LABEL` and `PLIST` to
+3. Once, with administrator rights, remove `POSTERN_PROGRESS_BACKEND` from the
+   existing API job so the owner's file takes effect. Back up that exact plist,
+   preserve its label and every other setting, and delete only that
+   `EnvironmentVariables` entry. After setting `DOMAIN`, `LABEL` and `PLIST` to
    the verified existing values, run `launchctl bootout "$DOMAIN/$LABEL"`, wait
    for the old API process to exit, then `launchctl bootstrap "$DOMAIN" "$PLIST"`.
    Do not start a second writer or overwrite the plist with a generic installer.
-   Verify the loaded job's backend environment and replacement process. A shell
-   `export`, SIGTERM/KeepAlive, or `kickstart -k` alone does not load an edited
-   plist; those restarts are suitable only when the job environment is unchanged.
-4. Check `/health`, reading-room progress, quiz locking, staff report access,
-   revocation/recovery refusals and certificate attribution with a controlled
-   account. Compare request errors, p50/p95, audit queue/commit latency and
-   CPU/RSS against the same workload before cutover. Stop the pilot for any
-   compatibility mismatch, health failure or material resource regression.
-5. Roll back by persisting `POSTERN_PROGRESS_BACKEND=python` and reloading the
-   same job definition as in step 3 against the **current** database. Verify
-   the loaded environment is Python; health alone does not identify the backend.
-   Recheck health and activity recorded during the Rust window. Compact inputs
-   add rebuildable tables, indexes and triggers; backend rollback keeps this
-   additive metadata and needs no database restore. Restoring an older backup
-   would lose new activity. See [compact progress inputs](#compact-progress-inputs)
-   for rollback to an older application release.
+   With no selection file, the replacement process serves Python; confirm it in
+   `progress-backend-active.json` (`default`). A shell `export`, SIGTERM/KeepAlive,
+   or `kickstart -k` alone does not load an edited plist.
+4. Select Rust with `postern.serve backend rust`, then restart the verified API
+   process with SIGTERM in a quiet minute. Confirm `progress-backend-active.json`
+   shows `rust` from `progress-backend.json`. Check `/health`, reading-room
+   progress, quiz locking, staff report access, revocation/recovery refusals and
+   certificate attribution with a controlled account. Compare request errors,
+   p50/p95, audit queue/commit latency and CPU/RSS against the same workload
+   before cutover. Stop the pilot for any compatibility mismatch, health failure
+   or material resource regression.
+5. Roll back with `postern.serve backend python` and the same verified restart,
+   against the **current** database; the watchdog does the same on a breach.
+   Confirm the active record shows Python; health alone does not identify the
+   backend. Recheck health and activity recorded during the Rust window.
+   Compact inputs add rebuildable tables, indexes and triggers; backend rollback
+   keeps this additive metadata and needs no database restore. Restoring an
+   older backup would lose new activity. See
+   [compact progress inputs](#compact-progress-inputs) for rollback to an older
+   application release.
 
 The disposable-data rehearsal starts Python, restarts with Rust, records new
 page activity and a first exam pass/saved certificate name, then closes and
