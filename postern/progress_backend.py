@@ -18,7 +18,7 @@ from pathlib import Path
 import stat
 import tempfile
 
-KEY = 'POSTERN_PROGRESS_BACKEND'
+SETTING = 'POSTERN_PROGRESS_BACKEND'
 SELECTION = 'progress-backend.json'
 ACTIVE = 'progress-backend-active.json'
 
@@ -65,12 +65,12 @@ def write_selection(config_path, backend, **detail):
 
 def apply_selection(config_path):
     """Run once at process start, before the service reads the backend. Returns (backend, source)."""
-    if KEY in os.environ:
-        return os.environ[KEY], 'environment'
+    if SETTING in os.environ:
+        return os.environ[SETTING], 'environment'
     data = read_selection(config_path)
     if data is None:
         return 'python', 'default'
-    os.environ[KEY] = data['backend']
+    os.environ[SETTING] = data['backend']
     return data['backend'], SELECTION
 
 
@@ -101,7 +101,7 @@ def native():
 
 
 def selected():
-    backend = os.environ.get(KEY, 'python')
+    backend = os.environ.get(SETTING, 'python')
     if backend not in ('python', 'rust'):
         raise RuntimeError('POSTERN_PROGRESS_BACKEND must be python or rust')
     if backend == 'rust':

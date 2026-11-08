@@ -469,7 +469,7 @@ def backend(config_path, choice):
             print(f'ok   serving process {record.get("pid")}: {record.get("backend")} from {record.get("source")}, '
                   f'started {record.get("started_at")}')
     if choice in ('python', 'rust'):
-        print(f'Restart the API to apply it. A {progress_backend.KEY} setting in the launchd job overrides this file.')
+        print(f'Restart the API to apply it. A {progress_backend.SETTING} setting in the launchd job overrides this file.')
     return 0
 
 

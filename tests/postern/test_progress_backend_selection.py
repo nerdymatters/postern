@@ -20,7 +20,7 @@ from postern.db import SCHEMA
 
 @pytest.fixture
 def config_path(tmp_path, monkeypatch):
-    monkeypatch.delenv(progress_backend.KEY, raising=False)
+    monkeypatch.delenv(progress_backend.SETTING, raising=False)
     data = tmp_path / 'data'
     data.mkdir(mode=0o700)
     path = tmp_path / 'config.json'
@@ -35,12 +35,12 @@ def select(config_path, backend, **extra):
 
 def test_environment_wins_then_the_owner_file_then_python(config_path, monkeypatch):
     assert progress_backend.apply_selection(config_path) == ('python', 'default')
-    assert progress_backend.KEY not in os.environ
+    assert progress_backend.SETTING not in os.environ
     select(config_path, 'rust')
     assert progress_backend.apply_selection(config_path) == ('rust', 'progress-backend.json')
-    assert os.environ[progress_backend.KEY] == 'rust'
+    assert os.environ[progress_backend.SETTING] == 'rust'
     # Once set (by launchd or by the first call), the environment is the authority for this process.
-    monkeypatch.setenv(progress_backend.KEY, 'python')
+    monkeypatch.setenv(progress_backend.SETTING, 'python')
     assert progress_backend.apply_selection(config_path) == ('python', 'environment')
 
 
@@ -62,7 +62,7 @@ def test_an_unreadable_or_unsafe_selection_refuses_startup(config_path, tmp_path
         path.symlink_to(target)
     with pytest.raises((RuntimeError, ValueError)):
         progress_backend.apply_selection(config_path)
-    assert progress_backend.KEY not in os.environ
+    assert progress_backend.SETTING not in os.environ
 
 
 def test_selection_and_active_records_are_private_and_complete(config_path):
@@ -84,7 +84,7 @@ def test_serve_run_applies_the_selection_before_the_service_starts(config_path, 
     import uvicorn
     from postern import app as application
     monkeypatch.setattr(serve, 'listening', lambda port: False)
-    monkeypatch.setattr(application, 'create_app', lambda config: seen.setdefault('backend', os.environ[progress_backend.KEY]))
+    monkeypatch.setattr(application, 'create_app', lambda config: seen.setdefault('backend', os.environ[progress_backend.SETTING]))
     monkeypatch.setattr(uvicorn, 'run', lambda app, **kwargs: seen.setdefault('app', app))
     assert serve.run(config_path) == 0
     assert seen == {'backend': 'python', 'app': 'python'}
