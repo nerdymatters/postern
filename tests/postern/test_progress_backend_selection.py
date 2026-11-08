@@ -977,6 +977,17 @@ def test_a_fallback_that_cannot_confirm_the_api_says_so_and_alerts_once_if_it_st
     assert guard.sent[-1][0] == 'Postern finished returning to the Python backend'
 
 
+def test_the_real_process_check_says_gone_only_when_the_process_is_certainly_gone():
+    # Value: protects=serve.process_exists treats bad pids and exited processes as gone, unknown as alive; fails_when=PermissionError or a bool/str pid flips the answer; why_new=every other test monkeypatches process_exists; seam=none; no_claim=launchd state
+    exited = subprocess.Popen(['/usr/bin/true'])
+    exited.wait()
+    assert serve.process_exists(os.getpid()) is True
+    assert serve.process_exists(exited.pid) is False
+    assert [serve.process_exists(pid) for pid in (None, 0, -1, True, '4242', 4242.0)] == [False]*6
+    if os.getuid() != 0:
+        assert serve.process_exists(1) is True  # launchd: not ours to signal, so unknown, and unknown counts as yes
+
+
 def test_zz_the_selection_tests_leave_the_backend_setting_as_found():
     # Runs last in this module: no fixture may leak a selected backend into later tests.
     assert os.environ.get(progress_backend.SETTING) == SETTING_AT_IMPORT
