@@ -273,15 +273,19 @@ def test_launchd_override_is_reported_once_and_never_changed(guard):
     assert all(guard.tick(healthy=False) is None for _ in range(5)) and len(guard.sent) == 1
 
 
-def test_an_unsafe_selection_that_stops_the_api_is_replaced_with_python(guard):
+@pytest.mark.parametrize('text', ['{not json', '{"backend": "Rust"}', '{"backend": null}', '["rust"]'])
+def test_a_selection_that_stops_the_api_is_replaced_with_python(guard, text):
+    # Valid JSON the API refuses (a misspelled or missing backend) stops startup just like a broken file.
     path = progress_backend.selection_path(guard.config)
-    path.write_text('{not json')
+    path.write_text(text)
     path.chmod(0o600)
+    with pytest.raises((RuntimeError, ValueError)):  # the API refuses it at startup
+        progress_backend.read_selection(guard.config)
     guard.host.listening = False  # the API cannot start with that file
     for _ in range(3):
         reasons = guard.tick(healthy=False)
-    assert 'was unreadable or not private' in reasons[-1] and stored(guard)['backend'] == 'python'
-    assert guard.host.killed == []
+    assert 'was unreadable, not private to this account, or not python or rust' in reasons[-1]
+    assert stored(guard)['backend'] == 'python' and guard.host.killed == []
 
 
 @pytest.mark.parametrize('text,seconds', [('0:12.50', 12.5), ('3:31.99', 211.99), ('1:02:03.00', 3723.0),
@@ -392,7 +396,7 @@ def test_a_process_that_ignores_sigterm_is_killed_after_reverification(guard):
     for _ in range(3):
         reasons = guard.tick(healthy=False)
     assert reasons and guard.host.killed == [(4242, signal.SIGTERM), (4242, signal.SIGKILL)]
-    assert 'ignored SIGTERM for 30 s and was killed' in guard.sent[0][1]
+    assert 'ignored SIGTERM for 120 s and was killed' in guard.sent[0][1]
 
 
 def test_failures_after_selecting_python_still_alert_with_the_actual_outcome(guard, monkeypatch):
@@ -615,6 +619,144 @@ def test_a_stale_or_foreign_guard_heartbeat_is_not_reported_as_armed(guard, caps
     assert serve.guard_line(beat, guard.config, now=later).startswith('FAIL watchdog guard: stale')
     select(guard.config, 'rust', note='new selection')  # the heartbeat names the previous file
     assert 'another selection' in serve.guard_line(beat, guard.config)
+
+
+def beat(guard):
+    return json.loads((guard.config.parent / 'data' / watchdog.GUARD).read_text())
+
+
+def test_the_guard_line_is_judged_by_the_current_selection(guard, capsys):
+    select(guard.config, 'rust')
+    # No heartbeat while Rust is selected is not an armed guard (an old watchdog writes none).
+    assert serve.guard_line(None, guard.config).startswith('FAIL watchdog guard: no heartbeat')
+    serving(guard)
+    guard.tick()
+    assert serve.guard_line(beat(guard), guard.config).startswith('ok   watchdog guard: pid')
+    # Back on Python the last Rust heartbeat is history, not a failure.
+    assert serve.main(['backend', 'python', '--config', str(guard.config)]) == 0
+    assert 'ok   watchdog guard: not needed while Python is selected' in capsys.readouterr().out
+    assert serve.main(['backend', '--config', str(guard.config)]) == 0
+    assert 'ok   watchdog guard: not needed while Python is selected' in capsys.readouterr().out
+    # Selecting Rust cannot have been checked yet: say when to look, never FAIL in the same run.
+    assert serve.main(['backend', 'rust', '--config', str(guard.config)]) == 0
+    printed = capsys.readouterr().out
+    assert 'checks this selection within 30 s' in printed and 'FAIL' not in printed
+
+
+def test_the_heartbeat_records_what_the_guard_actually_ran(guard):
+    select(guard.config, 'rust')
+    serving(guard, backend='python')  # selected, but the API has not restarted with Rust yet
+    guard.tick()
+    assert beat(guard)['state'] == 'waiting'
+    assert serve.guard_line(beat(guard), guard.config).startswith('ok   watchdog guard: watching')
+    serving(guard)
+    guard.host.lookup_errors = 99  # lsof and ps fail: memory, CPU and parity cannot run
+    for _ in range(4):
+        assert guard.tick() is None
+    assert beat(guard)['state'] == 'unverified'
+    assert serve.guard_line(beat(guard), guard.config).startswith('FAIL watchdog guard: it cannot verify')
+    assert [subject for subject, _ in guard.sent] == ['Postern: cannot verify the Rust API process']
+    guard.host.lookup_errors = 0
+    guard.tick()
+    assert beat(guard)['state'] == 'guarding'
+    serving(guard, source='environment')
+    guard.tick()
+    assert serve.guard_line(beat(guard), guard.config).startswith('FAIL watchdog guard: the launchd job')
+
+
+def test_a_parity_breach_whose_write_failed_is_retried_on_the_next_check(guard, monkeypatch):
+    select(guard.config, 'rust', limits={'parity_every_seconds': 600})
+    serving(guard)
+    guard.host.parity_codes = [3]
+    real = watchdog.write_python
+    failures = [PermissionError('full')]
+    def flaky(*args):
+        if failures:
+            raise failures.pop(0)
+        return real(*args)
+    monkeypatch.setattr(watchdog, 'write_python', flaky)
+    results = [guard.tick() for _ in range(11)]  # the first parity run (330 s) differs; writing Python fails
+    assert results[:10] == [None]*10 and 'Rust and Python progress differ' in results[10][0]
+    assert stored(guard)['backend'] == 'rust'
+    assert guard.tick() and stored(guard)['backend'] == 'python'  # the next check, not the next parity run
+    assert guard.host.killed == [(4242, signal.SIGTERM)]
+
+
+@pytest.mark.parametrize('value', [10**400, -10**400, 2**63])
+def test_huge_whole_number_limits_keep_their_defaults(value):
+    assert watchdog.limits({'limits': {name: value for name in watchdog.LIMITS}}) == watchdog.LIMITS
+
+
+def test_parity_with_the_real_native_module_on_the_compact_copy(tmp_path):
+    pytest.importorskip('postern_progress_native')
+    try:
+        progress_backend.native.cache_clear()
+        progress_backend.native()
+    except RuntimeError:
+        pytest.skip('installed native module predates the checkpoint interface')
+    code, summary = progress_parity.compare(catalog_database(tmp_path, pages=7, compact=True))
+    assert code == 0 and summary['source'] == 'progress_events' and summary['incremental_matches'] is True
+
+
+def test_a_skipped_restart_is_retried_while_rust_still_serves(guard):
+    select(guard.config, 'rust')
+    serving(guard)
+    guard.tick(healthy=False)
+    guard.tick(healthy=False)
+    guard.host.lookup_errors = 2  # lsof times out while the fallback re-verifies: Python is written, no signal
+    assert guard.tick(healthy=False)
+    assert stored(guard)['backend'] == 'python' and guard.host.killed == []
+    guard.host.lookup_errors = 0
+    guard.tick()  # the same verified process still serves Rust from the file: finish the switch
+    assert guard.host.killed == [(4242, signal.SIGTERM)]
+    assert guard.sent[-1][0] == 'Postern finished returning to the Python backend'
+    for _ in range(5):  # bounded: three attempts per fallback, and none once Python serves
+        guard.host.respawn()
+        guard.tick()
+    assert len(guard.host.killed) == 3
+    serving(guard, backend='python')
+    guard.host.respawn()
+    guard.tick()
+    assert len(guard.host.killed) == 3
+
+
+def test_a_failed_start_replaces_the_previous_serving_record(config_path, monkeypatch):
+    progress_backend.record_active(config_path.parent / 'data', 'rust', 'environment')  # an earlier process
+    path = progress_backend.selection_path(config_path)
+    path.write_text('{"backend": "Rust"}')
+    path.chmod(0o600)
+    monkeypatch.setattr(serve, 'listening', lambda port: False)
+    with pytest.raises(RuntimeError):
+        serve.run(config_path)
+    active = json.loads((config_path.parent / 'data' / progress_backend.ACTIVE).read_text())
+    assert (active['source'], active['backend'], active['pid']) == ('failed', None, os.getpid())
+
+
+def test_a_guard_bug_keeps_the_verified_process_for_the_restart(guard, monkeypatch):
+    select(guard.config, 'rust')
+    serving(guard)
+    def broken(*args):
+        raise KeyError('synthetic guard bug')
+    monkeypatch.setattr(guard.fallback, 'resources', broken)
+    for _ in range(3):
+        guard.tick(healthy=False)
+    assert guard.host.killed == [(4242, signal.SIGTERM)] and beat(guard)['state'] == 'error'
+
+
+def test_a_failing_notifier_never_skips_the_fallback(guard, capsys):
+    def down(subject, body):
+        raise OSError('smtp unreachable')
+    guard.fallback.notify = down
+    select(guard.config, 'rust')
+    serving(guard)
+    guard.host.lookup_errors = 99
+    for _ in range(3):
+        guard.tick()  # the unverified alert fails to send
+    guard.host.lookup_errors = 0
+    for _ in range(3):
+        guard.tick(healthy=False)
+    assert stored(guard)['backend'] == 'python' and guard.host.killed == [(4242, signal.SIGTERM)]
+    assert 'FAIL alert not sent (OSError): Postern returned to the Python backend' in capsys.readouterr().out
 
 
 def test_zz_the_selection_tests_leave_the_backend_setting_as_found():
