@@ -565,7 +565,9 @@ file.
 
 At startup the API records its process, backend and the setting's source in
 `progress-backend-active.json` in the data directory, and writes
-`postern: progress backend <name> (<source>)` to its log.
+`postern: progress backend <name> (<source>)` to its log. A start that fails while
+reading the selection records source `failed`, so an earlier process's record
+(for example a launchd override) is never mistaken for the current one.
 
 While the file selects Rust and the serving process started from it, the
 watchdog also guards the backend on every check:
@@ -578,38 +580,49 @@ watchdog also guards the backend on every check:
   Python reducer and the native full reducer in one snapshot. While reads use the
   compact copy it also replays through the native incremental interface in two
   parts, as the staff report extends its checkpoint; on the original events table
-  the service never uses that interface, so neither does the check. Any difference
-  is a breach. Three failed runs in a row also count; each failure
-  is logged with its error. The check is capped at 60 seconds.
+  the service never uses that interface, so neither does the check. It streams
+  the history rather than loading it into memory. Any difference is a breach.
+  Three failed runs in a row also count; each failure is logged with its error.
+  The check is capped at 60 seconds.
 
 Health is counted before any other check, so an inspection error or a bad limit
 never stops a failing API from returning to Python. On a breach the watchdog
 writes Python into the file with the reasons, re-verifies the API process
 (recorded pid, listening on the port, owned by the owner, running
 `postern.serve run`) and sends it SIGTERM. Uvicorn closes its port at once but
-waits without limit for stuck requests, and launchd restarts the job only after
-the process exits, so the watchdog waits up to 30 seconds for the process to exit.
-If the same re-verified process is still running, it sends SIGKILL. It then sends
-one alert that says what actually happened. It never selects Rust. An unreadable
-or unsafe selection that keeps the API from starting is also replaced with Python
-after three failed checks. A `limits` object in the file can set `max_rss_mib`,
-`max_cpu_percent`, `cpu_checks` and `parity_every_seconds`; a missing,
-non-numeric, non-finite or out-of-range value, or a fractional `cpu_checks`,
-keeps its default. `postern.serve backend` and the fallback both keep it. If the
-watchdog cannot write Python into the file, it alerts once and retries on each
-later check while a health, memory or CPU breach persists; a parity difference
-is retried only at the next parity run. While the launchd job's environment
-selects Rust, the watchdog can only alert.
+waits without limit for stuck requests and in-flight media conversions (90 seconds
+each), and launchd restarts the job only after the process exits, so the watchdog
+waits up to 120 seconds for the process to exit. If the same re-verified process is
+still running, it sends SIGKILL. It then sends one alert that says what actually
+happened. If it could not verify or restart the process, it restarts it on a later
+check once it verifies as still serving Rust from the file, up to three times. It
+never selects Rust. A selection that keeps the API from starting (unreadable, not
+private to the owner, or a backend other than `python` or `rust`) is also replaced
+with Python after three failed checks. A `limits` object in the file can set
+`max_rss_mib`, `max_cpu_percent`, `cpu_checks` and `parity_every_seconds`; a
+missing, non-numeric, non-finite or out-of-range value, or a fractional
+`cpu_checks`, keeps its default. `postern.serve backend` and the fallback both keep
+it. If the watchdog cannot write Python into the file, it alerts once and retries
+on every later check, a memory, CPU or parity breach included, until the write
+succeeds. An alert that fails to send is logged and never skips the fallback.
+While the launchd job's environment selects Rust, the watchdog can only alert.
 
-While it guards, the watchdog records its pid, the selection it checked and the
-time in `progress-backend-guard.json` in the data directory. `postern.serve backend`
-reports the guard as armed only if it checked the current selection within the
-last two minutes. It prints `FAIL` for a record from another selection or older
-than two minutes, including the last Rust check after a switch to Python. With
-no readable record it prints an `ok` line, `watchdog guard: no record yet`, which
-does not mean a guard is running (see TODOS). A watchdog started from a release before v0.24.0 has no guard, so
-restart the watchdog job after upgrading (step 3). Run `postern.serve backend` as
-the owner, never with sudo: the API refuses a selection file it does not own.
+While Rust is selected, the watchdog records its pid, the selection it checked,
+the time and what it could run in `progress-backend-guard.json` in the data
+directory. `postern.serve backend` judges that record by the current selection:
+
+- Python selected: `ok … not needed while Python is selected`;
+- Rust selected and checked within the last two minutes: `ok … guarding this
+  selection`, or `ok … watching` before the API has restarted with Rust;
+- `FAIL` when there is no record (an older watchdog writes none), the record is
+  for another selection or older than two minutes, a launchd setting overrides
+  the file, the watchdog cannot verify the serving process (memory, CPU and parity
+  checks are paused; it alerts after three such checks), or its checks raised an
+  error. Failed health checks still return Rust to Python in each of these cases.
+
+A watchdog started from a release before v0.24.0 has no guard, so restart the
+watchdog job after upgrading (step 3). Run `postern.serve backend` as the owner,
+never with sudo: the API refuses a selection file it does not own.
 
 Before a production pilot:
 
@@ -638,7 +651,8 @@ Before a production pilot:
 4. Select Rust with `postern.serve backend rust`, then restart the verified API
    process with SIGTERM in a quiet minute. Confirm `progress-backend-active.json`
    shows `rust` from `progress-backend.json`, and, within a minute, that
-   `postern.serve backend` shows the watchdog guard checking. Check `/health`, reading-room
+   `postern.serve backend` prints `ok … guarding this selection`; stop on any
+   `FAIL` guard line. Check `/health`, reading-room
    progress, quiz locking, staff report access, revocation/recovery refusals and
    certificate attribution with a controlled account. Compare request errors,
    p50/p95, audit queue/commit latency and CPU/RSS against the same workload
