@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import math
 import os
 import signal
 import smtplib
@@ -133,17 +134,35 @@ def cpu_seconds(text):
 
 
 LIMITS = {'max_rss_mib': 1536.0, 'max_cpu_percent': 90.0, 'cpu_checks': 10, 'parity_every_seconds': 900.0}
+# Above these the guard would be off in practice; keep the default instead.
+CEILINGS = {'max_rss_mib': 1024.0*1024, 'max_cpu_percent': 10000.0, 'cpu_checks': 10000, 'parity_every_seconds': 86400.0}
 
 
 def limits(selection):
-    """The owner's guard limits; a missing, non-numeric or non-positive value keeps its default."""
+    """The owner's guard limits. A missing, non-numeric, non-finite, out-of-range or (for cpu_checks)
+    fractional value keeps its default, so a typo can neither disable a guard nor trip it at once."""
     given = selection.get('limits') if isinstance(selection.get('limits'), dict) else {}
     chosen = {}
-    for key, default in LIMITS.items():
-        value = given.get(key)
-        ok = type(value) in (int, float) and value > 0
-        chosen[key] = type(default)(value) if ok else default
+    for name, default in LIMITS.items():
+        value = given.get(name)
+        ok = (type(value) in (int, float) and math.isfinite(value) and 0 < value <= CEILINGS[name]
+              and (name != 'cpu_checks' or (value >= 1 and float(value).is_integer())))
+        chosen[name] = type(default)(value) if ok else default
     return chosen
+
+
+def write_private_json(path, data, prefix, indent=None):
+    """Atomically replace path with owner-only JSON; a failed write leaves no temporary file behind."""
+    output = tempfile.NamedTemporaryFile('w', dir=path.parent, prefix=prefix, delete=False)
+    try:
+        with output:
+            os.chmod(output.name, 0o600)
+            json.dump(data, output, indent=indent)
+            output.write('\n')
+        os.replace(output.name, path)
+    except BaseException:
+        Path(output.name).unlink(missing_ok=True)
+        raise
 
 
 def write_python(path, reasons, previous):
@@ -152,11 +171,7 @@ def write_python(path, reasons, previous):
             'fallback': {'from': 'rust', 'reasons': reasons}}
     if isinstance(previous.get('limits'), dict):
         data['limits'] = previous['limits']
-    with tempfile.NamedTemporaryFile('w', dir=path.parent, prefix='.progress-backend-', delete=False) as output:
-        os.chmod(output.name, 0o600)
-        json.dump(data, output, indent=2)
-        output.write('\n')
-    os.replace(output.name, path)
+    write_private_json(path, data, '.progress-backend-', indent=2)
 
 
 class Fallback:
@@ -179,7 +194,7 @@ class Fallback:
         self.unhealthy = self.big = self.hot = self.parity_errors = 0
         self.cpu = None
         self.next_parity = None
-        self.reported = self.error_reported = False
+        self.reported = self.error_reported = self.write_reported = False
 
     def selection(self):
         path = self.config_path.with_name(SELECTION)
@@ -249,11 +264,7 @@ class Fallback:
         data = {'pid': os.getpid(), 'selection': list(key), 'state': state,
                 'checked_at': datetime.now(timezone.utc).isoformat(timespec='seconds')}
         try:
-            with tempfile.NamedTemporaryFile('w', dir=path.parent, prefix='.progress-backend-guard-', delete=False) as output:
-                os.chmod(output.name, 0o600)
-                json.dump(data, output)
-                output.write('\n')
-            os.replace(output.name, path)
+            write_private_json(path, data, '.progress-backend-guard-')
         except OSError:
             pass  # A heartbeat is evidence for the owner, never a reason to stop guarding.
 
@@ -342,13 +353,18 @@ class Fallback:
 
     def fall_back(self, selection, reasons, pid):
         """Select Python, then restart only a re-verified API; the alert reports what actually happened."""
-        self.handled = self.watched
         outcome = 'The next API start uses Python.'
         try:
             write_python(self.config_path.with_name(SELECTION), reasons, selection)
         except OSError as error:
-            outcome = f'Could not write Python into {SELECTION} ({type(error).__name__}); select it by hand.'
-            pid = None
+            # Not handled: the next tick tries again. Alert once per selection, not every tick.
+            if not self.write_reported:
+                self.notify('Postern could not return to the Python backend',
+                            '\n'.join(reasons) + f'\n\nCould not write Python into {SELECTION} '
+                            f'({type(error).__name__}); the watchdog keeps retrying. Select it by hand if this persists.')
+                self.write_reported = True
+            return reasons
+        self.handled = self.watched
         try:
             if pid is not None and self.serving(self.active())[0] == pid:
                 outcome = self.restart(pid)

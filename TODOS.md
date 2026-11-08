@@ -110,6 +110,20 @@ lists RS-07–RS-09.
 - The sustained fault-load verdicts are bare `assert`s, and two success flags
   are hard-coded, so the probe would report success under `python -O`. Use an
   always-raising check and computed flags.
+- **Before the RS-07 pilot (P1): harden the watchdog guard further.** v0.24.0's
+  second review round left these below-floor notes (PR #19):
+  - after a restart is skipped (an `lsof` or `ps` error while re-verifying), the
+    selection says Python while the same process keeps serving Rust, and the guard
+    stops; retry the verified restart while the serving record still says Rust;
+  - a selection the API refuses that is valid JSON (for example `"backend": "Rust"`)
+    is never replaced with Python, so the API keeps restarting;
+  - an `environment` serving record left by a process that failed to start is
+    trusted as a launchd override; have `postern.serve run` record a failed start;
+  - when a guard bug raises, the verified pid is dropped, so a failing API is not
+    restarted, and a failing notifier can skip the fallback;
+  - SIGKILL after 30 s can cut a 90-second media conversion short and orphan its
+    converter, which runs in its own session; wait longer or end its process group;
+  - the parity check loads the whole joined history into memory each run.
 - **Before Rust becomes the default:** the watchdog's parity check replays history
   with both native interfaces in its own process, so it cannot see drift in the
   serving process's in-memory checkpoint, or native errors there that leave health,
