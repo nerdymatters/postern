@@ -130,6 +130,13 @@ class Host:
         if args[0].endswith('lsof'):
             return SimpleNamespace(returncode=0, stdout=f'{self.pid}\n' if self.listening and self.alive else '', stderr='')
         if args[0].endswith('ps') and '-A' in args:
+            failure = getattr(self, 'listing_failure', None)
+            if failure == 'undecodable' and kwargs.get('errors') != 'replace':
+                raise UnicodeDecodeError('utf-8', b'caf\xe9.pdf', 3, 4, 'invalid continuation byte')
+            if failure == 'timeout':
+                raise subprocess.TimeoutExpired(args[0], kwargs.get('timeout'))
+            if failure == 'exit':
+                return SimpleNamespace(returncode=1, stdout='', stderr='ps: failed')
             rows = [(self.pid, 1, self.pid, os.getuid(), self.command)] + self.processes
             return SimpleNamespace(returncode=0, stdout=''.join(f'{p} {pp} {g} {u} {c}\n' for p, pp, g, u, c in rows), stderr='')
         if args[0].endswith('ps'):
@@ -829,8 +836,22 @@ def test_sigkill_ends_only_this_apis_own_media_conversions(guard):
     ]
     for _ in range(3):
         guard.tick(healthy=False)
-    assert guard.host.killed == [(4242, signal.SIGTERM), ('group', 5001, signal.SIGKILL), (4242, signal.SIGKILL)]
+    # The API goes first, so it can never record a converter it saw die as the upload's fault.
+    assert guard.host.killed == [(4242, signal.SIGTERM), (4242, signal.SIGKILL), ('group', 5001, signal.SIGKILL)]
     assert 'with 1 media conversion(s) it was still running' in guard.sent[-1][1]
+
+
+@pytest.mark.parametrize('failure', ['undecodable', 'timeout', 'exit'])
+def test_a_failed_converter_lookup_never_stops_the_sigkill(guard, failure):
+    # Another process's command line may not be UTF-8; ps may time out or fail. None of that may skip SIGKILL.
+    select(guard.config, 'rust')
+    serving(guard)
+    guard.host.ignore_term = True
+    guard.host.listing_failure = failure
+    for _ in range(3):
+        guard.tick(healthy=False)
+    assert guard.host.killed == [(4242, signal.SIGTERM), (4242, signal.SIGKILL)]
+    assert 'ignored SIGTERM for 120 s and was killed;' in guard.sent[-1][1]
 
 
 def test_rust_forced_by_launchd_is_reported_and_alerted_without_a_rust_file(guard, capsys):

@@ -593,9 +593,10 @@ writes Python into the file with the reasons, re-verifies the API process
 waits without limit for stuck requests and in-flight media conversions (90 seconds
 each), and launchd restarts the job only after the process exits, so the watchdog
 waits up to 120 seconds for the process to exit. If the same re-verified process is
-still running, it ends that process's own media conversions (each runs in a session of
-its own) and sends SIGKILL, so no converter is left running. It then sends one alert
-that says what actually happened. If it could not verify or restart the process, it restarts it on a later
+still running, it sends SIGKILL and then ends the media conversions that process was
+running when it checked (each runs in a session of its own), so they do not run on
+unsupervised; a conversion that starts after that check can still finish by itself. It
+then sends one alert that says what actually happened. If it could not verify or restart the process, it restarts it on a later
 check once it verifies as still serving Rust from the file, up to three times. It
 never selects Rust. A selection that keeps the API from starting (unreadable, not
 private to the owner, or a backend other than `python` or `rust`) is also replaced
