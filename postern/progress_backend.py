@@ -43,11 +43,18 @@ def read_selection(config_path):
 
 
 def write_selection(config_path, backend, **detail):
-    """Atomically replace the selection; readers never see a partial file."""
+    """Atomically replace the selection; readers never see a partial file. The owner's watchdog
+    `limits` carry over, so re-selecting a backend never silently resets them."""
     if backend not in ('python', 'rust'):
         raise ValueError('backend must be python or rust')
     path = selection_path(config_path)
     data = {'backend': backend, 'updated_at': datetime.now(timezone.utc).isoformat(timespec='seconds'), **detail}
+    try:
+        previous = json.loads(path.read_text())
+    except (OSError, ValueError):
+        previous = None
+    if isinstance(previous, dict) and isinstance(previous.get('limits'), dict) and 'limits' not in detail:
+        data['limits'] = previous['limits']
     with tempfile.NamedTemporaryFile('w', dir=path.parent, prefix='.progress-backend-', delete=False) as output:
         os.chmod(output.name, 0o600)
         json.dump(data, output, indent=2)

@@ -39,6 +39,7 @@ from pathlib import Path
 
 SELECTION = 'progress-backend.json'      # the same file postern.progress_backend reads at process start
 ACTIVE = 'progress-backend-active.json'  # written by postern.serve run: the serving pid and its backend
+GUARD = 'progress-backend-guard.json'    # written here while guarding: which watchdog checked which selection
 
 
 def probe(url, timeout=5):
@@ -131,18 +132,45 @@ def cpu_seconds(text):
     return seconds + (int(days) if days else 0)*86400
 
 
+LIMITS = {'max_rss_mib': 1536.0, 'max_cpu_percent': 90.0, 'cpu_checks': 10, 'parity_every_seconds': 900.0}
+
+
+def limits(selection):
+    """The owner's guard limits; a missing, non-numeric or non-positive value keeps its default."""
+    given = selection.get('limits') if isinstance(selection.get('limits'), dict) else {}
+    chosen = {}
+    for key, default in LIMITS.items():
+        value = given.get(key)
+        ok = type(value) in (int, float) and value > 0
+        chosen[key] = type(default)(value) if ok else default
+    return chosen
+
+
+def write_python(path, reasons, previous):
+    """Atomically select Python, keeping the owner's limits so a later re-selection of Rust keeps them."""
+    data = {'backend': 'python', 'updated_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+            'fallback': {'from': 'rust', 'reasons': reasons}}
+    if isinstance(previous.get('limits'), dict):
+        data['limits'] = previous['limits']
+    with tempfile.NamedTemporaryFile('w', dir=path.parent, prefix='.progress-backend-', delete=False) as output:
+        os.chmod(output.name, 0o600)
+        json.dump(data, output, indent=2)
+        output.write('\n')
+    os.replace(output.name, path)
+
+
 class Fallback:
     """Return the optional Rust backend to Python when a guard fails. It never selects Rust.
 
-    Guards apply only while the owner's selection file says rust and the serving process recorded that
-    it started from that file. A launchd environment override is outside the file, so a breach there
-    is reported and never changed.
+    Guards apply while the owner's selection file says rust. A serving process that recorded a
+    launchd environment override is outside the file, so a breach there is reported and never changed.
     """
 
     def __init__(self, config_path, data_dir, port, notify, *, failures=3, interval=30, run=subprocess.run,
-                 kill=os.kill, now=time.monotonic, python=sys.executable):
+                 kill=os.kill, now=time.monotonic, sleep=time.sleep, python=sys.executable, exit_wait=30):
         self.config_path, self.data_dir, self.port, self.notify = Path(config_path), Path(data_dir), port, notify
-        self.failures, self.interval, self.run, self.kill, self.now, self.python = failures, interval, run, kill, now, python
+        self.failures, self.interval, self.run, self.kill, self.now = failures, interval, run, kill, now
+        self.sleep, self.python, self.exit_wait = sleep, python, exit_wait
         self.watched = None  # the identity (inode, mtime) of the selection being guarded
         self.handled = None  # the selection a breach already returned to Python
         self.reset()
@@ -151,7 +179,7 @@ class Fallback:
         self.unhealthy = self.big = self.hot = self.parity_errors = 0
         self.cpu = None
         self.next_parity = None
-        self.reported = False
+        self.reported = self.error_reported = False
 
     def selection(self):
         path = self.config_path.with_name(SELECTION)
@@ -193,19 +221,41 @@ class Fallback:
         return {'uid': int(uid), 'rss_mib': int(rss)/1024, 'cpu_seconds': cpu_seconds(cputime), 'command': command}
 
     def serving(self, active):
-        """The verified API process: recorded, listening on our port, ours, and running postern.serve run."""
+        """The verified API process: recorded, listening on our port, ours, and running postern.serve run.
+        Any lookup failure means unverified, never an exception that would stop the health count."""
         pid = active.get('pid') if active else None
-        if pid is None or pid not in self.listening():
+        try:
+            if pid is None or pid not in self.listening():
+                return None, None
+            info = self.process(pid)
+        except (OSError, ValueError, subprocess.SubprocessError):
             return None, None
-        info = self.process(pid)
         if not info or info['uid'] != os.getuid() or '-m postern.serve run' not in info['command']:
             return None, None
         return pid, info
 
     def parity(self):
+        # Bounded well inside the alert window: a slow comparison must not hide an outage for long.
         result = self.run([self.python, '-P', '-m', 'postern.progress_parity', '--config', str(self.config_path)],
-                          capture_output=True, text=True, timeout=300)
-        return result.returncode, (result.stdout.strip().splitlines() or [''])[-1][:500]
+                          capture_output=True, text=True, timeout=60)
+        out = (result.stdout.strip().splitlines() or [''])[-1]
+        if result.returncode not in (0, 3, 4):
+            out = (result.stderr.strip().splitlines() or [out])[-1]
+        return result.returncode, out[:500]
+
+    def heartbeat(self, key, state):
+        """Shows the owner (postern.serve backend) that a current watchdog is guarding this selection."""
+        path = self.data_dir / GUARD
+        data = {'pid': os.getpid(), 'selection': list(key), 'state': state,
+                'checked_at': datetime.now(timezone.utc).isoformat(timespec='seconds')}
+        try:
+            with tempfile.NamedTemporaryFile('w', dir=path.parent, prefix='.progress-backend-guard-', delete=False) as output:
+                os.chmod(output.name, 0o600)
+                json.dump(data, output)
+                output.write('\n')
+            os.replace(output.name, path)
+        except OSError:
+            pass  # A heartbeat is evidence for the owner, never a reason to stop guarding.
 
     def observe(self, healthy, detail=''):
         """Called after every health check. Returns the reasons when this tick returned Rust to Python."""
@@ -222,49 +272,31 @@ class Fallback:
             self.reset()
         if self.handled == key:
             return None
-        active = self.active()
-        pid, info = self.serving(active)
-        forced = pid is not None and active.get('source') == 'environment'
-        if forced and active.get('backend') != 'rust':
-            return None  # The launchd job forces Python; the file is not in effect.
-        limits = selection.get('limits') if isinstance(selection.get('limits'), dict) else {}
-        max_rss = float(limits.get('max_rss_mib', 1536))
-        max_cpu = float(limits.get('max_cpu_percent', 90))
-        cpu_checks = int(limits.get('cpu_checks', 10))
-        parity_every = float(limits.get('parity_every_seconds', 900))
-        reasons = []
+        # Count health first: nothing below may stop a failing API from being returned to Python.
         self.unhealthy = 0 if healthy else self.unhealthy + 1
+        reasons = []
         if self.unhealthy >= self.failures:
             reasons.append(f'{self.unhealthy} consecutive health checks failed ({detail[:200]})')
-        if backend == 'invalid' and reasons:
-            reasons.append(f'{SELECTION} was unreadable or not private to this account')
-        if info and active.get('backend') == 'rust':
-            self.big = self.big + 1 if info['rss_mib'] > max_rss else 0
-            if self.big >= 2:
-                reasons.append(f'API memory {info["rss_mib"]:.0f} MiB above {max_rss:.0f} MiB')
-            moment = self.now()
-            if self.cpu and self.cpu[0] == pid and moment > self.cpu[2]:
-                percent = (info['cpu_seconds']-self.cpu[1])/(moment-self.cpu[2])*100
-                self.hot = self.hot + 1 if percent > max_cpu else 0
-                if self.hot >= cpu_checks:
-                    reasons.append(f'API CPU above {max_cpu:.0f}% for {self.hot} checks')
-            self.cpu = (pid, info['cpu_seconds'], moment)
-            if self.next_parity is None:
-                self.next_parity = moment + min(parity_every, 300)  # a first comparison soon after the switch
-            if healthy and not reasons and moment >= self.next_parity:
-                self.next_parity = moment + parity_every
-                try:
-                    code, summary = self.parity()
-                except (OSError, subprocess.TimeoutExpired) as error:
-                    code, summary = None, type(error).__name__
-                if code == 3:
-                    reasons.append(f'Rust and Python progress differ: {summary}')
-                elif code in (0, 4):
-                    self.parity_errors = 0
-                else:
-                    self.parity_errors += 1
-                    if self.parity_errors >= 3:
-                        reasons.append(f'the parity check failed {self.parity_errors} times: {summary}')
+            if backend == 'invalid':
+                reasons.append(f'{SELECTION} was unreadable or not private to this account')
+        active = self.active()
+        if active is not None and active.get('source') == 'environment':
+            if active.get('backend') != 'rust':
+                return None  # The launchd job forces Python; the file is not in effect.
+            forced = True
+        else:
+            forced = False
+        try:
+            pid, info = self.serving(active)
+            if info and active.get('backend') == 'rust':
+                reasons += self.resources(selection, pid, info, healthy and not reasons)
+        except Exception as error:  # A guard bug must never silently disarm the fallback.
+            pid = None
+            if not self.error_reported:
+                self.notify('Postern: Rust backend guard error',
+                            f'{type(error).__name__}: {error}\n\nHealth checks still return Rust to Python.')
+                self.error_reported = True
+        self.heartbeat(key, 'guarding')
         if not reasons:
             return None
         if forced:
@@ -274,27 +306,89 @@ class Fallback:
                             + '\n'.join(reasons))
                 self.reported = True
             return None
-        return self.fall_back(reasons, pid)
+        return self.fall_back(selection, reasons, pid)
 
-    def fall_back(self, reasons, pid):
-        path = self.config_path.with_name(SELECTION)
-        data = {'backend': 'python', 'updated_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
-                'fallback': {'from': 'rust', 'reasons': reasons}}
-        with tempfile.NamedTemporaryFile('w', dir=path.parent, prefix='.progress-backend-', delete=False) as output:
-            os.chmod(output.name, 0o600)
-            json.dump(data, output, indent=2)
-            output.write('\n')
-        os.replace(output.name, path)
-        self.handled = self.watched
-        restart = 'The next API start uses Python.'
-        if pid is not None:
-            # Re-verify immediately before signalling: never terminate a process we did not identify.
-            current, _ = self.serving(self.active())
-            if current == pid:
-                self.kill(pid, signal.SIGTERM)
-                restart = f'Restarted the API (pid {pid}); launchd starts it again with Python.'
-        self.notify('Postern returned to the Python backend', '\n'.join(reasons) + '\n\n' + restart)
+    def resources(self, selection, pid, info, parity_allowed):
+        chosen = limits(selection)
+        reasons = []
+        self.big = self.big + 1 if info['rss_mib'] > chosen['max_rss_mib'] else 0
+        if self.big >= 2:
+            reasons.append(f'API memory {info["rss_mib"]:.0f} MiB above {chosen["max_rss_mib"]:.0f} MiB')
+        moment = self.now()
+        if self.cpu and self.cpu[0] == pid and moment > self.cpu[2]:
+            percent = (info['cpu_seconds']-self.cpu[1])/(moment-self.cpu[2])*100
+            self.hot = self.hot + 1 if percent > chosen['max_cpu_percent'] else 0
+            if self.hot >= chosen['cpu_checks']:
+                reasons.append(f'API CPU above {chosen["max_cpu_percent"]:.0f}% for {self.hot} checks')
+        self.cpu = (pid, info['cpu_seconds'], moment)
+        if self.next_parity is None:
+            self.next_parity = moment + min(chosen['parity_every_seconds'], 300)  # a first comparison soon after the switch
+        if parity_allowed and not reasons and moment >= self.next_parity:
+            self.next_parity = moment + chosen['parity_every_seconds']
+            try:
+                code, summary = self.parity()
+            except (OSError, subprocess.SubprocessError) as error:
+                code, summary = None, type(error).__name__
+            if code == 3:
+                reasons.append(f'Rust and Python progress differ: {summary}')
+            elif code in (0, 4):
+                self.parity_errors = 0
+            else:
+                self.parity_errors += 1
+                print(f'FAIL parity check (exit {code}): {summary}', flush=True)
+                if self.parity_errors >= 3:
+                    reasons.append(f'the parity check failed {self.parity_errors} times: {summary}')
         return reasons
+
+    def fall_back(self, selection, reasons, pid):
+        """Select Python, then restart only a re-verified API; the alert reports what actually happened."""
+        self.handled = self.watched
+        outcome = 'The next API start uses Python.'
+        try:
+            write_python(self.config_path.with_name(SELECTION), reasons, selection)
+        except OSError as error:
+            outcome = f'Could not write Python into {SELECTION} ({type(error).__name__}); select it by hand.'
+            pid = None
+        try:
+            if pid is not None and self.serving(self.active())[0] == pid:
+                outcome = self.restart(pid)
+        except Exception as error:
+            outcome = f'Python is selected, but the API restart failed ({type(error).__name__}); restart it by hand.'
+        finally:
+            self.notify('Postern returned to the Python backend', '\n'.join(reasons) + '\n\n' + outcome)
+        return reasons
+
+    def alive(self, pid):
+        """True while the same API process exists (it may already have closed its port), False once it is
+        gone, None when ps cannot tell. Only a positive answer may lead to SIGKILL."""
+        try:
+            info = self.process(pid)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return None
+        return bool(info) and info['uid'] == os.getuid() and '-m postern.serve run' in info['command']
+
+    def restart(self, pid):
+        try:
+            self.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return 'The API had already exited; launchd starts it again with Python.'
+        # Uvicorn closes its port at once but waits without limit for stuck requests; launchd restarts
+        # the job only after the process exits, so wait for the process, not the port.
+        deadline = self.now() + self.exit_wait
+        while self.now() < deadline:
+            self.sleep(1)
+            if self.alive(pid) is False:
+                return f'Restarted the API (pid {pid}); launchd starts it again with Python.'
+        state = self.alive(pid)
+        if state is True:
+            try:
+                self.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            return f'The API (pid {pid}) ignored SIGTERM for {self.exit_wait} s and was killed; launchd starts it again with Python.'
+        if state is False:
+            return f'Restarted the API (pid {pid}); launchd starts it again with Python.'
+        return f'Sent SIGTERM to the API (pid {pid}) but could not confirm it exited; check it by hand.'
 
 
 def notifier(config_path, values):
@@ -337,8 +431,8 @@ def main(argv=None):
             return 2
         print(f'ok   test alert sent — {where}')
         return 0
-    print(f'ok   watching {url} every {arguments.interval}s, alerting after {arguments.failures} failures: {where}',
-          flush=True)
+    print(f'ok   watching {url} every {arguments.interval}s, alerting after {arguments.failures} failures: {where}; '
+          f'the Rust backend guard runs while {SELECTION} selects rust', flush=True)
     guard = Fallback(config_path, Path(values['data_dir']).expanduser(), values.get('port', 8790), where,
                      failures=arguments.failures, interval=arguments.interval)
 

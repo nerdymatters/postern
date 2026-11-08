@@ -439,16 +439,35 @@ def run(config_path):
 def backend(config_path, choice):
     """Show or set the owner's progress backend selection. It takes effect at the next API start."""
     from . import progress_backend
-    if choice in ('python', 'rust'):
-        progress_backend.write_selection(config_path, choice, set_by='owner')
-    selection = progress_backend.read_selection(config_path)
+    from .watchdog import GUARD
+    if choice in ('python', 'rust') and os.geteuid() == 0:
+        # A root-owned file is refused by the API, which runs as the owner: run this without sudo.
+        print('FAIL run `postern.serve backend` as the account that owns the data, without sudo')
+        return 2
+    try:
+        if choice in ('python', 'rust'):
+            progress_backend.write_selection(config_path, choice, set_by='owner')
+        selection = progress_backend.read_selection(config_path)
+    except (OSError, ValueError, RuntimeError) as error:
+        print(f'FAIL {progress_backend.SELECTION}: {error}. Fix it, or remove it to serve Python.')
+        return 2
     print(f'ok   {progress_backend.SELECTION}: {selection["backend"] if selection else "absent (Python)"}')
     try:
         values = json.loads(Path(config_path).expanduser().read_text())
-        active = json.loads((Path(values['data_dir']).expanduser() / progress_backend.ACTIVE).read_text())
-        print(f'ok   serving process {active["pid"]}: {active["backend"]} from {active["source"]}, started {active["started_at"]}')
+        data_dir = Path(values['data_dir']).expanduser()
     except (OSError, ValueError, KeyError):
-        print('ok   no serving process has recorded its backend yet')
+        data_dir = None
+    for name, label in ((progress_backend.ACTIVE, 'serving process'), (GUARD, 'watchdog guard')):
+        try:
+            record = json.loads((data_dir / name).read_text())
+        except (OSError, ValueError, TypeError):
+            print(f'ok   {label}: no record yet')
+            continue
+        if name == GUARD:
+            print(f'ok   watchdog guard: pid {record.get("pid")} {record.get("state")}, last checked {record.get("checked_at")}')
+        else:
+            print(f'ok   serving process {record.get("pid")}: {record.get("backend")} from {record.get("source")}, '
+                  f'started {record.get("started_at")}')
     if choice in ('python', 'rust'):
         print(f'Restart the API to apply it. A {progress_backend.KEY} setting in the launchd job overrides this file.')
     return 0

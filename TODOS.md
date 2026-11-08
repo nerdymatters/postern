@@ -110,6 +110,12 @@ lists RS-07–RS-09.
 - The sustained fault-load verdicts are bare `assert`s, and two success flags
   are hard-coded, so the probe would report success under `python -O`. Use an
   always-raising check and computed flags.
+- **Before Rust becomes the default:** the watchdog's parity check replays history
+  with both native interfaces in its own process, so it cannot see drift in the
+  serving process's in-memory checkpoint, or native errors there that leave health,
+  CPU and memory normal. Have the API compare its checkpoint result with a full
+  replay in the same snapshot from time to time, count native errors on progress
+  paths, and expose a flag the watchdog treats as a breach.
 
 **Compatibility:** Preserve API responses, authorization/revocation, durable
 audit admission, single-writer/job ownership, training progress and certificate

@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import signal
 import sqlite3
+import subprocess
 from types import SimpleNamespace
 
 import pytest
@@ -95,7 +96,7 @@ def test_serve_run_applies_the_selection_before_the_service_starts(config_path, 
 def test_the_backend_command_shows_and_sets_the_owner_selection(config_path, capsys):
     assert serve.main(['backend', '--config', str(config_path)]) == 0
     printed = capsys.readouterr().out
-    assert 'progress-backend.json: absent (Python)' in printed and 'no serving process' in printed
+    assert 'progress-backend.json: absent (Python)' in printed and 'serving process: no record yet' in printed
     assert serve.main(['backend', 'rust', '--config', str(config_path)]) == 0
     printed = capsys.readouterr().out
     assert 'progress-backend.json: rust' in printed and 'Restart the API to apply it' in printed
@@ -113,20 +114,40 @@ class Host:
     def __init__(self, pid=4242, rss_mib=300, command='/venv/bin/python -P -m postern.serve run --config c'):
         self.pid, self.rss_mib, self.command, self.cpu = pid, rss_mib, command, 0.0
         self.listening, self.parity_codes, self.calls, self.killed = True, [], [], []
+        self.alive, self.ignore_term, self.lookup_errors, self.timeouts = True, False, 0, {}
 
     def run(self, args, **kwargs):
-        self.calls.append(args[0])
+        self.calls.append((args[0], kwargs.get('timeout')))
+        if args[0].endswith(('lsof', 'ps')) and self.lookup_errors:
+            self.lookup_errors -= 1
+            raise subprocess.TimeoutExpired(args[0], kwargs.get('timeout'))
         if args[0].endswith('lsof'):
-            return SimpleNamespace(returncode=0, stdout=f'{self.pid}\n' if self.listening else '', stderr='')
+            return SimpleNamespace(returncode=0, stdout=f'{self.pid}\n' if self.listening and self.alive else '', stderr='')
         if args[0].endswith('ps'):
+            if not self.alive:
+                return SimpleNamespace(returncode=1, stdout='', stderr='')
             minutes, seconds = divmod(self.cpu, 60)
             line = f'{os.getuid()} {int(self.rss_mib*1024)} {int(minutes)}:{seconds:05.2f} {self.command}\n'
             return SimpleNamespace(returncode=0, stdout=line, stderr='')
         code = self.parity_codes.pop(0) if self.parity_codes else 0
-        return SimpleNamespace(returncode=code, stdout='{"match": %s}\n' % ('true' if code == 0 else 'false'), stderr='')
+        if isinstance(code, BaseException):
+            raise code
+        stderr = ''
+        if isinstance(code, tuple):
+            code, stderr = code
+        return SimpleNamespace(returncode=code, stdout='{"match": %s}\n' % ('true' if code == 0 else 'false'), stderr=stderr)
 
     def kill(self, pid, sig):
         self.killed.append((pid, sig))
+        if sig == signal.SIGTERM:
+            self.listening = False  # uvicorn closes its port at once
+            self.alive = self.alive and self.ignore_term
+        elif sig == signal.SIGKILL:
+            self.alive = self.listening = False
+
+    def respawn(self):
+        """launchd started the API again (the fake keeps its pid)."""
+        self.alive = self.listening = True
 
 
 @pytest.fixture
@@ -134,7 +155,8 @@ def guard(config_path):
     host, sent, clock = Host(), [], [0.0]
     fallback = watchdog.Fallback(config_path, config_path.parent / 'data', 8790,
                                  lambda subject, body: sent.append((subject, body)), failures=3, interval=30,
-                                 run=host.run, kill=host.kill, now=lambda: clock[0], python='python')
+                                 run=host.run, kill=host.kill, now=lambda: clock[0], python='python',
+                                 sleep=lambda seconds: clock.__setitem__(0, clock[0]+seconds))
 
     def tick(healthy=True, seconds=30, cpu_percent=5.0):
         clock[0] += seconds
@@ -180,12 +202,14 @@ def test_memory_cpu_and_parity_guards(guard):
     assert guard.tick() is None  # one sample over the limit is not a breach
     reasons = guard.tick()
     assert reasons and 'API memory 2000 MiB above 1536 MiB' in reasons[0]
+    guard.host.respawn()
 
     select(guard.config, 'rust', limits={'cpu_checks': 3})  # the owner re-selects Rust: guarding resumes
     guard.host.rss_mib = 300
     guard.tick()  # first CPU sample
     assert guard.tick(cpu_percent=95) is None and guard.tick(cpu_percent=95) is None
     assert 'API CPU above 90% for 3 checks' in guard.tick(cpu_percent=95)[0]
+    guard.host.respawn()
 
     select(guard.config, 'rust', limits={'parity_every_seconds': 60})
     guard.host.parity_codes = [0, 4, 3]
@@ -198,9 +222,28 @@ def test_memory_cpu_and_parity_guards(guard):
 def test_repeated_parity_errors_fail_safe_but_one_does_not(guard):
     select(guard.config, 'rust', limits={'parity_every_seconds': 60})
     serving(guard)
-    guard.host.parity_codes = [1, 0, 1, 1, 1]
+    # A hung or missing parity process counts like a failed run, and never escapes observe().
+    guard.host.parity_codes = [1, 0, 1, subprocess.TimeoutExpired('parity', 300), OSError('gone')]
     results = [guard.tick(seconds=60) for _ in range(6)]
-    assert results[:5] == [None]*5 and 'the parity check failed 3 times' in results[5][0]
+    assert results[:5] == [None]*5 and 'the parity check failed 3 times: OSError' in results[5][0]
+
+
+def test_a_broken_guard_never_stops_outage_alerts(config_path, monkeypatch, capsys):
+    # Value: protects=watchdog keeps probing and alerting when the backend guard raises;
+    # fails_when=the try/except around guard.observe is removed or narrowed; why_new=other tests call
+    # Fallback directly; seam=none; no_claim=real SMTP (alerts go to the data-directory log file)
+    class Broken:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def observe(self, healthy, detail=''):
+            raise RuntimeError('synthetic guard failure')
+    monkeypatch.setattr(watchdog, 'Fallback', Broken)
+    monkeypatch.setattr(watchdog, 'probe', lambda url: (False, 'connection refused'))
+    monkeypatch.setattr(watchdog.Watchdog, 'run', lambda self, sleep=None, cycles=None: [self.tick() for _ in range(3)])
+    assert watchdog.main(['run', '--config', str(config_path)]) == 0
+    assert capsys.readouterr().out.count('FAIL backend guard: RuntimeError: synthetic guard failure') == 3
+    assert 'Postern is not answering' in (config_path.parent / 'data' / 'watchdog-alerts.log').read_text()
 
 
 def test_unverified_process_is_never_signalled(guard):
@@ -259,33 +302,59 @@ def catalog_database(tmp_path, pages=3):
 
 
 class Native:
-    """The native reduce contract, computed by the Python reference (or deliberately wrong)."""
+    """The native reduce contracts, computed by the Python reference (or deliberately wrong in one)."""
 
     def __init__(self, wrong=False):
-        self.wrong = wrong
+        self.wrong = wrong  # False, True (the full reducer) or 'incremental'
 
-    def reduce(self, metadata, cursor, evidence):
+    def _reference(self, metadata, rows):
         items = {identity: {'kind': kind, 'pages': pages, 'duration_seconds': duration}
                  for identity, kind, pages, duration in metadata}
-        result = progress._reduce_python(items, cursor)
-        return {} if self.wrong else result
+        return progress._reduce_python(items, rows)
+
+    def reduce(self, metadata, cursor, evidence):
+        result = self._reference(metadata, cursor)
+        return {} if self.wrong is True else result
+
+    def reduce_incremental(self, metadata, cursor, evidence, checkpoint):
+        rows = list(checkpoint) + list(cursor)
+        result = self._reference(metadata, rows)
+        return ({} if self.wrong == 'incremental' and checkpoint else result), rows
 
 
-@pytest.mark.parametrize('wrong,code', [(False, 0), (True, 3)])
+@pytest.mark.parametrize('wrong,code', [(False, 0), (True, 3), ('incremental', 3)])
 def test_parity_compares_both_reducers_on_one_read_only_snapshot(tmp_path, monkeypatch, wrong, code):
+    # The incremental row protects the checkpoint interface the Rust staff report uses: a drift there
+    # alone must count as a difference even when the full reducer agrees.
     database = catalog_database(tmp_path)
     monkeypatch.setattr(progress_backend, 'native', lambda: Native(wrong))
     result, summary = progress_parity.compare(database)
     assert result == code and summary['keys'] == 1 and summary['source'] == 'events'
     assert summary['match'] is (not wrong)
+    assert summary['incremental_matches'] is (wrong != 'incremental')
 
 
-def test_parity_is_not_applicable_without_published_items(tmp_path, monkeypatch):
+@pytest.mark.parametrize('change', ["UPDATE posts SET status='draft'", 'UPDATE items SET pages=2147483648'])
+def test_parity_is_not_applicable_without_native_eligible_items(tmp_path, monkeypatch, change):
+    # Unpublished catalogs and metadata the native reducer leaves to Python are not a mismatch:
+    # reporting 3 there would make the watchdog abandon a healthy Rust backend.
     database = catalog_database(tmp_path)
     with sqlite3.connect(database) as db:
-        db.execute("UPDATE posts SET status='draft'")
+        db.execute(change)
     monkeypatch.setattr(progress_backend, 'native', lambda: Native())
     assert progress_parity.compare(database)[0] == 4
+
+
+def test_parity_command_reads_the_configured_database_and_prints_no_names(tmp_path, monkeypatch, capsys):
+    data = tmp_path / 'data'
+    data.mkdir()
+    catalog_database(data)
+    config = tmp_path / 'config.json'
+    config.write_text(json.dumps({'data_dir': str(data)}))
+    monkeypatch.setattr(progress_backend, 'native', lambda: Native(wrong=True))
+    assert progress_parity.main(['--config', str(config)]) == 3
+    printed = capsys.readouterr().out.strip()
+    assert json.loads(printed)['match'] is False and '@' not in printed
 
 
 def test_parity_with_the_real_native_module(tmp_path):
@@ -297,3 +366,96 @@ def test_parity_with_the_real_native_module(tmp_path):
         pytest.skip('installed native module predates the checkpoint interface')
     result, summary = progress_parity.compare(catalog_database(tmp_path))
     assert result == 0 and summary['match'] is True
+
+
+def test_launchd_override_with_a_down_api_is_never_changed(guard):
+    select(guard.config, 'rust')
+    serving(guard, backend='rust', source='environment')
+    guard.host.listening = False  # the forced-Rust API crashed: nothing verifies, the override still holds
+    results = [guard.tick(healthy=False) for _ in range(4)]
+    assert results == [None]*4 and stored(guard)['backend'] == 'rust' and guard.host.killed == []
+    assert [subject for subject, _ in guard.sent] == ['Postern: Rust backend breach under a launchd override']
+
+
+def test_a_process_that_ignores_sigterm_is_killed_after_reverification(guard):
+    select(guard.config, 'rust')
+    serving(guard)
+    guard.host.ignore_term = True  # uvicorn closed its port but a stuck request keeps it alive
+    for _ in range(3):
+        reasons = guard.tick(healthy=False)
+    assert reasons and guard.host.killed == [(4242, signal.SIGTERM), (4242, signal.SIGKILL)]
+    assert 'ignored SIGTERM for 30 s and was killed' in guard.sent[0][1]
+
+
+def test_failures_after_selecting_python_still_alert_with_the_actual_outcome(guard, monkeypatch):
+    select(guard.config, 'rust')
+    serving(guard)
+    def gone(pid, sig):
+        guard.host.killed.append((pid, sig))
+        raise ProcessLookupError(pid)
+    monkeypatch.setattr(guard.fallback, 'kill', gone)
+    for _ in range(3):
+        guard.tick(healthy=False)
+    assert stored(guard)['backend'] == 'python' and 'had already exited' in guard.sent[-1][1]
+
+    select(guard.config, 'rust', note='again')
+    guard.host.respawn()
+    guard.tick(healthy=False)
+    guard.tick(healthy=False)
+    guard.host.lookup_errors = 2  # lsof times out while the guard re-verifies before signalling
+    reasons = guard.tick(healthy=False)
+    assert reasons and stored(guard)['backend'] == 'python'
+    assert guard.sent[-1][0] == 'Postern returned to the Python backend'
+
+
+def test_inspection_errors_and_bad_limits_never_disarm_the_health_fallback(guard):
+    select(guard.config, 'rust', limits={'parity_every_seconds': None, 'max_rss_mib': 'big', 'cpu_checks': -1})
+    serving(guard)
+    guard.host.lookup_errors = 99  # lsof and ps time out on every tick
+    assert guard.tick(healthy=False) is None and guard.tick(healthy=False) is None
+    assert '3 consecutive health checks failed' in guard.tick(healthy=False)[0]
+    assert watchdog.limits({'limits': {'parity_every_seconds': None, 'max_rss_mib': 'big', 'cpu_checks': -1}}) == watchdog.LIMITS
+
+
+def test_parity_is_bounded_and_failed_runs_say_why(guard, capsys):
+    select(guard.config, 'rust', limits={'parity_every_seconds': 60})
+    serving(guard)
+    guard.host.parity_codes = [(1, 'sqlite3.OperationalError: database is locked')]*3
+    results = [guard.tick(seconds=60) for _ in range(4)]
+    assert all(timeout == 60 for name, timeout in guard.host.calls if name == 'python')
+    assert 'failed 3 times: sqlite3.OperationalError: database is locked' in results[3][0]
+    assert capsys.readouterr().out.count('FAIL parity check (exit 1): sqlite3.OperationalError') == 3
+
+
+def test_owner_limits_survive_reselection_and_fallback(guard):
+    select(guard.config, 'python', limits={'max_rss_mib': 2048})
+    select(guard.config, 'rust')  # `postern.serve backend rust` keeps the owner's limits
+    assert stored(guard)['limits'] == {'max_rss_mib': 2048}
+    serving(guard)
+    guard.host.rss_mib = 1800  # under the owner's limit, over the default
+    assert guard.tick() is None and guard.tick() is None
+    for _ in range(3):
+        guard.tick(healthy=False)
+    assert stored(guard)['backend'] == 'python' and stored(guard)['limits'] == {'max_rss_mib': 2048}
+
+
+def test_the_guard_heartbeat_shows_which_watchdog_is_armed(guard, capsys):
+    select(guard.config, 'rust')
+    serving(guard)
+    guard.tick()
+    beat = json.loads((guard.config.parent / 'data' / watchdog.GUARD).read_text())
+    assert beat['pid'] == os.getpid() and beat['state'] == 'guarding'
+    assert serve.main(['backend', '--config', str(guard.config)]) == 0
+    assert f'watchdog guard: pid {os.getpid()} guarding' in capsys.readouterr().out
+
+
+def test_the_backend_command_refuses_root_and_reports_a_bad_file(config_path, monkeypatch, capsys):
+    with monkeypatch.context() as patched:
+        patched.setattr(os, 'geteuid', lambda: 0)
+        assert serve.main(['backend', 'rust', '--config', str(config_path)]) == 2
+    assert 'without sudo' in capsys.readouterr().out and not progress_backend.selection_path(config_path).exists()
+    path = progress_backend.selection_path(config_path)
+    path.write_text('{not json')
+    path.chmod(0o600)
+    assert serve.main(['backend', '--config', str(config_path)]) == 2
+    assert 'FAIL progress-backend.json' in capsys.readouterr().out
