@@ -620,10 +620,11 @@ directory. `postern.serve backend` judges that record by the current selection:
 - `FAIL` when there is no record, the record comes from a watchdog older than
   v0.24.1 (it could not report what it checked), the record is for another
   selection or older than two minutes, a launchd setting forces a backend (Rust
-  forced there is reported even with no selection file), the watchdog cannot
-  verify the serving process (memory, CPU and parity checks are paused; it alerts
-  after three such checks), or its checks raised an error. Failed health checks
-  still return Rust to Python in each of these cases, except under a launchd setting.
+  forced there is reported whatever the file selects, or with no file), the
+  watchdog cannot verify the serving process (memory, CPU and parity checks are
+  paused; it alerts after three such checks), or its checks raised an error.
+  While a v0.24.0 or later watchdog is running, failed health checks still return
+  Rust to Python in each of these cases, except under a launchd setting.
 
 A watchdog started from a release before v0.24.1 cannot report what it checked, so
 restart the watchdog job after upgrading (step 3). Run `postern.serve backend` as the owner,
