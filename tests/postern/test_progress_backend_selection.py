@@ -120,6 +120,7 @@ class Host:
         self.pid, self.rss_mib, self.command, self.cpu = pid, rss_mib, command, 0.0
         self.listening, self.parity_codes, self.calls, self.killed = True, [], [], []
         self.alive, self.ignore_term, self.lookup_errors, self.timeouts = True, False, 0, {}
+        self.processes = []  # extra `ps -A` rows: (pid, ppid, pgid, uid, command)
 
     def run(self, args, **kwargs):
         self.calls.append((args[0], kwargs.get('timeout')))
@@ -128,6 +129,9 @@ class Host:
             raise subprocess.TimeoutExpired(args[0], kwargs.get('timeout'))
         if args[0].endswith('lsof'):
             return SimpleNamespace(returncode=0, stdout=f'{self.pid}\n' if self.listening and self.alive else '', stderr='')
+        if args[0].endswith('ps') and '-A' in args:
+            rows = [(self.pid, 1, self.pid, os.getuid(), self.command)] + self.processes
+            return SimpleNamespace(returncode=0, stdout=''.join(f'{p} {pp} {g} {u} {c}\n' for p, pp, g, u, c in rows), stderr='')
         if args[0].endswith('ps'):
             if not self.alive:
                 return SimpleNamespace(returncode=1, stdout='', stderr='')
@@ -150,6 +154,9 @@ class Host:
         elif sig == signal.SIGKILL:
             self.alive = self.listening = False
 
+    def killpg(self, group, sig):
+        self.killed.append(('group', group, sig))
+
     def respawn(self):
         """launchd started the API again (the fake keeps its pid)."""
         self.alive = self.listening = True
@@ -160,7 +167,7 @@ def guard(config_path):
     host, sent, clock = Host(), [], [0.0]
     fallback = watchdog.Fallback(config_path, config_path.parent / 'data', 8790,
                                  lambda subject, body: sent.append((subject, body)), failures=3, interval=30,
-                                 run=host.run, kill=host.kill, now=lambda: clock[0], python='python',
+                                 run=host.run, kill=host.kill, killpg=host.killpg, now=lambda: clock[0], python='python',
                                  sleep=lambda seconds: clock.__setitem__(0, clock[0]+seconds))
 
     def tick(healthy=True, seconds=30, cpu_percent=5.0):
@@ -784,6 +791,58 @@ def test_a_finishing_restart_that_raises_still_alerts_with_the_manual_step(guard
     guard.tick()
     subject, body = guard.sent[-1]
     assert subject == 'Postern finished returning to the Python backend' and 'restart the API by hand' in body
+
+
+def test_a_breach_under_an_override_is_not_replayed_after_the_override_is_removed(guard):
+    # The owner removes the launchd override and restarts on the same Rust file: an old alert-only
+    # breach must not return the new, healthy process to Python.
+    select(guard.config, 'rust', limits={'parity_every_seconds': 60})
+    serving(guard, source='environment')
+    guard.host.parity_codes = [3]
+    results = [guard.tick() for _ in range(4)]
+    assert results == [None]*4 and [subject for subject, _ in guard.sent] == ['Postern: Rust backend breach under a launchd override']
+    serving(guard)  # the override is gone; the API now serves Rust from the file
+    assert guard.tick() is None and stored(guard)['backend'] == 'rust' and guard.host.killed == []
+
+
+def test_a_heartbeat_from_an_older_watchdog_is_not_reported_as_armed(guard):
+    # A v0.24.0 watchdog wrote "guarding" on every tick without verifying anything.
+    select(guard.config, 'rust')
+    serving(guard)
+    guard.tick()
+    record = {key: value for key, value in beat(guard).items() if key != 'guard_version'}
+    assert serve.guard_line(record, guard.config).startswith('FAIL watchdog guard: the heartbeat is from an older watchdog')
+    assert beat(guard)['guard_version'] == watchdog.GUARD_VERSION
+
+
+def test_sigkill_ends_only_this_apis_own_media_conversions(guard):
+    select(guard.config, 'rust')
+    serving(guard)
+    guard.host.ignore_term = True
+    uid = os.getuid()
+    guard.host.processes = [
+        (5001, 4242, 5001, uid, '/usr/bin/python3 -I /x/postern/derive_child.py a b document'),  # this API's converter
+        (5002, 4242, 4242, uid, '/usr/bin/python3 -I /x/postern/derive_child.py a b video'),     # not its own session
+        (5003, 7777, 5003, uid, '/usr/bin/python3 -I /x/postern/derive_child.py a b document'),  # another parent
+        (5004, 4242, 5004, uid + 1, '/usr/bin/python3 -I /x/postern/derive_child.py a b document'),  # another user
+        (5005, 4242, 5005, uid, '/usr/bin/caffeinate -i'),                                         # not a converter
+    ]
+    for _ in range(3):
+        guard.tick(healthy=False)
+    assert guard.host.killed == [(4242, signal.SIGTERM), ('group', 5001, signal.SIGKILL), (4242, signal.SIGKILL)]
+    assert 'with 1 media conversion(s) it was still running' in guard.sent[-1][1]
+
+
+def test_rust_forced_by_launchd_is_reported_and_alerted_without_a_rust_file(guard, capsys):
+    serving(guard, source='environment')  # the launchd job forces Rust; no selection file at all
+    assert serve.main(['backend', '--config', str(guard.config)]) == 0
+    assert 'FAIL watchdog guard: the launchd job sets POSTERN_PROGRESS_BACKEND' in capsys.readouterr().out
+    guard.host.rss_mib = 2000
+    results = [guard.tick() for _ in range(4)]
+    assert results == [None]*4 and guard.host.killed == []
+    assert not progress_backend.selection_path(guard.config).exists()
+    assert [subject for subject, _ in guard.sent] == ['Postern: Rust backend breach under a launchd override']
+    assert 'API memory 2000 MiB above 1536 MiB' in guard.sent[0][1]
 
 
 def test_zz_the_selection_tests_leave_the_backend_setting_as_found():

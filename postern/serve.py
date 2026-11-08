@@ -482,7 +482,7 @@ def backend(config_path, choice):
     if choice == 'rust':
         print('ok   watchdog guard: it checks this selection within 30 s of the API restart; run this again to confirm')
     else:
-        print(guard_line(records[GUARD], config_path, selected=selection))
+        print(guard_line(records[GUARD], config_path, selected=selection, active=active))
     if choice in ('python', 'rust'):
         print(f'Restart the API to apply it. A {progress_backend.SETTING} setting in the launchd job overrides this file.')
     return 0
@@ -499,11 +499,15 @@ GUARD_STATES = {
 }
 
 
-def guard_line(record, config_path, now=None, selected=None):
+def guard_line(record, config_path, now=None, selected=None, active=None):
     """Judged by the current selection: a guard is needed only while Rust is selected, and is armed only if
-    it checked this selection within the last two minutes and verified the process serving it."""
+    a current watchdog checked this selection within the last two minutes and verified the process serving it.
+    A launchd job that forces Rust is reported whatever the file says: the guard can only alert then."""
     from datetime import datetime, timezone
     from . import progress_backend
+    from .watchdog import GUARD_VERSION
+    if active and active.get('backend') == 'rust' and active.get('source') == 'environment':
+        return GUARD_STATES['override']
     try:
         info = progress_backend.selection_path(config_path).lstat()
         current = [info.st_ino, info.st_mtime_ns]
@@ -515,7 +519,10 @@ def guard_line(record, config_path, now=None, selected=None):
         return 'ok   watchdog guard: not needed while Python is selected'
     if record is None:
         return ('FAIL watchdog guard: no heartbeat for the Rust selection; restart the watchdog job '
-                '(v0.24.0 or later) and check again')
+                '(v0.24.1 or later) and check again')
+    if record.get('guard_version') != GUARD_VERSION:
+        return ('FAIL watchdog guard: the heartbeat is from an older watchdog that cannot report what it checked; '
+                'restart the watchdog job (v0.24.1 or later)')
     try:
         age = ((now or datetime.now(timezone.utc)) - datetime.fromisoformat(record.get('checked_at'))).total_seconds()
     except (TypeError, ValueError):

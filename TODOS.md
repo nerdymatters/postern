@@ -174,9 +174,11 @@ keeps that service disabled.
   skipped restart is retried while the same process still serves Rust. A refused
   selection value is replaced with Python, a failed start replaces the serving
   record, guard errors keep the verified process, a failing notifier never skips
-  the fallback, the SIGKILL wait covers a media conversion (120 s), huge limits
-  keep their defaults, and the parity check streams history and is tested with the
-  real native module on the compact copy.
+  the fallback, the SIGKILL wait covers a media conversion (120 s) and SIGKILL
+  ends the API's own converters, huge limits keep their defaults, and the parity
+  check streams history and is tested with the real native module on the compact
+  copy. A heartbeat from a watchdog older than v0.24.1 is refused, and Rust forced
+  by the launchd job is reported and alerted even without a Rust selection file.
 
 - **2026-11-07 — Measure the Rust progress checkpoint on production-shaped data.**
   Owner decision D3 made this an RS-07 precondition. On a fresh read-only copy of the

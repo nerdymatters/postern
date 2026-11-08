@@ -593,8 +593,9 @@ writes Python into the file with the reasons, re-verifies the API process
 waits without limit for stuck requests and in-flight media conversions (90 seconds
 each), and launchd restarts the job only after the process exits, so the watchdog
 waits up to 120 seconds for the process to exit. If the same re-verified process is
-still running, it sends SIGKILL. It then sends one alert that says what actually
-happened. If it could not verify or restart the process, it restarts it on a later
+still running, it ends that process's own media conversions (each runs in a session of
+its own) and sends SIGKILL, so no converter is left running. It then sends one alert
+that says what actually happened. If it could not verify or restart the process, it restarts it on a later
 check once it verifies as still serving Rust from the file, up to three times. It
 never selects Rust. A selection that keeps the API from starting (unreadable, not
 private to the owner, or a backend other than `python` or `rust`) is also replaced
@@ -605,7 +606,8 @@ missing, non-numeric, non-finite or out-of-range value, or a fractional
 it. If the watchdog cannot write Python into the file, it alerts once and retries
 on every later check, a memory, CPU or parity breach included, until the write
 succeeds. An alert that fails to send is logged and never skips the fallback.
-While the launchd job's environment selects Rust, the watchdog can only alert.
+While the launchd job's environment selects Rust, the watchdog can only alert, with
+or without a selection file; a breach seen then is never kept for the file.
 
 While Rust is selected, the watchdog records its pid, the selection it checked,
 the time and what it could run in `progress-backend-guard.json` in the data
@@ -614,14 +616,16 @@ directory. `postern.serve backend` judges that record by the current selection:
 - Python selected: `ok … not needed while Python is selected`;
 - Rust selected and checked within the last two minutes: `ok … guarding this
   selection`, or `ok … watching` before the API has restarted with Rust;
-- `FAIL` when there is no record (an older watchdog writes none), the record is
-  for another selection or older than two minutes, a launchd setting overrides
-  the file, the watchdog cannot verify the serving process (memory, CPU and parity
-  checks are paused; it alerts after three such checks), or its checks raised an
-  error. Failed health checks still return Rust to Python in each of these cases.
+- `FAIL` when there is no record, the record comes from a watchdog older than
+  v0.24.1 (it could not report what it checked), the record is for another
+  selection or older than two minutes, a launchd setting forces a backend (Rust
+  forced there is reported even with no selection file), the watchdog cannot
+  verify the serving process (memory, CPU and parity checks are paused; it alerts
+  after three such checks), or its checks raised an error. Failed health checks
+  still return Rust to Python in each of these cases, except under a launchd setting.
 
-A watchdog started from a release before v0.24.0 has no guard, so restart the
-watchdog job after upgrading (step 3). Run `postern.serve backend` as the owner,
+A watchdog started from a release before v0.24.1 cannot report what it checked, so
+restart the watchdog job after upgrading (step 3). Run `postern.serve backend` as the owner,
 never with sudo: the API refuses a selection file it does not own.
 
 Before a production pilot:
@@ -647,7 +651,7 @@ Before a production pilot:
    `progress-backend-active.json` (`default`). A shell `export`, SIGTERM/KeepAlive,
    or `kickstart -k` alone does not load an edited plist. Then restart the
    watchdog job the same way (verified SIGTERM; its plist is unchanged, so
-   KeepAlive suffices) so a v0.24.0 watchdog, which carries the guard, is running.
+   KeepAlive suffices) so a v0.24.1 or later watchdog, which carries the guard, is running.
 4. Select Rust with `postern.serve backend rust`, then restart the verified API
    process with SIGTERM in a quiet minute. Confirm `progress-backend-active.json`
    shows `rust` from `progress-backend.json`, and, within a minute, that
