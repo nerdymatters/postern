@@ -68,13 +68,19 @@ parity, write-cost and rollback checks. Do not mask the cost with stale health o
 a wider deadline. Sustained/representative acceptance and remaining compatibility
 checks stay open before changing the serving default.
 
-**Current round (Nov 6–7):** RS-06 representative acceptance passed for the
-incremental staff-report candidate. Next is RS-07:
-1. Install v0.23.0 with Python active.
-2. Measure the Rust checkpoint on a read-only copy of production data (below).
+**Current round (Nov 7):** v0.23.0 is installed on the office Mac with Python
+serving (7:31 PM EST). The live compact progress table finished building in
+9.2 minutes; all 71,405 progress rows are eligible, so both backends read it, and a
+read-only check matched the audit-log replay. The matching 0.2.0 native wheel is
+installed but not loaded. Next is RS-07:
+1. ~~Install v0.23.0 with Python active.~~ Done Nov 7.
+2. ~~Measure the Rust checkpoint on a read-only copy of production data.~~ Done
+   Nov 7 (see Completed).
 3. Run the guarded live pilot, which needs local administrator authentication
    and an actual staff document check.
-4. Observe sustained Rust operation before changing the default.
+4. Observe sustained Rust operation before changing the default. Changing the
+   backend edits the root-owned launchd job, so a rollback needs the owner's
+   authentication; the owner chooses how sustained operation is supervised.
 
 The [remaining migration checklist](ROADMAP.md#remaining-migration-checklist)
 lists RS-07–RS-09.
@@ -92,6 +98,15 @@ lists RS-07–RS-09.
 - The cache stamp relies on file identity and generation. The runbook forbids
   restoring an older database into the same file; a per-database token would
   make reuse fail closed anyway.
+- The first live build of the compact table bumped `progress_generation` once
+  per backfilled row (70,121 on Nov 7), because live writes had already mirrored
+  newer rows. It is harmless, since reads switch only after completion, but it
+  added write work: the live build took 9.2 minutes against 3.9 on an idle copy.
+- The startup reset after removed projection objects is not atomic with
+  recreating them (see PR #18's notes).
+- The sustained fault-load verdicts are bare `assert`s, and two success flags
+  are hard-coded, so the probe would report success under `python -O`. Use an
+  always-raising check and computed flags.
 
 **Compatibility:** Preserve API responses, authorization/revocation, durable
 audit admission, single-writer/job ownership, training progress and certificate
@@ -104,30 +119,6 @@ before production cutover.
 **Depends on:** v0.19.1 compatibility baseline (available); workload attribution
 and acceptance targets precede the first implementation. Urgent production and
 security fixes still take precedence.
-
-### Measure the Rust progress checkpoint on production-shaped data before RS-07
-
-**What:** Before the live Rust pilot, replay a read-only copy of the office database
-with the v0.23.0 Rust backend. Record the checkpoint's size before the budget check,
-full and incremental report times and their CPU, and whether it stays under the
-16 MiB budget.
-
-**Why:** Both acceptance fixtures publish only two items. The real catalog has many
-chapters, documents and videos. Past the budget, the checkpoint silently stops being
-retained and every report becomes a full replay: correct, but slower and with no
-signal in production.
-
-**Context:** Owner decision D3 (Nov 7): make this a pilot precondition instead of
-changing code in v0.23.0. Use a fresh SQLite backup copy, never the live file.
-Over budget, the cache clears itself, so `retained_bytes` reads 0. Measure the
-size with `retained_size()` on the native result instead. In
-`HistoryCache.diagnostics()`, `delta_replays` staying at 0 while
-`recent_row_counts` stays at full history means retention stopped. If the budget
-is exceeded, track retained size incrementally or raise it with measured RSS.
-
-**Effort:** S
-**Priority:** P1
-**Depends on:** v0.23.0 installed with the matching 0.2.0 native wheel
 
 ### Version the progress projection schema before changing it
 
@@ -163,6 +154,14 @@ hosted capacity guarantee.
 keeps that service disabled.
 
 ## Completed
+
+- **2026-11-07 — Measure the Rust progress checkpoint on production-shaped data.**
+  Owner decision D3 made this an RS-07 precondition. On a fresh read-only copy of the
+  office database (248,004 events, 24 published items), the v0.23.0 Rust checkpoint
+  retained 1.77 MB, 10.5% of its 16 MiB budget. The first report took 0.17 s, against
+  0.79 s for the Python replay of the audit log; later reports took 12–13 ms, with and
+  without new activity. Every result matched the Python replay. The size was measured
+  on the native result, since the cache's own `retained_bytes` reads 0 over budget.
 
 - **2026-10-29 — Check printed certificates by number and saved-name history.**
   Owner chose admin-only number lookup and name history, keeping name corrections
