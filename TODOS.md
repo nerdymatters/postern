@@ -68,9 +68,9 @@ parity, write-cost and rollback checks. Do not mask the cost with stale health o
 a wider deadline. Sustained/representative acceptance and remaining compatibility
 checks stay open before changing the serving default.
 
-**Current round (Nov 8):** v0.24.0 is installed on the office Mac with Python
-serving (5:30 AM EST): the launchd job still selects Python, there is no
-`progress-backend.json`, and the watchdog was restarted onto the v0.24.0 guard. The
+**Current round (Nov 8):** v0.24.1 is installed on the office Mac with Python
+serving (1:45 PM EST): the launchd job still selects Python, there is no
+`progress-backend.json`, and the watchdog was restarted onto the v0.24.1 guard. The
 compact progress table built under v0.23.0 serves both backends, and a read-only
 check matched the audit-log replay. The 0.2.0 native wheel is installed but not
 loaded. Next is RS-07:
@@ -112,6 +112,12 @@ lists RS-07–RS-09.
 - The sustained fault-load verdicts are bare `assert`s, and two success flags
   are hard-coded, so the probe would report success under `python -O`. Use an
   always-raising check and computed flags.
+- **v0.24.2's review left two alert-wording notes (PR #21):**
+  - the fallback alert picks its launchd wording from the record the check read
+    first, but the not-restarted note from a second read, so a launchd restart
+    between the two reads can put both in one alert;
+  - a dropped launchd-override record always gets the launchd wording, even when
+    the owner already removed the setting and a failed start left the old record.
 - **Before Rust becomes the default:** the watchdog's parity check replays history
   with both native interfaces in its own process, so it cannot see drift in the
   serving process's in-memory checkpoint, or native errors there that leave health,
@@ -174,7 +180,7 @@ keeps that service disabled.
   is no longer treated as an override. A fallback that cannot confirm the serving
   process says it did not restart it and alerts once if that persists. An alert
   says when the media conversions could not be listed, and a test lists a
-  converter beside a command line that is not UTF-8.
+  converter beside a command line that is not UTF-8. Included in v0.24.2.
 
 - **2026-11-08 — Harden the watchdog's Rust guard before the RS-07 pilot.** The
   notes from v0.24.0's review rounds are fixed. `postern.serve backend` judges the
