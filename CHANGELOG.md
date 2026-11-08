@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.24.2 — Trust the Rust guard's status and alerts during the pilot (2026-11-08)
+
+### Fixed
+
+- Know when Python has really taken over. After `postern.serve backend python`, the status now says `FAIL` until the API stops serving Rust. `backend rust` also reports a launchd override straight away, because the file will not apply until that setting is removed.
+- Start the guard's health, memory and CPU counts again when the serving source changes, so checks from a launchd override period never count against the process that serves from the selection file.
+- Stop old records from misleading the guard. A serving record left by a process that has exited is no longer treated as a launchd override or as Rust still serving, so failed health checks return Rust to Python again.
+- Get alerts that say what actually happened. Under a launchd override, alerts no longer promise a return to Python. When the watchdog cannot confirm the serving process, it says it did not restart it, and it alerts once more if three later checks still cannot confirm it. When the media conversions of a stuck API cannot be listed, the alert says so.
+
+### Upgrade
+
+- Restart the watchdog job after installing this release so the new checks run. The heartbeat format is unchanged.
+
 ## 0.24.1 — Make the automatic return to Python reliable before the Rust pilot (2026-11-08)
 
 ### Fixed
