@@ -215,6 +215,8 @@ def test_three_failed_health_checks_return_rust_to_python_and_restart_the_verifi
     assert 'Restarted the API (pid 4242)' in guard.sent[0][1]
     assert all(guard.tick(healthy=False) is None for _ in range(4))  # handled once, never flips back
     assert len(guard.host.killed) == 1 and stored(guard)['backend'] == 'python'
+    # The restarted process has exited, so its leftover Rust record is not an unconfirmable one.
+    assert [subject for subject, _ in guard.sent] == ['Postern returned to the Python backend']
 
 
 def test_memory_cpu_and_parity_guards(guard):
@@ -948,7 +950,9 @@ def test_a_launchd_override_record_from_an_exited_process_does_not_stop_the_fall
         assert guard.tick(healthy=False) is None
     assert guard.tick(healthy=False) and stored(guard)['backend'] == 'python'
     assert [subject for subject, _ in guard.sent] == ['Postern returned to the Python backend']
-    assert 'The next API start uses Python.' in guard.sent[0][1] and 'not restarted' not in guard.sent[0][1]
+    # Only the launchd job knows whether it still forces Rust, so the alert does not promise Python.
+    assert 'The next API start uses Python.' not in guard.sent[0][1] and 'not restarted' not in guard.sent[0][1]
+    assert 'while the job sets it, that setting decides the next start' in guard.sent[0][1]
     # Without a Rust file, an exited forced-Rust process is neither watched nor reported as an override.
     progress_backend.selection_path(guard.config).unlink()
     guard.sent.clear()
