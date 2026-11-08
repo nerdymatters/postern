@@ -291,13 +291,13 @@ class Fallback:
         backend = selection.get('backend') if selection else None
         if backend == 'python' and selection.get('fallback'):
             self.finish_fallback(selection)
-        active = self.active()
+        active, dropped = self.active(), False
         if (active is not None and active.get('source') == 'environment'
                 and (backend in ('rust', 'invalid') or active.get('backend') == 'rust')
                 and self.alive(active['pid']) is False):
             # A record left by a process that has exited (say, before a start refused on a busy port) is not an
             # override. Only a process that is certainly gone is ignored: an unknown answer keeps the override.
-            active = None
+            active, dropped = None, True
         forced = active is not None and active.get('source') == 'environment'
         forced_rust = forced and active.get('backend') == 'rust'
         # A launchd job that forces Rust is watched (alert only) even without a Rust selection file.
@@ -364,7 +364,7 @@ class Fallback:
                            + '\n'.join(reasons))
                 self.reported = True
             return None
-        return self.fall_back(selection, reasons, pid)
+        return self.fall_back(selection, reasons, pid, dropped)
 
     def finish_fallback(self, selection):
         """A fallback selected Python but could not restart the API (a re-verification error, or a restart
@@ -433,9 +433,12 @@ class Fallback:
                     reasons.append(f'the parity check failed {self.parity_errors} times: {summary}')
         return reasons
 
-    def fall_back(self, selection, reasons, pid):
+    def fall_back(self, selection, reasons, pid, dropped_override=False):
         """Select Python, then restart only a re-verified API; the alert reports what actually happened."""
         outcome = 'The next API start uses Python.'
+        if dropped_override:  # the last start was forced by launchd; the file decides only once that setting is gone
+            outcome = ('Python is selected, but the last API start took its backend from POSTERN_PROGRESS_BACKEND in the '
+                       'launchd job; while the job sets it, that setting decides the next start (runbook step 3 removes it).')
         try:
             write_python(self.config_path.with_name(SELECTION), reasons, selection)
         except OSError as error:
