@@ -507,19 +507,37 @@ def test_rss_phases_keep_verification_out_of_the_startup_workload_peak(isolated_
     # Value: protects=the startup+workload memory window cannot absorb allocations made only by
     # the post-workload raw Python check, while the all-phase distribution still keeps them;
     # fails_when=samples lose their phase, verification enters the startup/workload peak or the
-    # all-phase distribution drops verification; seam=verification wrapper holding touched memory;
+    # all-phase distribution drops verification; seam=RSS reading with a synthetic rise only while
+    # verification runs (real allocations were flaky: RSS can fall ~100 MiB after the workload frees
+    # memory, so a held 96 MiB buffer sometimes stayed below the earlier peak);
     # no_claim=representative memory acceptance (one synthetic reader, real loopback HTTP).
     args = isolated_signin
     args.scenario, args.seconds = 'mixed', 17
     original = capacity.verify_dashboard
-    held = []
+    rise = {'bytes': 0}
+    real_process = capacity.psutil.Process
+
+    class Measured:
+        """The real process, reporting a synthetic RSS rise during verification only."""
+        def __init__(self, *process_args, **process_kwargs):
+            self._process = real_process(*process_args, **process_kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self._process, name)
+
+        def memory_info(self):
+            info = self._process.memory_info()
+            return info._replace(rss=info.rss+rise['bytes'])
+
+    monkeypatch.setattr(capacity.psutil, 'Process', Measured)
     async def verify(*verify_args):
-        held.append(bytearray(b'\x01')*(96*1024**2))  # Written pages, not lazily mapped zeros.
+        # Above any real swing between phases, below the harness's 1 GiB memory guard.
+        rise['bytes'] = 512*1024**2
         try:
             await asyncio.sleep(1.6)  # At least two half-second guard samples.
             return await original(*verify_args)
         finally:
-            held.clear()
+            rise['bytes'] = 0
     monkeypatch.setattr(capacity, 'verify_dashboard', verify)
     assert asyncio.run(capacity.run(args)) is True
     report = json.loads(next(tmp_path.glob('.context/capacity/*/report.json')).read_text())
@@ -531,7 +549,7 @@ def test_rss_phases_keep_verification_out_of_the_startup_workload_peak(isolated_
     peak = report['process_rss_startup_workload_peak_mib']
     assert peak == max(phases['startup']['max'], phases['workload']['max'])
     assert report['startup']['peak_rss_mib'] <= peak+.001
-    assert phases['verification']['max'] >= peak+48
+    assert phases['verification']['max'] >= peak+256
 
 
 def test_mixed_resource_abort_skips_additional_verification(isolated_signin, tmp_path, monkeypatch):
