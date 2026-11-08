@@ -78,9 +78,12 @@ installed but not loaded. Next is RS-07:
    Nov 7 (see Completed).
 3. Run the guarded live pilot, which needs local administrator authentication
    and an actual staff document check.
-4. Observe sustained Rust operation before changing the default. Changing the
-   backend edits the root-owned launchd job, so a rollback needs the owner's
-   authentication; the owner chooses how sustained operation is supervised.
+4. Observe sustained Rust operation before changing the default. Owner decision
+   D1 (Nov 7): switch through the owner's `progress-backend.json` with an ordinary
+   restart, so no administrator password is needed after one launchd change, and
+   let the watchdog return to Python automatically on a health, memory, CPU or
+   parity breach (v0.24.0; see the
+   [cutover runbook](docs/runbooks/rust-server.md#cutover-and-rollback)).
 
 The [remaining migration checklist](ROADMAP.md#remaining-migration-checklist)
 lists RS-07–RS-09.

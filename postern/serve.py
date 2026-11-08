@@ -4,6 +4,7 @@
     .venv/bin/python -m postern.serve install   [--check-only] [--user-agent] [--user NAME] [--force]
     .venv/bin/python -m postern.serve uninstall [--user-agent]
     .venv/bin/python -m postern.serve status    [--user-agent]
+    .venv/bin/python -m postern.serve backend   [show | python | rust]
 
 ENG-D8 wants Postern back after a power cut with nobody logged in, so the default install is a
 LaunchDaemon in /Library/LaunchDaemons with UserName set: launchd starts it as soon as FileVault unlocks
@@ -419,24 +420,49 @@ def status(config_path, home, user_agent, label=LABEL):
 
 def run(config_path):
     from .config import Config
+    from . import progress_backend
     config = Config.load(config_path)
     if listening(config.port):
         print(f'FAIL 127.0.0.1:{config.port} is already listening. Stop that process, or change "port" '
               f'in {config_path}; Postern will not share a port it did not open.')
         return 1
+    # The launchd environment wins; otherwise the owner's progress-backend.json; otherwise Python.
+    backend, source = progress_backend.apply_selection(config_path)
+    progress_backend.record_active(config.data_dir, backend, source)
+    print(f'postern: progress backend {backend} ({source})', file=sys.stderr, flush=True)
     import uvicorn
     from .app import create_app
     uvicorn.run(create_app(config), host='127.0.0.1', port=config.port, log_level='warning', access_log=False)
     return 0
 
 
+def backend(config_path, choice):
+    """Show or set the owner's progress backend selection. It takes effect at the next API start."""
+    from . import progress_backend
+    if choice in ('python', 'rust'):
+        progress_backend.write_selection(config_path, choice, set_by='owner')
+    selection = progress_backend.read_selection(config_path)
+    print(f'ok   {progress_backend.SELECTION}: {selection["backend"] if selection else "absent (Python)"}')
+    try:
+        values = json.loads(Path(config_path).expanduser().read_text())
+        active = json.loads((Path(values['data_dir']).expanduser() / progress_backend.ACTIVE).read_text())
+        print(f'ok   serving process {active["pid"]}: {active["backend"]} from {active["source"]}, started {active["started_at"]}')
+    except (OSError, ValueError, KeyError):
+        print('ok   no serving process has recorded its backend yet')
+    if choice in ('python', 'rust'):
+        print(f'Restart the API to apply it. A {progress_backend.KEY} setting in the launchd job overrides this file.')
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='postern.serve', description=__doc__.splitlines()[0])
     actions = parser.add_subparsers(dest='action', required=True)
-    for name in ('install', 'uninstall', 'status', 'run'):
+    for name in ('install', 'uninstall', 'status', 'run', 'backend'):
         action = actions.add_parser(name)
         action.add_argument('--config', default=None, help='default ~/.config/postern/config.json for --user')
-        if name != 'run':
+        if name == 'backend':
+            action.add_argument('choice', nargs='?', default='show', choices=('show', 'python', 'rust'))
+        if name not in ('run', 'backend'):
             action.add_argument('--label', default=LABEL, type=lambda value: service_labels(value)[0],
                                 help='launchd application label; existing hosts must pass their installed label')
             action.add_argument('--user', default=None, help='the macOS account that owns the data (default $SUDO_USER or you)')
@@ -455,6 +481,8 @@ def main(argv=None):
         return uninstall(user, home, arguments.user_agent, arguments.label)
     if arguments.action == 'status':
         return status(config_path, home, arguments.user_agent, arguments.label)
+    if arguments.action == 'backend':
+        return backend(config_path, arguments.choice)
     return run(config_path)
 
 

@@ -6,8 +6,9 @@ See the [migration runbook](../../docs/runbooks/rust-server.md) for measurements
 compatibility contracts, build/test commands, acceptance targets and rollback.
 
 The separate wheel is opt-in: ordinary Postern installs use Python and do not
-build Rust. `POSTERN_PROGRESS_BACKEND=rust` requires a matching installed wheel;
-`python` is the default and rollback setting. The native API is internal and
+build Rust. Selecting `rust` (the owner's `progress-backend.json`, or
+`POSTERN_PROGRESS_BACKEND` in the job's environment) requires a matching installed
+wheel; `python` is the default and rollback setting. The native API is internal and
 versioned independently of the Python package through `API_VERSION` and
 `CHECKPOINT_VERSION`. Wheel 0.2.0 adds the bounded incremental evidence interface;
 the matching application refuses an older wheel before starting its writer.
