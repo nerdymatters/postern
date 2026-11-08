@@ -549,7 +549,8 @@ requires an installed module with API version 1 and checkpoint version 1. A
 missing or incompatible module, an invalid setting, or a selection file that is
 unreadable or writable by anyone but the owner fails startup before the database
 writer starts. Runtime native errors propagate; there is no silent retry
-returning less data. Releases before v0.24.0 ignore the file and run Python.
+returning less data. Releases before v0.24.0 ignore the file; they run Python
+unless the launchd job's environment selects Rust.
 
 `progress-backend.json` lets the owner switch backends, and the watchdog switch
 back, with the ordinary verified restart (SIGTERM; launchd starts the API
@@ -595,14 +596,18 @@ after three failed checks. A `limits` object in the file can set `max_rss_mib`,
 `max_cpu_percent`, `cpu_checks` and `parity_every_seconds`; a missing,
 non-numeric, non-finite or out-of-range value, or a fractional `cpu_checks`,
 keeps its default. `postern.serve backend` and the fallback both keep it. If the
-watchdog cannot write Python into the file, it alerts once and retries on every
-check. While the launchd job's environment selects Rust, the watchdog can
-only alert.
+watchdog cannot write Python into the file, it alerts once and retries on each
+later check while a health, memory or CPU breach persists; a parity difference
+is retried only at the next parity run. While the launchd job's environment
+selects Rust, the watchdog can only alert.
 
 While it guards, the watchdog records its pid, the selection it checked and the
 time in `progress-backend-guard.json` in the data directory. `postern.serve backend`
 reports the guard as armed only if it checked the current selection within the
-last two minutes, and prints `FAIL` otherwise. A watchdog started from a release before v0.24.0 has no guard, so
+last two minutes. It prints `FAIL` for a record from another selection or older
+than two minutes, including the last Rust check after a switch to Python. With
+no readable record it prints an `ok` line, `watchdog guard: no record yet`, which
+does not mean a guard is running (see TODOS). A watchdog started from a release before v0.24.0 has no guard, so
 restart the watchdog job after upgrading (step 3). Run `postern.serve backend` as
 the owner, never with sudo: the API refuses a selection file it does not own.
 
