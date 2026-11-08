@@ -44,7 +44,7 @@ described in [Architecture](docs/architecture.md).
 |---|---|---|
 | M0 Launch preparation | In progress; parallel with M1 | Current deployment baseline |
 | M1 Accounts and profiles | Production pilot passed; registration closed | M0 launch checks before release |
-| Rust server migration | P1; RS-06 passed; v0.24.0 (no-password backend switch with an automatic Python fallback) is installed with Python serving (Nov 8); the RS-07 checkpoint precondition passed on production-shaped data | RS-07 live pilot, then RS-08–RS-09; Python still serves production |
+| Rust server migration | P1; RS-06 passed; v0.24.1 (no-password backend switch with a hardened automatic Python fallback) is installed with Python serving (Nov 8); the RS-07 checkpoint precondition passed on production-shaped data | RS-07 live pilot, then RS-08–RS-09; Python still serves production |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
 | M2 Private spaces and resource catalog | Isolated metadata/onboarding implemented; content integration and hosting pending | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
@@ -217,10 +217,10 @@ its background workers. Python remains the production default.
   minutes with no health misses, and a read-only check matched the audit-log
   replay. On a copy of production data the Rust checkpoint used 10.5% of its
   budget, with 12–13 ms reports after the first. The 0.2.0 wheel is installed
-  but not loaded. v0.24.0, installed November 8, lets the owner switch backends
-  through `progress-backend.json` with an ordinary restart, and the watchdog
-  returns to Python on a health, memory, CPU or parity breach. v0.24.1 hardens
-  that guard, and the [cutover runbook](docs/runbooks/rust-server.md#cutover-and-rollback)
+  but not loaded. v0.24.0 lets the owner switch backends through
+  `progress-backend.json` with an ordinary restart, and the watchdog returns to
+  Python on a health, memory, CPU or parity breach. v0.24.1, installed November 8,
+  and v0.24.2 harden that guard, and the [cutover runbook](docs/runbooks/rust-server.md#cutover-and-rollback)
   needs its watchdog for the pilot. Next is the live pilot, which needs the owner
   for one launchd change.
 - [ ] **RS-08 — Migrate the remaining server responsibilities.** Inventory and
