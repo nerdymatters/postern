@@ -459,3 +459,65 @@ def test_the_backend_command_refuses_root_and_reports_a_bad_file(config_path, mo
     path.chmod(0o600)
     assert serve.main(['backend', '--config', str(config_path)]) == 2
     assert 'FAIL progress-backend.json' in capsys.readouterr().out
+
+
+def test_a_guard_bug_alerts_once_and_health_still_falls_back(guard, monkeypatch):
+    select(guard.config, 'rust')
+    serving(guard)
+    def broken(*args):
+        raise KeyError('synthetic guard bug')
+    monkeypatch.setattr(guard.fallback, 'resources', broken)
+    results = [guard.tick(healthy=False) for _ in range(3)]
+    subjects = [subject for subject, _ in guard.sent]
+    assert subjects == ['Postern: Rust backend guard error', 'Postern returned to the Python backend']
+    assert results[2] and stored(guard)['backend'] == 'python'
+
+
+def test_a_failed_python_write_is_reported_and_nothing_is_signalled(guard, monkeypatch):
+    select(guard.config, 'rust')
+    serving(guard)
+    def unwritable(*args):
+        raise PermissionError('read-only config directory')
+    monkeypatch.setattr(watchdog, 'write_python', unwritable)
+    for _ in range(3):
+        guard.tick(healthy=False)
+    assert guard.host.killed == [] and 'select it by hand' in guard.sent[-1][1]
+
+
+def test_a_restart_that_raises_still_alerts(guard, monkeypatch):
+    select(guard.config, 'rust')
+    serving(guard)
+    def refused(pid, sig):
+        raise PermissionError(pid)
+    monkeypatch.setattr(guard.fallback, 'kill', refused)
+    for _ in range(3):
+        guard.tick(healthy=False)
+    assert stored(guard)['backend'] == 'python' and 'restart it by hand' in guard.sent[-1][1]
+
+
+def test_sigkill_needs_a_confirmed_process(guard, monkeypatch):
+    select(guard.config, 'rust')
+    serving(guard)
+    guard.host.ignore_term = True
+    real_kill = guard.host.kill
+    def term_then_blind(pid, sig):
+        real_kill(pid, sig)
+        guard.host.lookup_errors = 999  # ps cannot answer during the exit wait
+    monkeypatch.setattr(guard.fallback, 'kill', term_then_blind)
+    for _ in range(3):
+        guard.tick(healthy=False)
+    assert guard.host.killed == [(4242, signal.SIGTERM)]
+    assert 'could not confirm it exited' in guard.sent[-1][1]
+
+
+def test_a_heartbeat_write_failure_never_stops_guarding(guard, monkeypatch):
+    select(guard.config, 'rust')
+    serving(guard)
+    def unwritable(*args, **kwargs):
+        raise OSError('disk full')
+    guard.host.rss_mib = 2000
+    with monkeypatch.context() as patched:
+        patched.setattr(watchdog.tempfile, 'NamedTemporaryFile', unwritable)
+        assert guard.tick() is None
+    # Restored: the fallback itself must be able to write Python.
+    assert 'API memory 2000 MiB above 1536 MiB' in guard.tick()[0]
