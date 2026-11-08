@@ -444,11 +444,12 @@ class Fallback:
 
     def converters(self, pid):
         """Process groups of this API's own media converters (derive_child.py in a session of its own).
-        Any lookup failure means none: a converter is never guessed."""
+        Any lookup failure means none: a converter is never guessed. Other processes' command lines may
+        hold bytes that are not UTF-8, so they are decoded leniently and never stop the restart."""
         try:
             result = self.run(['/bin/ps', '-A', '-o', 'pid=,ppid=,pgid=,uid=,command='],
-                              capture_output=True, text=True, timeout=10)
-        except (OSError, subprocess.SubprocessError):
+                              capture_output=True, encoding='utf-8', errors='replace', timeout=10)
+        except (OSError, ValueError, subprocess.SubprocessError):
             return []
         groups = []
         for line in result.stdout.splitlines() if result.returncode == 0 else []:
@@ -474,17 +475,22 @@ class Fallback:
                 return f'Restarted the API (pid {pid}); launchd starts it again with Python.'
         state = self.alive(pid)
         if state is True:
+            try:
+                groups = self.converters(pid)  # media conversions run in sessions of their own
+            except Exception:
+                groups = []
+            try:
+                self.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            # After the API is gone, so it can never record a killed conversion as the upload's fault.
             ended = 0
-            for group in self.converters(pid):  # media conversions run in their own sessions
+            for group in groups:
                 try:
                     self.killpg(group, signal.SIGKILL)
                     ended += 1
                 except (ProcessLookupError, PermissionError):
                     pass
-            try:
-                self.kill(pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
             also = f' with {ended} media conversion(s) it was still running' if ended else ''
             return (f'The API (pid {pid}) ignored SIGTERM for {self.exit_wait} s and was killed{also}; '
                     'launchd starts it again with Python.')
