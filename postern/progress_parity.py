@@ -9,6 +9,7 @@ so it never starts a second writer, and it prints counts and timings, never name
 """
 from __future__ import annotations
 import argparse
+from itertools import islice
 import json
 from pathlib import Path
 import sqlite3
@@ -43,10 +44,11 @@ def compare(database):
             # The Rust staff report extends a checkpoint only on the compact copy (progress_cache); replay
             # the same history that way too, in two parts, so that interface is compared on real data.
             # On the original events table the service uses the full reducer, which handles legacy clocks.
-            rows = db.execute(sql).fetchall()
-            half = len(rows)//2
-            _, checkpoint = module.reduce_incremental(metadata, iter(rows[:half]), progress._evidence, [])
-            incremental, _ = module.reduce_incremental(metadata, iter(rows[half:]), progress._evidence, checkpoint)
+            # Stream one cursor in two parts so the check never holds the whole history in memory.
+            half = db.execute(f'SELECT COUNT(*) FROM ({sql})').fetchone()[0]//2
+            rows = db.execute(sql)
+            _, checkpoint = module.reduce_incremental(metadata, islice(rows, half), progress._evidence, [])
+            incremental, _ = module.reduce_incremental(metadata, rows, progress._evidence, checkpoint)
     match = python == native and (incremental is None or python == incremental)
     return (0 if match else 3), {'match': match, 'full_matches': python == native,
                                  'incremental_matches': None if incremental is None else python == incremental,

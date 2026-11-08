@@ -427,7 +427,16 @@ def run(config_path):
               f'in {config_path}; Postern will not share a port it did not open.')
         return 1
     # The launchd environment wins; otherwise the owner's progress-backend.json; otherwise Python.
-    backend, source = progress_backend.apply_selection(config_path)
+    try:
+        backend, source = progress_backend.apply_selection(config_path)
+    except Exception:
+        # Replace the previous process's record, so the watchdog never mistakes it for this start
+        # (an old "environment" record would read as a launchd override and stop the fallback).
+        try:
+            progress_backend.record_active(config.data_dir, None, 'failed')
+        except OSError:
+            pass
+        raise
     progress_backend.record_active(config.data_dir, backend, source)
     print(f'postern: progress backend {backend} ({source})', file=sys.stderr, flush=True)
     import uvicorn
@@ -457,31 +466,56 @@ def backend(config_path, choice):
         data_dir = Path(values['data_dir']).expanduser()
     except (OSError, ValueError, KeyError):
         data_dir = None
-    for name, label in ((progress_backend.ACTIVE, 'serving process'), (GUARD, 'watchdog guard')):
+    records = {}
+    for name in (progress_backend.ACTIVE, GUARD):
         try:
-            record = json.loads((data_dir / name).read_text())
+            value = json.loads((data_dir / name).read_text())
         except (OSError, ValueError, TypeError):
-            print(f'ok   {label}: no record yet')
-            continue
-        if name == GUARD:
-            print(guard_line(record, config_path))
-        else:
-            print(f'ok   serving process {record.get("pid")}: {record.get("backend")} from {record.get("source")}, '
-                  f'started {record.get("started_at")}')
+            value = None
+        records[name] = value if isinstance(value, dict) else None
+    active = records[progress_backend.ACTIVE]
+    if active is None:
+        print('ok   serving process: no record yet')
+    else:
+        print(f'ok   serving process {active.get("pid")}: {active.get("backend")} from {active.get("source")}, '
+              f'started {active.get("started_at")}')
+    if choice == 'rust':
+        print('ok   watchdog guard: it checks this selection within 30 s of the API restart; run this again to confirm')
+    else:
+        print(guard_line(records[GUARD], config_path, selected=selection))
     if choice in ('python', 'rust'):
         print(f'Restart the API to apply it. A {progress_backend.SETTING} setting in the launchd job overrides this file.')
     return 0
 
 
-def guard_line(record, config_path, now=None):
-    """The watchdog guard is armed only if it checked this selection within the last two minutes."""
+GUARD_STATES = {
+    'waiting': 'ok   watchdog guard: watching; Rust is selected but the API has not restarted with it yet',
+    'override': 'FAIL watchdog guard: the launchd job sets POSTERN_PROGRESS_BACKEND, so this file is not in effect '
+                'and the guard can only alert (runbook step 3 removes that setting)',
+    'unverified': 'FAIL watchdog guard: it cannot verify the API process, so memory, CPU and parity checks are paused; '
+                  'failed health checks still return Rust to Python',
+    'error': 'FAIL watchdog guard: its checks raised an error (see the alert); failed health checks still return '
+             'Rust to Python',
+}
+
+
+def guard_line(record, config_path, now=None, selected=None):
+    """Judged by the current selection: a guard is needed only while Rust is selected, and is armed only if
+    it checked this selection within the last two minutes and verified the process serving it."""
     from datetime import datetime, timezone
     from . import progress_backend
     try:
         info = progress_backend.selection_path(config_path).lstat()
         current = [info.st_ino, info.st_mtime_ns]
-    except OSError:
-        current = None
+        if selected is None:
+            selected = progress_backend.read_selection(config_path)
+    except (OSError, ValueError, RuntimeError):
+        current = selected = None
+    if not selected or selected.get('backend') != 'rust':
+        return 'ok   watchdog guard: not needed while Python is selected'
+    if record is None:
+        return ('FAIL watchdog guard: no heartbeat for the Rust selection; restart the watchdog job '
+                '(v0.24.0 or later) and check again')
     try:
         age = ((now or datetime.now(timezone.utc)) - datetime.fromisoformat(record.get('checked_at'))).total_seconds()
     except (TypeError, ValueError):
@@ -491,7 +525,10 @@ def guard_line(record, config_path, now=None):
         return f'FAIL watchdog guard: its last check was for another selection ({where}); it is not guarding this one'
     if age is None or age > 120:
         return f'FAIL watchdog guard: stale ({where}); check that a current watchdog is running'
-    return f'ok   watchdog guard: {where}, guarding this selection'
+    state = record.get('state')
+    if state == 'guarding':
+        return f'ok   watchdog guard: {where}, guarding this selection'
+    return GUARD_STATES.get(state, f'FAIL watchdog guard: unknown state {state!r}') + f' ({where})'
 
 
 def main(argv=None):
