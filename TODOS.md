@@ -112,6 +112,20 @@ lists RS-07–RS-09.
 - The sustained fault-load verdicts are bare `assert`s, and two success flags
   are hard-coded, so the probe would report success under `python -O`. Use an
   always-raising check and computed flags.
+- **v0.24.1's review left these guard notes (PR #20), worth closing during the
+  RS-07 pilot:**
+  - after `postern.serve backend python`, the status says no guard is needed even
+    while the API still serves Rust until its restart, and `backend rust` prints
+    `ok` under a launchd override; judge both by the serving record too;
+  - removing a launchd override on an unchanged Rust file keeps the health,
+    memory and CPU counts from the override period; reset them when the source
+    changes;
+  - the guard-error and unverified alerts promise a return to Python even while
+    a launchd override forces Rust;
+  - a start refused because the port is busy leaves an older launchd-override
+    record in place, so the guard can keep watching a forced Rust that is gone;
+  - a failed process lookup before SIGKILL ends no converters and the alert does
+    not say so; no test lists a real converter beside a non-UTF-8 command line.
 - **Before Rust becomes the default:** the watchdog's parity check replays history
   with both native interfaces in its own process, so it cannot see drift in the
   serving process's in-memory checkpoint, or native errors there that leave health,
