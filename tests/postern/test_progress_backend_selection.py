@@ -759,6 +759,33 @@ def test_a_failing_notifier_never_skips_the_fallback(guard, capsys):
     assert 'FAIL alert not sent (OSError): Postern returned to the Python backend' in capsys.readouterr().out
 
 
+def test_an_erroring_or_unknown_guard_state_is_never_reported_as_armed(guard):
+    # Value: protects=backend command says FAIL for error/unknown heartbeat states; fails_when=guard_line treats any fresh beat as armed; why_new=only waiting/unverified/override lines were checked; seam=none; no_claim=alert text
+    select(guard.config, 'rust')
+    serving(guard)
+    guard.tick()
+    record = beat(guard)
+    assert serve.guard_line({**record, 'state': 'error'}, guard.config).startswith('FAIL watchdog guard: its checks raised')
+    assert serve.guard_line({**record, 'state': 'bogus'}, guard.config).startswith("FAIL watchdog guard: unknown state 'bogus'")
+
+
+def test_a_finishing_restart_that_raises_still_alerts_with_the_manual_step(guard, monkeypatch):
+    # Value: protects=finish_fallback alerts when its restart raises; fails_when=the exception escapes observe or the alert is dropped; why_new=retry test covers only a successful restart; seam=none; no_claim=retry bound
+    select(guard.config, 'rust')
+    serving(guard)
+    guard.tick(healthy=False)
+    guard.tick(healthy=False)
+    guard.host.lookup_errors = 2
+    assert guard.tick(healthy=False) and stored(guard)['backend'] == 'python'
+    guard.host.lookup_errors = 0
+    def broken(pid):
+        raise OSError('signal refused')
+    monkeypatch.setattr(guard.fallback, 'restart', broken)
+    guard.tick()
+    subject, body = guard.sent[-1]
+    assert subject == 'Postern finished returning to the Python backend' and 'restart the API by hand' in body
+
+
 def test_zz_the_selection_tests_leave_the_backend_setting_as_found():
     # Runs last in this module: no fixture may leak a selected backend into later tests.
     assert os.environ.get(progress_backend.SETTING) == SETTING_AT_IMPORT
