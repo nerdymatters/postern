@@ -595,10 +595,13 @@ each), and launchd restarts the job only after the process exits, so the watchdo
 waits up to 120 seconds for the process to exit. If the same re-verified process is
 still running, it sends SIGKILL and then ends the media conversions that process was
 running when it checked (each runs in a session of its own), so they do not run on
-unsupervised; a conversion that starts after that check can still finish by itself. It
-then sends one alert that says what actually happened. If it could not verify or restart the process, it restarts it on a later
-check once it verifies as still serving Rust from the file, up to three times. It
-never selects Rust. A selection that keeps the API from starting (unreadable, not
+unsupervised; a conversion that starts after that check can still finish by itself.
+If `ps` cannot list them, the alert says so and any still running finish by
+themselves. It then sends one alert that says what actually happened, including
+when it could not confirm the process and so did not restart it. It restarts such a
+process on a later check once it verifies as still serving Rust from the file, up to
+three times, and alerts once if three later checks still cannot confirm a recorded
+Rust process that has not exited. It never selects Rust. A selection that keeps the API from starting (unreadable, not
 private to the owner, or a backend other than `python` or `rust`) is also replaced
 with Python after three failed checks. A `limits` object in the file can set
 `max_rss_mib`, `max_cpu_percent`, `cpu_checks` and `parity_every_seconds`; a
@@ -608,13 +611,18 @@ it. If the watchdog cannot write Python into the file, it alerts once and retrie
 on every later check, a memory, CPU or parity breach included, until the write
 succeeds. An alert that fails to send is logged and never skips the fallback.
 While the launchd job's environment selects Rust, the watchdog can only alert, with
-or without a selection file; a breach seen then is never kept for the file.
+or without a selection file, and its alerts say that nothing returns Rust to Python
+then. A breach seen then is never kept for the file, and the health, memory and CPU
+counts start again when the source changes. A record left by a process that has
+since exited (for example, before a start refused because the port was busy) is not
+an override.
 
 While Rust is selected, the watchdog records its pid, the selection it checked,
 the time and what it could run in `progress-backend-guard.json` in the data
 directory. `postern.serve backend` judges that record by the current selection:
 
-- Python selected: `ok … not needed while Python is selected`;
+- Python selected: `ok … not needed while Python is selected`, or `FAIL` while the
+  serving process still runs Rust from the file (restart the API to apply Python);
 - Rust selected and checked within the last two minutes: `ok … guarding this
   selection`, or `ok … watching` before the API has restarted with Rust;
 - `FAIL` when there is no record, the record comes from a watchdog older than
@@ -625,6 +633,11 @@ directory. `postern.serve backend` judges that record by the current selection:
   paused; it alerts after three such checks), or its checks raised an error.
   While a v0.24.0 or later watchdog is running, failed health checks still return
   Rust to Python in each of these cases, except under a launchd setting.
+  `postern.serve backend rust` prints that launchd `FAIL` at once while the serving
+  process was started with a launchd setting, since the file will not apply.
+
+A serving record whose process has exited is history: it is never reported as an
+override or as Rust still serving.
 
 A watchdog started from a release before v0.24.1 cannot report what it checked, so
 restart the watchdog job after upgrading (step 3). Run `postern.serve backend` as the owner,
@@ -666,8 +679,9 @@ Before a production pilot:
    or material resource regression.
 5. Roll back with `postern.serve backend python` and the same verified restart,
    against the **current** database; the watchdog does the same on a breach.
-   Confirm the active record shows Python; health alone does not identify the
-   backend. Recheck health and activity recorded during the Rust window.
+   Until the restart, `postern.serve backend` prints `FAIL` because Rust still
+   serves. Confirm the active record shows Python; health alone does not identify
+   the backend. Recheck health and activity recorded during the Rust window.
    Compact inputs add rebuildable tables, indexes and triggers; backend rollback
    keeps this additive metadata and needs no database restore. Restoring an
    older backup would lose new activity. See

@@ -83,7 +83,7 @@ loaded. Next is RS-07:
    D1 (Nov 7): switch through the owner's `progress-backend.json` with an ordinary
    restart, so no administrator password is needed after one launchd change, and
    let the watchdog return to Python automatically on a health, memory, CPU or
-   parity breach. Shipped in v0.24.0 and hardened in the next release (see the
+   parity breach. Shipped in v0.24.0 and hardened in v0.24.1 and v0.24.2 (see the
    [cutover runbook](docs/runbooks/rust-server.md#cutover-and-rollback)); the one
    launchd change (step 3) needs the owner.
 
@@ -112,20 +112,6 @@ lists RS-07–RS-09.
 - The sustained fault-load verdicts are bare `assert`s, and two success flags
   are hard-coded, so the probe would report success under `python -O`. Use an
   always-raising check and computed flags.
-- **v0.24.1's review left these guard notes (PR #20), worth closing during the
-  RS-07 pilot:**
-  - after `postern.serve backend python`, the status says no guard is needed even
-    while the API still serves Rust until its restart, and `backend rust` prints
-    `ok` under a launchd override; judge both by the serving record too;
-  - removing a launchd override on an unchanged Rust file keeps the health,
-    memory and CPU counts from the override period; reset them when the source
-    changes;
-  - the guard-error and unverified alerts promise a return to Python even while
-    a launchd override forces Rust;
-  - a start refused because the port is busy leaves an older launchd-override
-    record in place, so the guard can keep watching a forced Rust that is gone;
-  - a failed process lookup before SIGKILL ends no converters and the alert does
-    not say so; no test lists a real converter beside a non-UTF-8 command line.
 - **Before Rust becomes the default:** the watchdog's parity check replays history
   with both native interfaces in its own process, so it cannot see drift in the
   serving process's in-memory checkpoint, or native errors there that leave health,
@@ -179,6 +165,16 @@ hosted capacity guarantee.
 keeps that service disabled.
 
 ## Completed
+
+- **2026-11-08 — Close the guard notes from v0.24.1's review (PR #20).** After
+  `postern.serve backend python`, the status says `FAIL` until the API stops serving
+  Rust, and `backend rust` reports a launchd override at once. The guard's counts
+  start again when the source changes, alerts under a launchd override no longer
+  promise a return to Python, and a serving record from a process that has exited
+  is no longer treated as an override. A fallback that cannot confirm the serving
+  process says it did not restart it and alerts once if that persists. An alert
+  says when the media conversions could not be listed, and a test lists a
+  converter beside a command line that is not UTF-8.
 
 - **2026-11-08 — Harden the watchdog's Rust guard before the RS-07 pilot.** The
   notes from v0.24.0's review rounds are fixed. `postern.serve backend` judges the

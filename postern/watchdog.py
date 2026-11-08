@@ -194,6 +194,7 @@ class Fallback:
         self.watched = None  # the identity (inode, mtime) of the selection being guarded
         self.handled = None  # the selection a breach already returned to Python
         self.retry = (None, 0)  # (fallback selection, restarts tried) for a restart the fallback could not finish
+        self.unconfirmed = (None, 0, False)  # (fallback selection, checks the Rust process stayed unconfirmable, alerted)
         self.reset()
 
     def reset(self):
@@ -291,19 +292,27 @@ class Fallback:
         if backend == 'python' and selection.get('fallback'):
             self.finish_fallback(selection)
         active = self.active()
+        if (active is not None and active.get('source') == 'environment'
+                and (backend in ('rust', 'invalid') or active.get('backend') == 'rust')
+                and self.alive(active['pid']) is False):
+            # A record left by a process that has exited (say, before a start refused on a busy port) is not an
+            # override. Only a process that is certainly gone is ignored: an unknown answer keeps the override.
+            active = None
         forced = active is not None and active.get('source') == 'environment'
         forced_rust = forced and active.get('backend') == 'rust'
+        # A launchd job that forces Rust is watched (alert only) even without a Rust selection file.
         if backend not in ('rust', 'invalid') and not forced_rust:
             self.watched = None
             self.reset()
             return None
         # An unreadable, unsafe or unknown selection stops the API from starting; health alone decides that case.
-        # A launchd job that forces Rust is watched (alert only) even without a Rust selection file.
         identity = selection['identity'] if backend in ('rust', 'invalid') else ('environment', active.get('pid'))
-        if identity != self.watched:
-            self.watched = identity
+        # Counts from an alert-only override period never carry into the file-governed process, or back.
+        key = (identity, forced)
+        if key != self.watched:
+            self.watched = key
             self.reset()
-        if self.handled == identity:
+        if self.handled == key:
             return None
         # Count health first: nothing below may stop a failing API from being returned to Python.
         self.unhealthy = 0 if healthy else self.unhealthy + 1
@@ -316,6 +325,9 @@ class Fallback:
             self.heartbeat(identity, 'override')
             return None  # The launchd job forces Python; the file is not in effect.
         pid, info = self.serving(active)  # never raises: a lookup failure is "unverified"
+        fallback = ('Nothing returns Rust to Python while the launchd job sets POSTERN_PROGRESS_BACKEND; remove that '
+                    'setting (runbook step 3) so the watchdog can guard the selection file.' if forced
+                    else 'Failed health checks still return Rust to Python.')
         state = 'waiting'  # Rust is selected but the API has not started with it yet
         breach = []
         if active is not None and active.get('backend') == 'rust':
@@ -327,8 +339,7 @@ class Fallback:
                 except Exception as error:  # A guard bug must never silently disarm the fallback.
                     state = 'error'
                     if not self.error_reported:
-                        self.alert('Postern: Rust backend guard error',
-                                   f'{type(error).__name__}: {error}\n\nHealth checks still return Rust to Python.')
+                        self.alert('Postern: Rust backend guard error', f'{type(error).__name__}: {error}\n\n{fallback}')
                         self.error_reported = True
             else:
                 state = 'unverified'
@@ -336,7 +347,7 @@ class Fallback:
                 if self.unverified >= self.failures and not self.unverified_reported:
                     self.alert('Postern: cannot verify the Rust API process',
                                f'lsof or ps could not confirm the process serving Rust on port {self.port}, so the '
-                               'memory, CPU and parity checks are paused. Failed health checks still return Rust to Python.')
+                               f'memory, CPU and parity checks are paused. {fallback}')
                     self.unverified_reported = True
         if forced:
             reasons += breach  # alert only: a breach under an override is never kept for the file
@@ -367,8 +378,21 @@ class Fallback:
         if self.retry[1] >= 3:
             return
         pid, _ = self.serving(active)
+        if pid is None and self.alive(active['pid']) is False:
+            return  # the recorded Rust process has exited; launchd starts the API again with Python
         if pid is None:
+            seen, count, reported = self.unconfirmed
+            count = count + 1 if seen == identity else 1
+            reported = reported if seen == identity else False
+            if count >= self.failures and not reported:
+                self.alert('Postern could not confirm the return to Python',
+                           f'Python is selected, but the serving record still shows Rust (pid {active.get("pid")}) '
+                           'and lsof or ps cannot confirm that process. Check it and restart the API by hand if it '
+                           'still serves Rust.')
+                reported = True
+            self.unconfirmed = (identity, count, reported)
             return
+        self.unconfirmed = (identity, 0, self.unconfirmed[2] if self.unconfirmed[0] == identity else False)
         self.retry = (identity, self.retry[1] + 1)
         try:
             outcome = self.restart(pid)
@@ -425,8 +449,12 @@ class Fallback:
         self.handled = self.watched
         self.pending = []
         try:
-            if pid is not None and self.serving(self.active())[0] == pid:
+            active = self.active()
+            if pid is not None and self.serving(active)[0] == pid:
                 outcome = self.restart(pid)
+            elif active and active.get('backend') == 'rust' and self.alive(active['pid']) is not False:
+                outcome += (f' The API recorded as serving Rust (pid {active.get("pid")}) could not be confirmed, so it '
+                            'was not restarted; the watchdog restarts it once it can confirm it still serves Rust.')
         except Exception as error:
             outcome = f'Python is selected, but the API restart failed ({type(error).__name__}); restart it by hand.'
         finally:
@@ -444,15 +472,17 @@ class Fallback:
 
     def converters(self, pid):
         """Process groups of this API's own media converters (derive_child.py in a session of its own).
-        Any lookup failure means none: a converter is never guessed. Other processes' command lines may
-        hold bytes that are not UTF-8, so they are decoded leniently and never stop the restart."""
+        None means the lookup failed, so nothing is known; a converter is never guessed. Other processes' command
+        lines may hold bytes that are not UTF-8, so they are decoded leniently and never stop the restart."""
         try:
             result = self.run(['/bin/ps', '-A', '-o', 'pid=,ppid=,pgid=,uid=,command='],
                               capture_output=True, encoding='utf-8', errors='replace', timeout=10)
         except (OSError, ValueError, subprocess.SubprocessError):
-            return []
+            return None
+        if result.returncode != 0:
+            return None
         groups = []
-        for line in result.stdout.splitlines() if result.returncode == 0 else []:
+        for line in result.stdout.splitlines():
             fields = line.split(None, 4)
             if len(fields) == 5 and all(field.isdigit() for field in fields[:4]):
                 child, parent, group, uid = map(int, fields[:4])
@@ -478,20 +508,22 @@ class Fallback:
             try:
                 groups = self.converters(pid)  # media conversions run in sessions of their own
             except Exception:
-                groups = []
+                groups = None
             try:
                 self.kill(pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
             # After the API is gone, so it can never record a killed conversion as the upload's fault.
             ended = 0
-            for group in groups:
+            for group in groups or []:
                 try:
                     self.killpg(group, signal.SIGKILL)
                     ended += 1
                 except (ProcessLookupError, PermissionError):
                     pass
-            also = f' with {ended} media conversion(s) it was still running' if ended else ''
+            also = (f' with {ended} media conversion(s) it was still running' if ended else
+                    '; its media conversions could not be listed, so any still running finish by themselves'
+                    if groups is None else '')
             return (f'The API (pid {pid}) ignored SIGTERM for {self.exit_wait} s and was killed{also}; '
                     'launchd starts it again with Python.')
         if state is False:
