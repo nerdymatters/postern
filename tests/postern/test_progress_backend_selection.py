@@ -961,6 +961,23 @@ def test_a_launchd_override_record_from_an_exited_process_does_not_stop_the_fall
     assert 'ok   watchdog guard: not needed while Python is selected' in capsys.readouterr().out
 
 
+def test_a_dropped_launchd_record_never_promises_a_later_restart(guard, monkeypatch):
+    # ps times out just after Python is written: the launchd-forced record is not one the watchdog restarts later.
+    select(guard.config, 'rust')
+    serving(guard, source='environment')
+    guard.host.alive = False
+    write = watchdog.write_python
+    def write_then_ps_times_out(*args):
+        write(*args)
+        guard.host.lookup_errors = 1
+    monkeypatch.setattr(watchdog, 'write_python', write_then_ps_times_out)
+    for _ in range(3):
+        guard.tick(healthy=False)
+    assert stored(guard)['backend'] == 'python' and guard.host.killed == []
+    body = guard.sent[-1][1]
+    assert 'that setting decides the next start' in body and 'not restarted' not in body
+
+
 def test_a_fallback_that_cannot_confirm_the_api_says_so_and_alerts_once_if_it_stays_unconfirmed(guard):
     select(guard.config, 'rust')
     serving(guard)
