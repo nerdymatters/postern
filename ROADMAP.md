@@ -219,8 +219,10 @@ its background workers. Python remains the production default.
   budget, with 12–13 ms reports after the first. The 0.2.0 wheel is installed
   but not loaded. v0.24.0, installed November 8, lets the owner switch backends
   through `progress-backend.json` with an ordinary restart, and the watchdog
-  returns to Python on a health, memory, CPU or parity breach. Next is the live
-  pilot, which needs the owner for one launchd change.
+  returns to Python on a health, memory, CPU or parity breach. v0.24.1 hardens
+  that guard, and the [cutover runbook](docs/runbooks/rust-server.md#cutover-and-rollback)
+  needs its watchdog for the pilot. Next is the live pilot, which needs the owner
+  for one launchd change.
 - [ ] **RS-08 — Migrate the remaining server responsibilities.** Inventory and
   rank the next slice using measured cost before each port. The remaining areas
   are HTTP routing and sessions/authorization; catalog and reports; durable audit
