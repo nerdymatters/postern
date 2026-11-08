@@ -55,12 +55,22 @@ def write_selection(config_path, backend, **detail):
         previous = None
     if isinstance(previous, dict) and isinstance(previous.get('limits'), dict) and 'limits' not in detail:
         data['limits'] = previous['limits']
-    with tempfile.NamedTemporaryFile('w', dir=path.parent, prefix='.progress-backend-', delete=False) as output:
-        os.chmod(output.name, 0o600)
-        json.dump(data, output, indent=2)
-        output.write('\n')
-    os.replace(output.name, path)
+    _write_private(path, data, '.progress-backend-', indent=2)
     return data
+
+
+def _write_private(path, data, prefix, indent=None):
+    """Atomically replace path with owner-only JSON; a failed write leaves no temporary file behind."""
+    output = tempfile.NamedTemporaryFile('w', dir=path.parent, prefix=prefix, delete=False)
+    try:
+        with output:
+            os.chmod(output.name, 0o600)
+            json.dump(data, output, indent=indent)
+            output.write('\n')
+        os.replace(output.name, path)
+    except BaseException:
+        Path(output.name).unlink(missing_ok=True)
+        raise
 
 
 def apply_selection(config_path):
@@ -79,11 +89,7 @@ def record_active(data_dir, backend, source):
     path = Path(data_dir) / ACTIVE
     data = {'pid': os.getpid(), 'backend': backend, 'source': source,
             'started_at': datetime.now(timezone.utc).isoformat(timespec='seconds')}
-    with tempfile.NamedTemporaryFile('w', dir=path.parent, prefix='.progress-backend-active-', delete=False) as output:
-        os.chmod(output.name, 0o600)
-        json.dump(data, output)
-        output.write('\n')
-    os.replace(output.name, path)
+    _write_private(path, data, '.progress-backend-active-')
     return data
 
 

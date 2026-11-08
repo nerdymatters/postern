@@ -574,9 +574,11 @@ watchdog also guards the backend on every check:
 - API CPU above 90% of one core for ten consecutive checks (five minutes);
 - a read-only parity check about five minutes after the switch, then every 15
   minutes: `python -m postern.progress_parity` replays the live history with the
-  Python reducer, the native full reducer and the native incremental interface
-  (in two parts, as the staff report extends its checkpoint), all in one snapshot.
-  Any difference is a breach. Three failed runs in a row also count; each failure
+  Python reducer and the native full reducer in one snapshot. While reads use the
+  compact copy it also replays through the native incremental interface in two
+  parts, as the staff report extends its checkpoint; on the original events table
+  the service never uses that interface, so neither does the check. Any difference
+  is a breach. Three failed runs in a row also count; each failure
   is logged with its error. The check is capped at 60 seconds.
 
 Health is counted before any other check, so an inspection error or a bad limit
@@ -590,14 +592,17 @@ If the same re-verified process is still running, it sends SIGKILL. It then send
 one alert that says what actually happened. It never selects Rust. An unreadable
 or unsafe selection that keeps the API from starting is also replaced with Python
 after three failed checks. A `limits` object in the file can set `max_rss_mib`,
-`max_cpu_percent`, `cpu_checks` and `parity_every_seconds` (a missing or
-non-positive value keeps its default); `postern.serve backend` and the fallback
-both keep it. While the launchd job's environment selects Rust, the watchdog can
+`max_cpu_percent`, `cpu_checks` and `parity_every_seconds`; a missing,
+non-numeric, non-finite or out-of-range value, or a fractional `cpu_checks`,
+keeps its default. `postern.serve backend` and the fallback both keep it. If the
+watchdog cannot write Python into the file, it alerts once and retries on every
+check. While the launchd job's environment selects Rust, the watchdog can
 only alert.
 
-While it guards, the watchdog records its pid and last check in
-`progress-backend-guard.json` in the data directory; `postern.serve backend`
-prints it. A watchdog started from a release before v0.24.0 has no guard, so
+While it guards, the watchdog records its pid, the selection it checked and the
+time in `progress-backend-guard.json` in the data directory. `postern.serve backend`
+reports the guard as armed only if it checked the current selection within the
+last two minutes, and prints `FAIL` otherwise. A watchdog started from a release before v0.24.0 has no guard, so
 restart the watchdog job after upgrading (step 3). Run `postern.serve backend` as
 the owner, never with sudo: the API refuses a selection file it does not own.
 

@@ -14,13 +14,18 @@ from types import SimpleNamespace
 
 import pytest
 
-from postern import progress, progress_backend, progress_parity, serve, watchdog
+from postern import progress, progress_backend, progress_parity, progress_store, serve, watchdog
 from postern.db import SCHEMA
+
+SETTING_AT_IMPORT = os.environ.get(progress_backend.SETTING)
 
 
 @pytest.fixture
 def config_path(tmp_path, monkeypatch):
-    monkeypatch.delenv(progress_backend.SETTING, raising=False)
+    # setenv first records the original state (even "unset"), so teardown restores it after
+    # apply_selection writes os.environ directly.
+    monkeypatch.setenv(progress_backend.SETTING, 'python')
+    monkeypatch.delenv(progress_backend.SETTING)
     data = tmp_path / 'data'
     data.mkdir(mode=0o700)
     path = tmp_path / 'config.json'
@@ -285,9 +290,10 @@ def test_ps_cpu_time_parses(text, seconds):
     assert watchdog.cpu_seconds(text) == pytest.approx(seconds)
 
 
-def catalog_database(tmp_path, pages=3):
+def catalog_database(tmp_path, pages=3, compact=False):
     path = tmp_path / 'postern.sqlite3'
     with sqlite3.connect(path) as db:
+        db.row_factory = sqlite3.Row
         db.executescript(SCHEMA)
         db.execute("INSERT INTO members VALUES ('reader@example.invalid','Reader','staff')")
         db.execute("INSERT INTO posts(id,title,body,status,created_at,created_by,published_at) "
@@ -298,6 +304,8 @@ def catalog_database(tmp_path, pages=3):
             payload = json.dumps({'detail': {'page': page}})
             db.execute('INSERT INTO events(id,ts,type,email,post_id,item_id,summary,payload) VALUES (?,?,?,?,?,?,?,?)',
                        (f'e{seq}', 10.0+seq, 'page_served', 'reader@example.invalid', 'p1', 'i1', 1, payload))
+        while compact and not progress_store.rebuild_batch(db):
+            pass  # build the compact copy the Rust staff report reads
     return path
 
 
@@ -326,10 +334,10 @@ class Native:
 def test_parity_compares_both_reducers_on_one_read_only_snapshot(tmp_path, monkeypatch, wrong, code):
     # The incremental row protects the checkpoint interface the Rust staff report uses: a drift there
     # alone must count as a difference even when the full reducer agrees.
-    database = catalog_database(tmp_path)
+    database = catalog_database(tmp_path, compact=True)
     monkeypatch.setattr(progress_backend, 'native', lambda: Native(wrong))
     result, summary = progress_parity.compare(database)
-    assert result == code and summary['keys'] == 1 and summary['source'] == 'events'
+    assert result == code and summary['keys'] == 1 and summary['source'] == 'progress_events'
     assert summary['match'] is (not wrong)
     assert summary['incremental_matches'] is (wrong != 'incremental')
 
@@ -446,7 +454,7 @@ def test_the_guard_heartbeat_shows_which_watchdog_is_armed(guard, capsys):
     beat = json.loads((guard.config.parent / 'data' / watchdog.GUARD).read_text())
     assert beat['pid'] == os.getpid() and beat['state'] == 'guarding'
     assert serve.main(['backend', '--config', str(guard.config)]) == 0
-    assert f'watchdog guard: pid {os.getpid()} guarding' in capsys.readouterr().out
+    assert f'ok   watchdog guard: pid {os.getpid()}' in capsys.readouterr().out
 
 
 def test_the_backend_command_refuses_root_and_reports_a_bad_file(config_path, monkeypatch, capsys):
@@ -481,7 +489,7 @@ def test_a_failed_python_write_is_reported_and_nothing_is_signalled(guard, monke
     monkeypatch.setattr(watchdog, 'write_python', unwritable)
     for _ in range(3):
         guard.tick(healthy=False)
-    assert guard.host.killed == [] and 'select it by hand' in guard.sent[-1][1]
+    assert guard.host.killed == [] and 'Select it by hand' in guard.sent[-1][1]
 
 
 def test_a_restart_that_raises_still_alerts(guard, monkeypatch):
@@ -521,3 +529,94 @@ def test_a_heartbeat_write_failure_never_stops_guarding(guard, monkeypatch):
         assert guard.tick() is None
     # Restored: the fallback itself must be able to write Python.
     assert 'API memory 2000 MiB above 1536 MiB' in guard.tick()[0]
+
+
+def test_parity_leaves_legacy_history_to_the_full_reducers(tmp_path, monkeypatch):
+    # On the original events table (legacy or pending rows) the service never uses the checkpoint
+    # interface, so parity must not call it there: it rejects non-portable clocks the full reducers accept.
+    database = catalog_database(tmp_path)
+    native = Native()
+    def refuse(*args):
+        raise ValueError('incremental replay requires portable clocks')
+    native.reduce_incremental = refuse
+    monkeypatch.setattr(progress_backend, 'native', lambda: native)
+    code, summary = progress_parity.compare(database)
+    assert code == 0 and summary['source'] == 'events' and summary['incremental_matches'] is None
+
+
+def test_parity_with_the_real_native_module_and_a_legacy_clock(tmp_path):
+    pytest.importorskip('postern_progress_native')
+    try:
+        progress_backend.native.cache_clear()
+        progress_backend.native()
+    except RuntimeError:
+        pytest.skip('installed native module predates the checkpoint interface')
+    database = catalog_database(tmp_path)
+    with sqlite3.connect(database) as db:
+        db.execute("INSERT INTO events(id,ts,type,email,post_id,item_id,summary,payload) VALUES "
+                   "('old',0.0,'view_requested','reader@example.invalid','p1','i1',1,'{}')")
+    code, summary = progress_parity.compare(database)
+    assert code == 0 and summary['full_matches'] is True and summary['incremental_matches'] is None
+
+
+def test_a_failed_python_write_is_retried_and_alerted_once(guard, monkeypatch):
+    select(guard.config, 'rust')
+    serving(guard)
+    failures = [PermissionError('full'), PermissionError('full')]
+    real = watchdog.write_python
+    def flaky(*args):
+        if failures:
+            raise failures.pop(0)
+        return real(*args)
+    monkeypatch.setattr(watchdog, 'write_python', flaky)
+    for _ in range(4):
+        guard.tick(healthy=False)  # ticks 3 and 4 fail to write; tick 5 succeeds
+    assert stored(guard)['backend'] == 'rust' and guard.host.killed == []
+    assert [subject for subject, _ in guard.sent] == ['Postern could not return to the Python backend']
+    assert guard.tick(healthy=False)
+    assert stored(guard)['backend'] == 'python' and guard.host.killed == [(4242, signal.SIGTERM)]
+
+
+@pytest.mark.parametrize('given,expected', [({'cpu_checks': 0.5}, 10), ({'cpu_checks': 2.5}, 10),
+                                            ({'cpu_checks': float('inf')}, 10), ({'cpu_checks': 3.0}, 3),
+                                            ({'max_rss_mib': float('inf')}, None), ({'max_rss_mib': float('nan')}, None),
+                                            ({'parity_every_seconds': 1e9}, None)])
+def test_limits_refuse_values_that_would_disable_or_trip_a_guard(given, expected):
+    chosen = watchdog.limits({'limits': given})
+    if expected is None:
+        assert chosen == watchdog.LIMITS
+    else:
+        assert chosen['cpu_checks'] == expected
+
+
+def test_failed_private_writes_leave_no_temporary_files(config_path, monkeypatch):
+    data = config_path.parent / 'data'
+    def broken(*args):
+        raise OSError('rename failed')
+    monkeypatch.setattr(os, 'replace', broken)
+    with pytest.raises(OSError):
+        watchdog.write_python(progress_backend.selection_path(config_path), ['synthetic'], {})
+    with pytest.raises(OSError):
+        progress_backend.write_selection(config_path, 'rust')
+    with pytest.raises(OSError):
+        progress_backend.record_active(data, 'python', 'default')
+    leftovers = [p.name for p in list(config_path.parent.iterdir()) + list(data.iterdir()) if p.name.startswith('.progress-backend')]
+    assert leftovers == []
+
+
+def test_a_stale_or_foreign_guard_heartbeat_is_not_reported_as_armed(guard, capsys):
+    from datetime import datetime, timedelta, timezone
+    select(guard.config, 'rust')
+    serving(guard)
+    guard.tick()
+    beat_path = guard.config.parent / 'data' / watchdog.GUARD
+    beat = json.loads(beat_path.read_text())
+    later = datetime.fromisoformat(beat['checked_at']) + timedelta(minutes=5)
+    assert serve.guard_line(beat, guard.config, now=later).startswith('FAIL watchdog guard: stale')
+    select(guard.config, 'rust', note='new selection')  # the heartbeat names the previous file
+    assert 'another selection' in serve.guard_line(beat, guard.config)
+
+
+def test_zz_the_selection_tests_leave_the_backend_setting_as_found():
+    # Runs last in this module: no fixture may leak a selected backend into later tests.
+    assert os.environ.get(progress_backend.SETTING) == SETTING_AT_IMPORT

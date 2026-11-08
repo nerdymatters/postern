@@ -464,13 +464,34 @@ def backend(config_path, choice):
             print(f'ok   {label}: no record yet')
             continue
         if name == GUARD:
-            print(f'ok   watchdog guard: pid {record.get("pid")} {record.get("state")}, last checked {record.get("checked_at")}')
+            print(guard_line(record, config_path))
         else:
             print(f'ok   serving process {record.get("pid")}: {record.get("backend")} from {record.get("source")}, '
                   f'started {record.get("started_at")}')
     if choice in ('python', 'rust'):
         print(f'Restart the API to apply it. A {progress_backend.SETTING} setting in the launchd job overrides this file.')
     return 0
+
+
+def guard_line(record, config_path, now=None):
+    """The watchdog guard is armed only if it checked this selection within the last two minutes."""
+    from datetime import datetime, timezone
+    from . import progress_backend
+    try:
+        info = progress_backend.selection_path(config_path).lstat()
+        current = [info.st_ino, info.st_mtime_ns]
+    except OSError:
+        current = None
+    try:
+        age = ((now or datetime.now(timezone.utc)) - datetime.fromisoformat(record.get('checked_at'))).total_seconds()
+    except (TypeError, ValueError):
+        age = None
+    where = f'pid {record.get("pid")}, last checked {record.get("checked_at")}'
+    if record.get('selection') != current:
+        return f'FAIL watchdog guard: its last check was for another selection ({where}); it is not guarding this one'
+    if age is None or age > 120:
+        return f'FAIL watchdog guard: stale ({where}); check that a current watchdog is running'
+    return f'ok   watchdog guard: {where}, guarding this selection'
 
 
 def main(argv=None):
