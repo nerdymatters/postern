@@ -266,11 +266,11 @@ class Fallback:
             self.reset()
             return None
         # An unreadable or unsafe file stops the API from starting; health alone decides that case.
-        key = selection['identity']
-        if key != self.watched:
-            self.watched = key
+        identity = selection['identity']
+        if identity != self.watched:
+            self.watched = identity
             self.reset()
-        if self.handled == key:
+        if self.handled == identity:
             return None
         # Count health first: nothing below may stop a failing API from being returned to Python.
         self.unhealthy = 0 if healthy else self.unhealthy + 1
@@ -296,7 +296,7 @@ class Fallback:
                 self.notify('Postern: Rust backend guard error',
                             f'{type(error).__name__}: {error}\n\nHealth checks still return Rust to Python.')
                 self.error_reported = True
-        self.heartbeat(key, 'guarding')
+        self.heartbeat(identity, 'guarding')
         if not reasons:
             return None
         if forced:
