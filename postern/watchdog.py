@@ -455,7 +455,8 @@ class Fallback:
             active = self.active()
             if pid is not None and self.serving(active)[0] == pid:
                 outcome = self.restart(pid)
-            elif active and active.get('backend') == 'rust' and self.alive(active['pid']) is not False:
+            elif (active and active.get('backend') == 'rust' and active.get('source') == SELECTION
+                  and self.alive(active['pid']) is not False):  # only a file-governed process is restarted later
                 outcome += (f' The API recorded as serving Rust (pid {active.get("pid")}) could not be confirmed, so it '
                             'was not restarted; the watchdog restarts it once it can confirm it still serves Rust.')
         except Exception as error:
