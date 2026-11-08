@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.24.0 — Switch the progress backend without administrator rights (2026-11-08)
+
+### Added
+
+- Switch staff progress between Python and the optional Rust backend without administrator rights. `python -m postern.serve backend rust` (or `python`) saves an owner-only selection beside the configuration file, and the next ordinary API restart uses it. `postern.serve backend` shows the selection, the backend the serving process started with and why, and whether the watchdog is guarding it. Python stays the default.
+- Return to Python automatically when Rust misbehaves. While Rust is selected, the watchdog checks health, API memory and CPU. Every 15 minutes it also replays the live history with both backends in a read-only snapshot. Three failed health checks, memory or CPU above its limits for several checks, or any parity difference make it select Python, restart only the verified API process and send one alert that says what happened. It never selects Rust. See [cutover and rollback](docs/runbooks/rust-server.md#cutover-and-rollback).
+
+### Upgrade
+
+- A backend set in the launchd job's environment still overrides the selection file. Remove `POSTERN_PROGRESS_BACKEND` from the API job once, with administrator rights, and restart the watchdog so the new guard runs; see [step 3](docs/runbooks/rust-server.md#cutover-and-rollback).
+
+### Rollback
+
+- Releases before 0.24.0 ignore the selection file and serve Python unless the launchd job sets a backend. Their watchdog does not guard Rust.
+
 ## 0.23.0 — Faster staff progress with optional incremental Rust evidence (2026-11-07)
 
 ### Changed

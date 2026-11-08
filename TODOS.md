@@ -111,7 +111,18 @@ lists RS-07–RS-09.
   are hard-coded, so the probe would report success under `python -O`. Use an
   always-raising check and computed flags.
 - **Before the RS-07 pilot (P1): harden the watchdog guard further.** v0.24.0's
-  second review round left these below-floor notes (PR #19):
+  second review round and its fix-check left these below-floor notes (PR #19):
+  - `postern.serve backend` reports a missing guard heartbeat as `ok` while Rust
+    is selected, and after a switch to Python it reports the last Rust heartbeat
+    as `FAIL`; judge the guard line by the current selection;
+  - the heartbeat says `guarding` even when `lsof` or `ps` cannot verify the
+    serving process, so the memory, CPU and parity checks are not running; record
+    what actually ran and report anything less as `FAIL`;
+  - a parity breach whose Python write fails is retried at the next parity run
+    (15 minutes), not on every check; keep the breach until the write succeeds;
+  - a limit of 310 or more digits makes `limits()` raise instead of keeping the
+    default;
+  - no test runs the real native module through parity on the compact copy;
   - after a restart is skipped (an `lsof` or `ps` error while re-verifying), the
     selection says Python while the same process keeps serving Rust, and the guard
     stops; retry the verified restart while the serving record still says Rust;
