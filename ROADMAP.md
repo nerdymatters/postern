@@ -44,7 +44,7 @@ described in [Architecture](docs/architecture.md).
 |---|---|---|
 | M0 Launch preparation | In progress; parallel with M1 | Current deployment baseline |
 | M1 Accounts and profiles | Production pilot passed; registration closed | M0 launch checks before release |
-| Rust server migration | P1; RS-06 representative acceptance passed for the v0.23.0 incremental report candidate | RS-07 live pilot, then RS-08–RS-09; Python still serves production |
+| Rust server migration | P1; RS-06 passed and v0.23.0 is installed with Python serving (Nov 7); the RS-07 checkpoint precondition passed on production-shaped data | RS-07 live pilot, then RS-08–RS-09; Python still serves production |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
 | M2 Private spaces and resource catalog | Isolated metadata/onboarding implemented; content integration and hosting pending | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
@@ -212,6 +212,12 @@ its background workers. Python remains the production default.
 - [ ] **RS-07 — Make the first reducer the serving default.** Use the reviewed
   release, backup, single-writer checks and fresh benchmark; confirm real staff
   behavior, observe sustained operation, and retain a tested Python fallback.
+  v0.23.0 was installed on November 7 with Python serving, after a startup and
+  rebuild rehearsal on a fresh snapshot. The live compact table built in 9.2
+  minutes with no health misses, and a read-only check matched the audit-log
+  replay. On a copy of production data the Rust checkpoint used 10.5% of its
+  budget, with 12–13 ms reports after the first. The 0.2.0 wheel is installed
+  but not loaded. Next is the live pilot, which needs the owner.
 - [ ] **RS-08 — Migrate the remaining server responsibilities.** Inventory and
   rank the next slice using measured cost before each port. The remaining areas
   are HTTP routing and sessions/authorization; catalog and reports; durable audit
