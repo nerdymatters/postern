@@ -41,6 +41,7 @@ from pathlib import Path
 SELECTION = 'progress-backend.json'      # the same file postern.progress_backend reads at process start
 ACTIVE = 'progress-backend-active.json'  # written by postern.serve run: the serving pid and its backend
 GUARD = 'progress-backend-guard.json'    # written here while guarding: which watchdog checked which selection
+GUARD_VERSION = 2  # heartbeats from v0.24.1 on record what ran; postern.serve backend refuses older ones
 
 
 def probe(url, timeout=5):
@@ -185,9 +186,10 @@ class Fallback:
     """
 
     def __init__(self, config_path, data_dir, port, notify, *, failures=3, interval=30, run=subprocess.run,
-                 kill=os.kill, now=time.monotonic, sleep=time.sleep, python=sys.executable, exit_wait=120):
+                 kill=os.kill, killpg=os.killpg, now=time.monotonic, sleep=time.sleep, python=sys.executable,
+                 exit_wait=120):
         self.config_path, self.data_dir, self.port, self.notify = Path(config_path), Path(data_dir), port, notify
-        self.failures, self.interval, self.run, self.kill, self.now = failures, interval, run, kill, now
+        self.failures, self.interval, self.run, self.kill, self.killpg, self.now = failures, interval, run, kill, killpg, now
         self.sleep, self.python, self.exit_wait = sleep, python, exit_wait
         self.watched = None  # the identity (inode, mtime) of the selection being guarded
         self.handled = None  # the selection a breach already returned to Python
@@ -275,7 +277,7 @@ class Fallback:
     def heartbeat(self, key, state):
         """Shows the owner (postern.serve backend) that a current watchdog is guarding this selection."""
         path = self.data_dir / GUARD
-        data = {'pid': os.getpid(), 'selection': list(key), 'state': state,
+        data = {'pid': os.getpid(), 'guard_version': GUARD_VERSION, 'selection': list(key), 'state': state,
                 'checked_at': datetime.now(timezone.utc).isoformat(timespec='seconds')}
         try:
             write_private_json(path, data, '.progress-backend-guard-')
@@ -288,12 +290,16 @@ class Fallback:
         backend = selection.get('backend') if selection else None
         if backend == 'python' and selection.get('fallback'):
             self.finish_fallback(selection)
-        if backend not in ('rust', 'invalid'):
+        active = self.active()
+        forced = active is not None and active.get('source') == 'environment'
+        forced_rust = forced and active.get('backend') == 'rust'
+        if backend not in ('rust', 'invalid') and not forced_rust:
             self.watched = None
             self.reset()
             return None
         # An unreadable, unsafe or unknown selection stops the API from starting; health alone decides that case.
-        identity = selection['identity']
+        # A launchd job that forces Rust is watched (alert only) even without a Rust selection file.
+        identity = selection['identity'] if backend in ('rust', 'invalid') else ('environment', active.get('pid'))
         if identity != self.watched:
             self.watched = identity
             self.reset()
@@ -306,21 +312,18 @@ class Fallback:
             reasons.append(f'{self.unhealthy} consecutive health checks failed ({detail[:200]})')
             if backend == 'invalid':
                 reasons.append(f'{SELECTION} was unreadable, not private to this account, or not python or rust')
-        active = self.active()
-        forced = active is not None and active.get('source') == 'environment'
-        if forced and active.get('backend') != 'rust':
+        if forced and not forced_rust:
             self.heartbeat(identity, 'override')
             return None  # The launchd job forces Python; the file is not in effect.
         pid, info = self.serving(active)  # never raises: a lookup failure is "unverified"
         state = 'waiting'  # Rust is selected but the API has not started with it yet
+        breach = []
         if active is not None and active.get('backend') == 'rust':
             if info:
                 state = 'guarding'
                 self.unverified = 0
                 try:
-                    found = self.resources(selection, pid, info, healthy and not reasons and not self.pending)
-                    if found:
-                        self.pending = found
+                    breach = self.resources(selection or {}, pid, info, healthy and not reasons and not self.pending)
                 except Exception as error:  # A guard bug must never silently disarm the fallback.
                     state = 'error'
                     if not self.error_reported:
@@ -335,7 +338,11 @@ class Fallback:
                                f'lsof or ps could not confirm the process serving Rust on port {self.port}, so the '
                                'memory, CPU and parity checks are paused. Failed health checks still return Rust to Python.')
                     self.unverified_reported = True
-        reasons += self.pending
+        if forced:
+            reasons += breach  # alert only: a breach under an override is never kept for the file
+        else:
+            self.pending = breach or self.pending
+            reasons += self.pending
         self.heartbeat(identity, 'override' if forced else state)
         if not reasons:
             return None
@@ -435,6 +442,23 @@ class Fallback:
             return None
         return bool(info) and info['uid'] == os.getuid() and '-m postern.serve run' in info['command']
 
+    def converters(self, pid):
+        """Process groups of this API's own media converters (derive_child.py in a session of its own).
+        Any lookup failure means none: a converter is never guessed."""
+        try:
+            result = self.run(['/bin/ps', '-A', '-o', 'pid=,ppid=,pgid=,uid=,command='],
+                              capture_output=True, text=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            return []
+        groups = []
+        for line in result.stdout.splitlines() if result.returncode == 0 else []:
+            fields = line.split(None, 4)
+            if len(fields) == 5 and all(field.isdigit() for field in fields[:4]):
+                child, parent, group, uid = map(int, fields[:4])
+                if parent == pid and group == child and uid == os.getuid() and 'derive_child.py' in fields[4]:
+                    groups.append(group)
+        return groups
+
     def restart(self, pid):
         try:
             self.kill(pid, signal.SIGTERM)
@@ -450,11 +474,20 @@ class Fallback:
                 return f'Restarted the API (pid {pid}); launchd starts it again with Python.'
         state = self.alive(pid)
         if state is True:
+            ended = 0
+            for group in self.converters(pid):  # media conversions run in their own sessions
+                try:
+                    self.killpg(group, signal.SIGKILL)
+                    ended += 1
+                except (ProcessLookupError, PermissionError):
+                    pass
             try:
                 self.kill(pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            return f'The API (pid {pid}) ignored SIGTERM for {self.exit_wait} s and was killed; launchd starts it again with Python.'
+            also = f' with {ended} media conversion(s) it was still running' if ended else ''
+            return (f'The API (pid {pid}) ignored SIGTERM for {self.exit_wait} s and was killed{also}; '
+                    'launchd starts it again with Python.')
         if state is False:
             return f'Restarted the API (pid {pid}); launchd starts it again with Python.'
         return f'Sent SIGTERM to the API (pid {pid}) but could not confirm it exited; check it by hand.'
