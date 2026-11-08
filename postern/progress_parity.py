@@ -38,8 +38,15 @@ def compare(database):
         began = time.monotonic()
         native = module.reduce(metadata, db.execute(sql), progress._evidence)
         native_seconds = time.monotonic()-began
-    match = python == native
-    return (0 if match else 3), {'match': match, 'source': source, 'items': len(items), 'keys': len(python),
+        # The Rust staff report extends a checkpoint with new rows; replay the same history that way too,
+        # in two parts, so the incremental interface is compared on real data, not only the full reducer.
+        rows = db.execute(sql).fetchall()
+        half = len(rows)//2
+        _, checkpoint = module.reduce_incremental(metadata, iter(rows[:half]), progress._evidence, [])
+        incremental, _ = module.reduce_incremental(metadata, iter(rows[half:]), progress._evidence, checkpoint)
+    match = python == native == incremental
+    return (0 if match else 3), {'match': match, 'full_matches': python == native, 'incremental_matches': python == incremental,
+                                 'source': source, 'items': len(items), 'keys': len(python),
                                  'python_seconds': round(python_seconds, 3), 'native_seconds': round(native_seconds, 3)}
 
 

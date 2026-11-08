@@ -573,18 +573,33 @@ watchdog also guards the backend on every check:
 - API memory above 1,536 MiB on two consecutive checks;
 - API CPU above 90% of one core for ten consecutive checks (five minutes);
 - a read-only parity check about five minutes after the switch, then every 15
-  minutes: `python -m postern.progress_parity` replays the live history with both
-  reducers in one snapshot, and any difference is a breach. Three failed runs in
-  a row also count.
+  minutes: `python -m postern.progress_parity` replays the live history with the
+  Python reducer, the native full reducer and the native incremental interface
+  (in two parts, as the staff report extends its checkpoint), all in one snapshot.
+  Any difference is a breach. Three failed runs in a row also count; each failure
+  is logged with its error. The check is capped at 60 seconds.
 
-On a breach it writes Python into the file with the reasons, re-verifies the API
-process (recorded pid, listening on the port, owned by the owner, running
-`postern.serve run`) and sends it SIGTERM, then sends one alert. It never selects
-Rust. An unreadable or unsafe selection that keeps the API from starting is also
-replaced with Python after three failed checks. A `limits` object in the file
-can set `max_rss_mib`, `max_cpu_percent`, `cpu_checks` and
-`parity_every_seconds`. While the launchd job's environment selects Rust, the
-watchdog can only alert.
+Health is counted before any other check, so an inspection error or a bad limit
+never stops a failing API from returning to Python. On a breach the watchdog
+writes Python into the file with the reasons, re-verifies the API process
+(recorded pid, listening on the port, owned by the owner, running
+`postern.serve run`) and sends it SIGTERM. Uvicorn closes its port at once but
+waits without limit for stuck requests, and launchd restarts the job only after
+the process exits, so the watchdog waits up to 30 seconds for the process to exit.
+If the same re-verified process is still running, it sends SIGKILL. It then sends
+one alert that says what actually happened. It never selects Rust. An unreadable
+or unsafe selection that keeps the API from starting is also replaced with Python
+after three failed checks. A `limits` object in the file can set `max_rss_mib`,
+`max_cpu_percent`, `cpu_checks` and `parity_every_seconds` (a missing or
+non-positive value keeps its default); `postern.serve backend` and the fallback
+both keep it. While the launchd job's environment selects Rust, the watchdog can
+only alert.
+
+While it guards, the watchdog records its pid and last check in
+`progress-backend-guard.json` in the data directory; `postern.serve backend`
+prints it. A watchdog started from a release before v0.24.0 has no guard, so
+restart the watchdog job after upgrading (step 3). Run `postern.serve backend` as
+the owner, never with sudo: the API refuses a selection file it does not own.
 
 Before a production pilot:
 
@@ -607,10 +622,13 @@ Before a production pilot:
    Do not start a second writer or overwrite the plist with a generic installer.
    With no selection file, the replacement process serves Python; confirm it in
    `progress-backend-active.json` (`default`). A shell `export`, SIGTERM/KeepAlive,
-   or `kickstart -k` alone does not load an edited plist.
+   or `kickstart -k` alone does not load an edited plist. Then restart the
+   watchdog job the same way (verified SIGTERM; its plist is unchanged, so
+   KeepAlive suffices) so a v0.24.0 watchdog, which carries the guard, is running.
 4. Select Rust with `postern.serve backend rust`, then restart the verified API
    process with SIGTERM in a quiet minute. Confirm `progress-backend-active.json`
-   shows `rust` from `progress-backend.json`. Check `/health`, reading-room
+   shows `rust` from `progress-backend.json`, and, within a minute, that
+   `postern.serve backend` shows the watchdog guard checking. Check `/health`, reading-room
    progress, quiz locking, staff report access, revocation/recovery refusals and
    certificate attribution with a controlled account. Compare request errors,
    p50/p95, audit queue/commit latency and CPU/RSS against the same workload
