@@ -68,11 +68,12 @@ parity, write-cost and rollback checks. Do not mask the cost with stale health o
 a wider deadline. Sustained/representative acceptance and remaining compatibility
 checks stay open before changing the serving default.
 
-**Current round (Nov 7):** v0.23.0 is installed on the office Mac with Python
-serving (7:31 PM EST). The live compact progress table finished building in
-9.2 minutes; all 71,405 progress rows are eligible, so both backends read it, and a
-read-only check matched the audit-log replay. The matching 0.2.0 native wheel is
-installed but not loaded. Next is RS-07:
+**Current round (Nov 8):** v0.24.0 is installed on the office Mac with Python
+serving (5:30 AM EST): the launchd job still selects Python, there is no
+`progress-backend.json`, and the watchdog was restarted onto the v0.24.0 guard. The
+compact progress table built under v0.23.0 serves both backends, and a read-only
+check matched the audit-log replay. The 0.2.0 native wheel is installed but not
+loaded. Next is RS-07:
 1. ~~Install v0.23.0 with Python active.~~ Done Nov 7.
 2. ~~Measure the Rust checkpoint on a read-only copy of production data.~~ Done
    Nov 7 (see Completed).
@@ -82,8 +83,9 @@ installed but not loaded. Next is RS-07:
    D1 (Nov 7): switch through the owner's `progress-backend.json` with an ordinary
    restart, so no administrator password is needed after one launchd change, and
    let the watchdog return to Python automatically on a health, memory, CPU or
-   parity breach (v0.24.0; see the
-   [cutover runbook](docs/runbooks/rust-server.md#cutover-and-rollback)).
+   parity breach. Shipped in v0.24.0 and hardened in the next release (see the
+   [cutover runbook](docs/runbooks/rust-server.md#cutover-and-rollback)); the one
+   launchd change (step 3) needs the owner.
 
 The [remaining migration checklist](ROADMAP.md#remaining-migration-checklist)
 lists RS-07–RS-09.
@@ -110,31 +112,6 @@ lists RS-07–RS-09.
 - The sustained fault-load verdicts are bare `assert`s, and two success flags
   are hard-coded, so the probe would report success under `python -O`. Use an
   always-raising check and computed flags.
-- **Before the RS-07 pilot (P1): harden the watchdog guard further.** v0.24.0's
-  second review round and its fix-check left these below-floor notes (PR #19):
-  - `postern.serve backend` reports a missing guard heartbeat as `ok` while Rust
-    is selected, and after a switch to Python it reports the last Rust heartbeat
-    as `FAIL`; judge the guard line by the current selection;
-  - the heartbeat says `guarding` even when `lsof` or `ps` cannot verify the
-    serving process, so the memory, CPU and parity checks are not running; record
-    what actually ran and report anything less as `FAIL`;
-  - a parity breach whose Python write fails is retried at the next parity run
-    (15 minutes), not on every check; keep the breach until the write succeeds;
-  - a limit of 310 or more digits makes `limits()` raise instead of keeping the
-    default;
-  - no test runs the real native module through parity on the compact copy;
-  - after a restart is skipped (an `lsof` or `ps` error while re-verifying), the
-    selection says Python while the same process keeps serving Rust, and the guard
-    stops; retry the verified restart while the serving record still says Rust;
-  - a selection the API refuses that is valid JSON (for example `"backend": "Rust"`)
-    is never replaced with Python, so the API keeps restarting;
-  - an `environment` serving record left by a process that failed to start is
-    trusted as a launchd override; have `postern.serve run` record a failed start;
-  - when a guard bug raises, the verified pid is dropped, so a failing API is not
-    restarted, and a failing notifier can skip the fallback;
-  - SIGKILL after 30 s can cut a 90-second media conversion short and orphan its
-    converter, which runs in its own session; wait longer or end its process group;
-  - the parity check loads the whole joined history into memory each run.
 - **Before Rust becomes the default:** the watchdog's parity check replays history
   with both native interfaces in its own process, so it cannot see drift in the
   serving process's in-memory checkpoint, or native errors there that leave health,
@@ -188,6 +165,18 @@ hosted capacity guarantee.
 keeps that service disabled.
 
 ## Completed
+
+- **2026-11-08 — Harden the watchdog's Rust guard before the RS-07 pilot.** The
+  notes from v0.24.0's review rounds are fixed. `postern.serve backend` judges the
+  guard by the current selection; the heartbeat records whether the guard could
+  verify the serving process, and three unverifiable checks alert. A memory, CPU
+  or parity breach is retried on every check until Python is written, and a
+  skipped restart is retried while the same process still serves Rust. A refused
+  selection value is replaced with Python, a failed start replaces the serving
+  record, guard errors keep the verified process, a failing notifier never skips
+  the fallback, the SIGKILL wait covers a media conversion (120 s), huge limits
+  keep their defaults, and the parity check streams history and is tested with the
+  real native module on the compact copy.
 
 - **2026-11-07 — Measure the Rust progress checkpoint on production-shaped data.**
   Owner decision D3 made this an RS-07 precondition. On a fresh read-only copy of the
