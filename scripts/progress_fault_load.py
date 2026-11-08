@@ -476,7 +476,8 @@ def run(output, representative=False):
         for future in readers:
             future.result(seconds+20)
         record['phase'] = 'coverage'
-        assert not record['failures'] and not stop.is_set()
+        # Name the guard reason so a hosted-runner failure can be diagnosed from the CI log.
+        assert not record['failures'] and not stop.is_set(), ('runtime guard', record['failures'][-5:])
         elapsed = time.monotonic()-started
         assert elapsed >= seconds
         # This probe tests sustained correctness, not ideal request throughput.
@@ -511,7 +512,7 @@ def run(output, representative=False):
         before_second = client.get('/api/posts', headers=headers[2])
         before_second.raise_for_status()
         before_second_progress = reader_state(before_second.json())
-        assert not record['failures']
+        assert not record['failures'], ('runtime guard', record['failures'][-5:])
         record['phase'] = 'rollback-start'
         with health_lock:
             serving.clear()  # Resource guards continue during the deliberate stop/start.
