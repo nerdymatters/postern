@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.24.1 — Make the automatic return to Python reliable before the Rust pilot (2026-11-08)
+
+### Fixed
+
+- See whether the Rust guard is really protecting you. `postern.serve backend` now judges the watchdog by the current selection. It says no guard is needed while Python is selected, reports a launchd job that forces a backend, and prints `FAIL` when Rust is selected but the watchdog has not checked it, is older than this release, or cannot confirm which process serves Rust.
+- Return to Python even when the first attempt goes wrong. The watchdog keeps a memory, CPU or parity breach until it has written Python, retries a restart it could not finish while the same process still serves Rust (up to three times), and alerts after three checks in which it cannot confirm the serving process.
+- Recover from a selection the API refuses, such as `"backend": "Rust"`, the same way as from an unreadable one. An API start that fails while reading the selection now records the failure, so an old launchd-override record is never trusted.
+- Stop a stuck API without cutting a media conversion short. The watchdog waits 120 seconds before SIGKILL and then ends the conversions that API was running. A guard error keeps the confirmed process for the restart, and an alert that cannot be sent never stops the fallback.
+- Keep the default for an absurdly large `limits` value, and run the parity check without loading the whole history into memory.
+
+### Upgrade
+
+- Restart the watchdog job after installing this release: `postern.serve backend` reports a heartbeat from an older watchdog as `FAIL`.
+
 ## 0.24.0 — Switch the progress backend without administrator rights (2026-11-08)
 
 ### Added
