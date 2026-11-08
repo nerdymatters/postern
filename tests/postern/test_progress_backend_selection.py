@@ -120,7 +120,7 @@ class Host:
         self.pid, self.rss_mib, self.command, self.cpu = pid, rss_mib, command, 0.0
         self.listening, self.parity_codes, self.calls, self.killed = True, [], [], []
         self.alive, self.ignore_term, self.lookup_errors, self.timeouts = True, False, 0, {}
-        self.processes = []  # extra `ps -A` rows: (pid, ppid, pgid, uid, command)
+        self.processes = []  # extra `ps -A` rows: (pid, ppid, pgid, uid, command as str or raw bytes)
 
     def run(self, args, **kwargs):
         self.calls.append((args[0], kwargs.get('timeout')))
@@ -131,14 +131,16 @@ class Host:
             return SimpleNamespace(returncode=0, stdout=f'{self.pid}\n' if self.listening and self.alive else '', stderr='')
         if args[0].endswith('ps') and '-A' in args:
             failure = getattr(self, 'listing_failure', None)
-            if failure == 'undecodable' and kwargs.get('errors') != 'replace':
-                raise UnicodeDecodeError('utf-8', b'caf\xe9.pdf', 3, 4, 'invalid continuation byte')
             if failure == 'timeout':
                 raise subprocess.TimeoutExpired(args[0], kwargs.get('timeout'))
             if failure == 'exit':
                 return SimpleNamespace(returncode=1, stdout='', stderr='ps: failed')
             rows = [(self.pid, 1, self.pid, os.getuid(), self.command)] + self.processes
-            return SimpleNamespace(returncode=0, stdout=''.join(f'{p} {pp} {g} {u} {c}\n' for p, pp, g, u, c in rows), stderr='')
+            raw = b''.join(b'%d %d %d %d %s\n' % (p, pp, g, u, c if isinstance(c, bytes) else c.encode())
+                           for p, pp, g, u, c in rows)
+            # Decoded as subprocess.run would with these arguments: strict decoding raises on a non-UTF-8 row.
+            return SimpleNamespace(returncode=0, stdout=raw.decode(kwargs.get('encoding') or 'utf-8',
+                                                                   kwargs.get('errors') or 'strict'), stderr='')
         if args[0].endswith('ps'):
             if not self.alive:
                 return SimpleNamespace(returncode=1, stdout='', stderr='')
@@ -170,8 +172,9 @@ class Host:
 
 
 @pytest.fixture
-def guard(config_path):
+def guard(config_path, monkeypatch):
     host, sent, clock = Host(), [], [0.0]
+    monkeypatch.setattr(serve, 'process_exists', lambda pid: pid == host.pid and host.alive)  # the fake API's pid
     fallback = watchdog.Fallback(config_path, config_path.parent / 'data', 8790,
                                  lambda subject, body: sent.append((subject, body)), failures=3, interval=30,
                                  run=host.run, kill=host.kill, killpg=host.killpg, now=lambda: clock[0], python='python',
@@ -646,11 +649,19 @@ def test_the_guard_line_is_judged_by_the_current_selection(guard, capsys):
     serving(guard)
     guard.tick()
     assert serve.guard_line(beat(guard), guard.config).startswith('ok   watchdog guard: pid')
-    # Back on Python the last Rust heartbeat is history, not a failure.
+    # Python is selected, but the API serves Rust, unguarded, until it restarts.
     assert serve.main(['backend', 'python', '--config', str(guard.config)]) == 0
-    assert 'ok   watchdog guard: not needed while Python is selected' in capsys.readouterr().out
+    assert 'FAIL watchdog guard: Python is selected, but the API (pid 4242) still serves Rust' in capsys.readouterr().out
+    # Once the API runs Python, the last Rust heartbeat is history, not a failure.
+    serving(guard, backend='python')
     assert serve.main(['backend', '--config', str(guard.config)]) == 0
     assert 'ok   watchdog guard: not needed while Python is selected' in capsys.readouterr().out
+    # A Rust record whose process has exited is history too.
+    serving(guard)
+    guard.host.alive = False
+    assert serve.main(['backend', '--config', str(guard.config)]) == 0
+    assert 'ok   watchdog guard: not needed while Python is selected' in capsys.readouterr().out
+    guard.host.respawn()
     # Selecting Rust cannot have been checked yet: say when to look, never FAIL in the same run.
     assert serve.main(['backend', 'rust', '--config', str(guard.config)]) == 0
     printed = capsys.readouterr().out
@@ -841,9 +852,9 @@ def test_sigkill_ends_only_this_apis_own_media_conversions(guard):
     assert 'with 1 media conversion(s) it was still running' in guard.sent[-1][1]
 
 
-@pytest.mark.parametrize('failure', ['undecodable', 'timeout', 'exit'])
+@pytest.mark.parametrize('failure', ['timeout', 'exit'])
 def test_a_failed_converter_lookup_never_stops_the_sigkill(guard, failure):
-    # Another process's command line may not be UTF-8; ps may time out or fail. None of that may skip SIGKILL.
+    # ps may time out or fail. That may not skip SIGKILL, and the alert says the conversions are unknown.
     select(guard.config, 'rust')
     serving(guard)
     guard.host.ignore_term = True
@@ -851,7 +862,24 @@ def test_a_failed_converter_lookup_never_stops_the_sigkill(guard, failure):
     for _ in range(3):
         guard.tick(healthy=False)
     assert guard.host.killed == [(4242, signal.SIGTERM), (4242, signal.SIGKILL)]
-    assert 'ignored SIGTERM for 120 s and was killed;' in guard.sent[-1][1]
+    assert ('ignored SIGTERM for 120 s and was killed; its media conversions could not be listed, so any still '
+            'running finish by themselves') in guard.sent[-1][1]
+
+
+def test_a_converter_is_found_beside_a_command_line_that_is_not_utf8(guard):
+    # Another process's command line may hold bytes that are not UTF-8 (a Latin-1 file name).
+    select(guard.config, 'rust')
+    serving(guard)
+    guard.host.ignore_term = True
+    guard.host.processes = [
+        (5006, 1, 5006, os.getuid(), b'/usr/bin/open /Users/x/caf\xe9.pdf'),
+        (5001, 4242, 5001, os.getuid(), '/usr/bin/python3 -I /x/postern/derive_child.py a b document'),
+    ]
+    for _ in range(3):
+        guard.tick(healthy=False)
+    assert guard.host.killed == [(4242, signal.SIGTERM), (4242, signal.SIGKILL), ('group', 5001, signal.SIGKILL)]
+    assert 'with 1 media conversion(s) it was still running' in guard.sent[-1][1]
+    assert 'could not be listed' not in guard.sent[-1][1]
 
 
 def test_rust_forced_by_launchd_is_reported_and_alerted_without_a_rust_file(guard, capsys):
@@ -864,6 +892,89 @@ def test_rust_forced_by_launchd_is_reported_and_alerted_without_a_rust_file(guar
     assert not progress_backend.selection_path(guard.config).exists()
     assert [subject for subject, _ in guard.sent] == ['Postern: Rust backend breach under a launchd override']
     assert 'API memory 2000 MiB above 1536 MiB' in guard.sent[0][1]
+
+
+def test_selecting_rust_under_a_launchd_override_says_the_file_will_not_apply(guard, capsys):
+    serving(guard, backend='python', source='environment')  # today's office state: the launchd job forces Python
+    assert serve.main(['backend', 'rust', '--config', str(guard.config)]) == 0
+    printed = capsys.readouterr().out
+    assert 'FAIL watchdog guard: the launchd job sets POSTERN_PROGRESS_BACKEND' in printed
+    assert 'checks this selection within 30 s' not in printed
+    guard.host.alive = False  # that process has exited: its record is history, not an override
+    assert serve.main(['backend', 'rust', '--config', str(guard.config)]) == 0
+    assert 'ok   watchdog guard: it checks this selection within 30 s' in capsys.readouterr().out
+
+
+def test_counts_from_a_launchd_override_never_carry_into_the_file_governed_process(guard):
+    # Two failed health checks and one memory sample under the override, then the owner removes the
+    # override and restarts on the same Rust file: the new process starts with clean counts.
+    select(guard.config, 'rust')
+    serving(guard, source='environment')
+    guard.host.rss_mib = 2000
+    assert guard.tick(healthy=False) is None and guard.tick(healthy=False) is None
+    serving(guard)  # the same pid in the fake, now serving Rust from the file
+    assert guard.tick(healthy=False) is None and stored(guard)['backend'] == 'rust' and guard.host.killed == []
+    guard.host.rss_mib = 300
+    assert guard.tick(healthy=False) is None and stored(guard)['backend'] == 'rust'
+    assert '3 consecutive health checks failed' in guard.tick(healthy=False)[0]
+
+
+def test_alerts_under_a_launchd_override_never_promise_a_return_to_python(guard, monkeypatch):
+    select(guard.config, 'rust')
+    serving(guard, source='environment')
+    guard.host.lookup_errors = 99  # lsof and ps fail; the forced process cannot be confirmed or ruled out
+    for _ in range(4):
+        assert guard.tick() is None
+    guard.host.lookup_errors = 0
+    def broken(selection, pid, info, parity_allowed):
+        raise ValueError('bad limits')
+    monkeypatch.setattr(guard.fallback, 'resources', broken)
+    guard.tick()
+    assert [subject for subject, _ in guard.sent] == ['Postern: cannot verify the Rust API process',
+                                                      'Postern: Rust backend guard error']
+    for _, body in guard.sent:
+        assert 'Nothing returns Rust to Python while the launchd job sets POSTERN_PROGRESS_BACKEND' in body
+        assert 'still return Rust to Python' not in body
+    assert stored(guard)['backend'] == 'rust' and guard.host.killed == []
+
+
+def test_a_launchd_override_record_from_an_exited_process_does_not_stop_the_fallback(guard, capsys):
+    # A start refused on a busy port leaves the previous process's record. Once that process is gone, the
+    # file governs again: failed health checks return Rust to Python.
+    select(guard.config, 'rust')
+    serving(guard, source='environment')
+    guard.host.alive = False
+    for _ in range(2):
+        assert guard.tick(healthy=False) is None
+    assert guard.tick(healthy=False) and stored(guard)['backend'] == 'python'
+    assert [subject for subject, _ in guard.sent] == ['Postern returned to the Python backend']
+    assert 'The next API start uses Python.' in guard.sent[0][1] and 'not restarted' not in guard.sent[0][1]
+    # Without a Rust file, an exited forced-Rust process is neither watched nor reported as an override.
+    progress_backend.selection_path(guard.config).unlink()
+    guard.sent.clear()
+    assert all(guard.tick(healthy=False) is None for _ in range(4)) and guard.sent == []
+    assert serve.main(['backend', '--config', str(guard.config)]) == 0
+    assert 'ok   watchdog guard: not needed while Python is selected' in capsys.readouterr().out
+
+
+def test_a_fallback_that_cannot_confirm_the_api_says_so_and_alerts_once_if_it_stays_unconfirmed(guard):
+    select(guard.config, 'rust')
+    serving(guard)
+    guard.tick(healthy=False)
+    guard.tick(healthy=False)
+    guard.host.lookup_errors = 99  # from here lsof and ps fail
+    assert guard.tick(healthy=False) and stored(guard)['backend'] == 'python' and guard.host.killed == []
+    assert ('The API recorded as serving Rust (pid 4242) could not be confirmed, so it was not restarted'
+            in guard.sent[-1][1])
+    for _ in range(5):
+        guard.tick()
+    subjects = [subject for subject, _ in guard.sent]
+    assert subjects == ['Postern returned to the Python backend', 'Postern could not confirm the return to Python']
+    assert 'restart the API by hand if it still serves Rust' in guard.sent[-1][1]
+    guard.host.lookup_errors = 0  # lookups recover while it still serves Rust: the restart finishes
+    guard.tick()
+    assert guard.host.killed == [(4242, signal.SIGTERM)]
+    assert guard.sent[-1][0] == 'Postern finished returning to the Python backend'
 
 
 def test_zz_the_selection_tests_leave_the_backend_setting_as_found():

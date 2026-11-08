@@ -479,13 +479,28 @@ def backend(config_path, choice):
     else:
         print(f'ok   serving process {active.get("pid")}: {active.get("backend")} from {active.get("source")}, '
               f'started {active.get("started_at")}')
-    if choice == 'rust':
+    if choice == 'rust' and active and active.get('source') == 'environment' and process_exists(active.get('pid')):
+        print(GUARD_STATES['override'])  # the launchd setting wins at the restart, so the file will not apply
+    elif choice == 'rust':
         print('ok   watchdog guard: it checks this selection within 30 s of the API restart; run this again to confirm')
     else:
         print(guard_line(records[GUARD], config_path, selected=selection, active=active))
     if choice in ('python', 'rust'):
         print(f'Restart the API to apply it. A {progress_backend.SETTING} setting in the launchd job overrides this file.')
     return 0
+
+
+def process_exists(pid):
+    """Whether a recorded process still exists. Unknown answers count as yes, so a status never reads ok by guess."""
+    if type(pid) is not int or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
 
 
 GUARD_STATES = {
@@ -506,7 +521,8 @@ def guard_line(record, config_path, now=None, selected=None, active=None):
     from datetime import datetime, timezone
     from . import progress_backend
     from .watchdog import GUARD_VERSION
-    if active and active.get('backend') == 'rust' and active.get('source') == 'environment':
+    live = active is not None and process_exists(active.get('pid'))  # a record left by an earlier process is history
+    if live and active.get('backend') == 'rust' and active.get('source') == 'environment':
         return GUARD_STATES['override']
     try:
         info = progress_backend.selection_path(config_path).lstat()
@@ -516,6 +532,9 @@ def guard_line(record, config_path, now=None, selected=None, active=None):
     except (OSError, ValueError, RuntimeError):
         current = selected = None
     if not selected or selected.get('backend') != 'rust':
+        if live and active.get('backend') == 'rust' and active.get('source') == progress_backend.SELECTION:
+            return (f'FAIL watchdog guard: Python is selected, but the API (pid {active.get("pid")}) still serves Rust '
+                    'unguarded; restart it to apply Python')
         return 'ok   watchdog guard: not needed while Python is selected'
     if record is None:
         return ('FAIL watchdog guard: no heartbeat for the Rust selection; restart the watchdog job '
