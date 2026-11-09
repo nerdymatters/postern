@@ -5,7 +5,7 @@ import sqlite3
 
 import pytest
 
-from postern import progress, progress_store
+from postern import progress, progress_backend, progress_store
 from postern.db import Database, event
 from postern.progress_cache import HistoryCache, retained_size
 
@@ -205,3 +205,61 @@ def test_empty_checkpoint_accepts_nonpositive_history(owner, sequence, append_be
     assert read(owner, cache)['reader', 'pdf']['pages'] == expected
     write(owner, lambda db: raw(db, 2, 'later', 2))
     assert read(owner, cache)['reader', 'pdf']['pages'] == expected | {2}
+
+
+def checks(tmp_path):
+    return json.loads((tmp_path / progress_backend.CHECK).read_text())
+
+
+def test_a_drifted_checkpoint_is_caught_served_from_python_and_reported(owner, tmp_path):
+    # Value: protects=a report extending a wrong checkpoint is replaced by the full Python replay and recorded; fails_when=the comparison is skipped or its result is served anyway; why_new=parity runs in another process; seam=none; no_claim=watchdog reaction (test_progress_backend_selection)
+    progress_backend.health.configure(tmp_path)
+    cache = HistoryCache(owner)
+    write(owner, lambda db: raw(db, 100, 'first', 0))
+    read(owner, cache)
+    cache.checkpoint = []  # drift: the evidence for page 0 is lost while stamp and watermark still match
+    write(owner, lambda db: raw(db, 200, 'second', 1))
+    assert read(owner, cache)['reader', 'pdf']['pages'] == {0, 1}  # read() also checks it equals Python
+    assert cache.stamp is None and cache.delta_replays == 1
+    record = checks(tmp_path)
+    assert (record['checks'], record['mismatches'], record['last_check'], record['native_errors']) == (1, 1, 'mismatch', 0)
+    read(owner, cache)  # the next report rebuilds from the full history
+    assert cache.full_replays == 2 and checks(tmp_path)['checks'] == 1
+
+
+def test_comparisons_run_on_extended_checkpoints_at_most_every_15_minutes(owner, tmp_path):
+    # Value: protects=the Python comparison runs on the first extended report, then at most every 15 min; fails_when=it runs on every report or never again; why_new=no test pins the cadence; seam=none; no_claim=real request latency
+    progress_backend.health.configure(tmp_path)
+    now = [1000.0]
+    cache = HistoryCache(owner, clock=lambda: now[0])
+    write(owner, lambda db: raw(db, 1, 'first', 0))
+    read(owner, cache)  # a full replay: nothing to compare
+    assert checks(tmp_path)['checks'] == 0
+    for seq, expected in ((2, 1), (3, 1)):
+        write(owner, lambda db: raw(db, seq, f'e{seq}', 1))
+        read(owner, cache)
+        assert checks(tmp_path)['checks'] == expected
+    now[0] += 900
+    write(owner, lambda db: raw(db, 4, 'e4', 2))
+    read(owner, cache)
+    record = checks(tmp_path)
+    assert (record['checks'], record['mismatches'], record['last_check']) == (2, 0, 'match')
+
+
+def test_a_failed_python_replay_is_not_a_mismatch(owner, tmp_path, monkeypatch):
+    # Value: protects=a comparison that cannot run serves the native result and records no mismatch; fails_when=the request fails or the watchdog is told of drift that was never measured; why_new=new path; seam=none; no_claim=the cause of a Python failure
+    progress_backend.health.configure(tmp_path)
+    cache = HistoryCache(owner)
+    write(owner, lambda db: raw(db, 1, 'first', 0))
+    read(owner, cache)
+    write(owner, lambda db: raw(db, 2, 'second', 1))
+    def broken(items, cursor):
+        raise MemoryError('synthetic')
+    monkeypatch.setattr(progress, '_reduce_python', broken)
+    def snapshot(db):
+        db.execute('BEGIN')
+        return cache.history(db, ITEMS)
+    assert owner.read(snapshot)['reader', 'pdf']['pages'] == {0, 1}
+    record = checks(tmp_path)
+    assert (record['checks'], record['mismatches'], record['check_errors'], record['last_check']) == (0, 0, 1, 'error: MemoryError')
+    assert cache.stamp is not None  # the checkpoint itself was not in doubt

@@ -44,7 +44,7 @@ described in [Architecture](docs/architecture.md).
 |---|---|---|
 | M0 Launch preparation | In progress; parallel with M1 | Current deployment baseline |
 | M1 Accounts and profiles | Production pilot passed; registration closed | M0 launch checks before release |
-| Rust server migration | P1; RS-06 passed; v0.24.1 (no-password backend switch with a hardened automatic Python fallback) is installed with Python serving (Nov 8); the RS-07 checkpoint precondition passed on production-shaped data | RS-07 live pilot, then RS-08–RS-09; Python still serves production |
+| Rust server migration | P1; RS-06 passed; the RS-07 live pilot has served production from Rust since Nov 9 with the watchdog guarding, and a staff document check passed; Python remains the code default | Sustained observation and the in-process check before the RS-07 default change, then RS-08–RS-09 |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
 | M2 Private spaces and resource catalog | Isolated metadata/onboarding implemented; content integration and hosting pending | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
@@ -221,8 +221,11 @@ its background workers. Python remains the production default.
   `progress-backend.json` with an ordinary restart, and the watchdog returns to
   Python on a health, memory, CPU or parity breach. v0.24.1, installed November 8,
   and v0.24.2 harden that guard, and the [cutover runbook](docs/runbooks/rust-server.md#cutover-and-rollback)
-  needs its watchdog for the pilot. Next is the live pilot, which needs the owner
-  for one launchd change.
+  needs its watchdog for the pilot. The live pilot started on November 9: the owner
+  removed the launchd setting, Rust has served production since 11:10 AM EST with
+  the watchdog guarding, and a staff document check on a phone passed. v0.25.0 adds
+  the in-process check that changing the default needs; sustained observation
+  continues before the default changes.
 - [ ] **RS-08 — Migrate the remaining server responsibilities.** Inventory and
   rank the next slice using measured cost before each port. The remaining areas
   are HTTP routing and sessions/authorization; catalog and reports; durable audit

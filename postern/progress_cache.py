@@ -3,10 +3,14 @@
 Only committed read-only snapshots owned by one Database can reuse evidence.
 Authorization, roster display, quizzes and certificates are always read afresh.
 The original audit history remains authoritative; nothing here is exported.
+At most every 15 minutes, a report that extends the checkpoint is also compared with a full
+Python replay of the same snapshot; a difference serves the Python result, drops the checkpoint
+and is recorded for the watchdog, which returns the API to Python.
 """
 from collections import deque
 import sys
 import threading
+import time
 
 from . import progress, progress_backend, progress_store
 from .db import ReadConnection
@@ -19,9 +23,16 @@ def retained_size(value):
                                   if isinstance(value, (tuple, list)) else 0)
 
 
+FULL = ("SELECT e.email,e.item_id,e.type,e.ts,e.payload FROM progress_events e "
+        "JOIN members m ON m.email=e.email WHERE e.type IN "
+        "('page_served','item_summary','video_progress','item_open','view_requested')")
+
+
 class HistoryCache:
-    def __init__(self, owner, budget=16*1024**2):
+    def __init__(self, owner, budget=16*1024**2, verify_every=900, clock=time.monotonic):
         self.owner, self.budget = owner, budget
+        self.verify_every, self.clock = verify_every, clock
+        self.next_verify = None  # the first extended checkpoint is compared at once
         self.lock = threading.Lock()
         self.full_replays = self.delta_replays = 0
         self.row_counts = deque(maxlen=16)
@@ -61,9 +72,7 @@ class HistoryCache:
         # valid old-writer inputs and must be included on the first continuation.
         reuse = (self.stamp == stamp and self.watermark is not None
                  and maximum is not None and maximum >= self.watermark)
-        sql = ("SELECT e.email,e.item_id,e.type,e.ts,e.payload FROM progress_events e "
-               "JOIN members m ON m.email=e.email WHERE e.type IN "
-               "('page_served','item_summary','video_progress','item_open','view_requested')")
+        sql = FULL
         if reuse:
             # A primary-key range scan visits only appended rows. An email-first
             # join can otherwise rescan every old row merely to filter its seq.
@@ -79,12 +88,28 @@ class HistoryCache:
                 consumed += 1
                 yield row
 
-        result, checkpoint = module.reduce_incremental(
-            metadata, rows(), progress._evidence, self.checkpoint if reuse else [])
+        try:
+            result, checkpoint = module.reduce_incremental(
+                metadata, rows(), progress._evidence, self.checkpoint if reuse else [])
+        except BaseException as error:
+            if progress_backend.native_fault(error):
+                progress_backend.health.native_error(error)
+            raise
         # Publish only after a successful replay; native never mutates our input.
         self.row_counts.append(consumed)
         self.delta_replays += int(reuse)
         self.full_replays += int(not reuse)
+        if reuse and (self.next_verify is None or self.clock() >= self.next_verify):
+            self.next_verify = self.clock() + self.verify_every
+            try:
+                reference = progress._reduce_python(items, db.execute(FULL))
+            except Exception as error:  # The comparison did not run; the native result stands.
+                progress_backend.health.check_failed(error)
+            else:
+                progress_backend.health.checked(reference == result)
+                if reference != result:
+                    self.clear()  # Never extend evidence that disagreed with the full replay.
+                    return reference
         retained = retained_size((checkpoint, stamp))
         if retained <= self.budget:
             self.checkpoint, self.stamp, self.watermark = checkpoint, stamp, maximum

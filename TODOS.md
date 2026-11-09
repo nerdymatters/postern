@@ -68,17 +68,18 @@ parity, write-cost and rollback checks. Do not mask the cost with stale health o
 a wider deadline. Sustained/representative acceptance and remaining compatibility
 checks stay open before changing the serving default.
 
-**Current round (Nov 8):** v0.24.1 is installed on the office Mac with Python
-serving (1:45 PM EST): the launchd job still selects Python, there is no
-`progress-backend.json`, and the watchdog was restarted onto the v0.24.1 guard. The
-compact progress table built under v0.23.0 serves both backends, and a read-only
-check matched the audit-log replay. The 0.2.0 native wheel is installed but not
-loaded. Next is RS-07:
+**Current round (Nov 9):** v0.24.2 is installed on the office Mac (Nov 8, 3:24 PM
+EST), and the RS-07 live pilot started on November 9. The owner removed
+`POSTERN_PROGRESS_BACKEND` from the API's launchd job, `progress-backend.json`
+selects Rust, and Rust has served production since 11:10 AM EST with the watchdog
+guarding. A read-only parity check matched right after the switch, and the owner's
+phone document check passed. The compact progress table built under v0.23.0 serves
+both backends. RS-07 steps:
 1. ~~Install v0.23.0 with Python active.~~ Done Nov 7.
 2. ~~Measure the Rust checkpoint on a read-only copy of production data.~~ Done
    Nov 7 (see Completed).
-3. Run the guarded live pilot, which needs local administrator authentication
-   and an actual staff document check.
+3. ~~Run the guarded live pilot, which needs local administrator authentication
+   and an actual staff document check.~~ Started Nov 9; the document check passed.
 4. Observe sustained Rust operation before changing the default. Owner decision
    D1 (Nov 7): switch through the owner's `progress-backend.json` with an ordinary
    restart, so no administrator password is needed after one launchd change, and
@@ -118,12 +119,6 @@ lists RS-07–RS-09.
     between the two reads can put both in one alert;
   - a dropped launchd-override record always gets the launchd wording, even when
     the owner already removed the setting and a failed start left the old record.
-- **Before Rust becomes the default:** the watchdog's parity check replays history
-  with both native interfaces in its own process, so it cannot see drift in the
-  serving process's in-memory checkpoint, or native errors there that leave health,
-  CPU and memory normal. Have the API compare its checkpoint result with a full
-  replay in the same snapshot from time to time, count native errors on progress
-  paths, and expose a flag the watchdog treats as a breach.
 
 **Compatibility:** Preserve API responses, authorization/revocation, durable
 audit admission, single-writer/job ownership, training progress and certificate
@@ -171,6 +166,16 @@ hosted capacity guarantee.
 keeps that service disabled.
 
 ## Completed
+
+- **2026-11-09 — Let the serving process check its own Rust results.** Required
+  before Rust becomes the default: the watchdog's parity check runs in its own
+  process, so it could not see drift in the serving process's checkpoint, or native
+  errors that leave health, CPU and memory normal. When the staff report extends its
+  checkpoint, the API now compares the result with a full Python replay of the same
+  snapshot (at once, then at most every 15 minutes), serves Python's result if they
+  differ, counts native errors on progress paths, and records both for the watchdog,
+  which treats a difference or three native errors as a breach. `postern.serve
+  backend` shows the serving process's own checks. Included in v0.25.0.
 
 - **2026-11-08 — Close the guard notes from v0.24.1's review (PR #20).** After
   `postern.serve backend python`, the status says `FAIL` until the API stops serving

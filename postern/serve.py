@@ -467,7 +467,7 @@ def backend(config_path, choice):
     except (OSError, ValueError, KeyError):
         data_dir = None
     records = {}
-    for name in (progress_backend.ACTIVE, GUARD):
+    for name in (progress_backend.ACTIVE, GUARD, progress_backend.CHECK):
         try:
             value = json.loads((data_dir / name).read_text())
         except (OSError, ValueError, TypeError):
@@ -485,9 +485,36 @@ def backend(config_path, choice):
         print('ok   watchdog guard: it checks this selection within 30 s of the API restart; run this again to confirm')
     else:
         print(guard_line(records[GUARD], config_path, selected=selection, active=active))
+    line = check_line(records[progress_backend.CHECK], active) if choice not in ('python', 'rust') else None
+    if line:  # the serving process's own checks; a new selection is judged after its restart
+        print(line)
     if choice in ('python', 'rust'):
         print(f'Restart the API to apply it. A {progress_backend.SETTING} setting in the launchd job overrides this file.')
     return 0
+
+
+def check_line(record, active):
+    """The serving Rust process's own checks: its staff-report comparisons and native errors. Nothing
+    is printed unless a live process serves Rust; a record from another process is not its record."""
+    from .watchdog import NATIVE_ERRORS
+    if not active or active.get('backend') != 'rust' or not process_exists(active.get('pid')):
+        return None
+    if not record or record.get('pid') != active.get('pid'):
+        return ('FAIL in-process check: the process serving Rust has written no record '
+                '(v0.25.0 or later writes one at startup); the watchdog cannot see its own checks')
+    checks, mismatches = record.get('checks', 0), record.get('mismatches', 0)
+    errors, last_error = record.get('native_errors', 0), record.get('last_error')
+    if mismatches:
+        return (f'FAIL in-process check: the staff report differed from a full Python replay {mismatches} '
+                'time(s); the watchdog returns Rust to Python')
+    if errors >= NATIVE_ERRORS:
+        return (f'FAIL in-process check: {errors} native errors (last {last_error}); '
+                'the watchdog returns Rust to Python')
+    compared = (f'{checks} staff-report comparison(s) with a full Python replay, all matching '
+                f'(last {record.get("last_check_at")})' if checks else
+                'no staff-report comparison yet (the first runs when the report is opened again)')
+    noted = f'{errors} native error(s), last {last_error}; the watchdog acts at {NATIVE_ERRORS}' if errors else 'no native errors'
+    return f'ok   in-process check: {compared}; {noted}'
 
 
 def process_exists(pid):
