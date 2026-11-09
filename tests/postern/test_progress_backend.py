@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import sqlite3
 
 import pytest
 
@@ -119,9 +120,10 @@ class PanicException(BaseException):
 
 
 @native_required
-@pytest.mark.parametrize('fault', [RuntimeError, PanicException])
-def test_native_fault_while_priming_defers_to_the_staff_report(config, store, clock, monkeypatch, capsys, fault):
-    # Value: protects=a native fault while warming the checkpoint fails the staff report's request, not the whole API; fails_when=startup re-raises it (launchd restarts into the same fault) or stops counting it for the watchdog; why_new=the old test pinned startup failure; seam=none; no_claim=the watchdog's reaction (selection tests)
+@pytest.mark.parametrize('fault,counted', [(RuntimeError, 1), (PanicException, 1), (sqlite3.OperationalError, 0)],
+                         ids=['RuntimeError', 'PanicException', 'OperationalError'])
+def test_native_fault_while_priming_defers_to_the_staff_report(config, store, clock, monkeypatch, capsys, fault, counted):
+    # Value: protects=a native fault while warming the checkpoint fails the staff report's request, not the whole API, and a database error there is deferred without counting as native; fails_when=startup re-raises it (launchd restarts into the same fault), defers only native faults, stops counting native faults or counts database errors for the watchdog, or skips the rest of startup; why_new=the old test pinned startup failure; seam=none; no_claim=the watchdog's reaction (selection tests)
     from fastapi.testclient import TestClient
     from postern.app import create_app
     monkeypatch.setenv('POSTERN_PROGRESS_BACKEND', 'rust')
@@ -135,7 +137,8 @@ def test_native_fault_while_priming_defers_to_the_staff_report(config, store, cl
         assert 'progress checkpoint priming deferred (%s)' % fault.__name__ in capsys.readouterr().err
         assert client.get('/health').status_code == 200
         assert service.progress_history.stamp is None
-        assert json.loads(check.read_text())['native_errors'] == 1
+        assert json.loads(check.read_text())['native_errors'] == counted
+        assert service.tasks and not any(task.done() for task in service.tasks)  # the rest of startup ran
         admin = sign_in(client, ADMIN)
         if fault is RuntimeError:  # A BaseException escaping a request would also stop TestClient's portal.
             with pytest.raises(fault, match='injected native fault'):

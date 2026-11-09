@@ -1,6 +1,7 @@
 """Compact inputs must preserve authoritative replay, old writers and recovery."""
 import json
 import logging
+import queue
 import sqlite3
 import threading
 import time
@@ -340,6 +341,76 @@ def test_idle_rebuild_retries_failed_batches_with_backoff_without_a_restart(tmp_
     assert any('rebuild resumed after 3 failed batch(es)' in m for m in messages)
     gaps = [later - earlier for earlier, later in zip(attempts, attempts[1:])]
     assert all(gap >= wanted for gap, wanted in zip(gaps, (0.2, 0.3, 0.3)))
+
+
+def test_a_persistent_rebuild_failure_never_stops_the_writer(tmp_path, monkeypatch, caplog):
+    # Value: protects=however many idle rebuild batches fail, the writer stays up and keeps committing audit writes, as it did when one failure paused rebuilding; fails_when=the retry delay comes from an unbounded power of two, which stops converting to a float after 1,024 failures (about three weeks at the 30-minute cap) and ends the writer thread; why_new=the backoff test stops after three failures; seam=class retry delays and a writer queue whose idle wait returns at once; no_claim=which errors persist, the delay values
+    path = tmp_path/'existing.sqlite3'
+    with connection(path) as db:
+        raw(db, 'old')
+        db.execute('DELETE FROM progress_events')
+    attempts = []
+    def failing(db, limit=128):
+        attempts.append(1)
+        raise sqlite3.OperationalError('disk I/O error')
+    class Hurried(queue.Queue):  # The idle wait returns at once, so a thousand retries take moments.
+        def get(self, block=True, timeout=None):
+            return super().get(block, None if timeout is None else 0)
+    monkeypatch.setattr(progress_store, 'rebuild_batch', failing)
+    monkeypatch.setattr(Database, 'REBUILD_RETRY_FIRST', 0.0)
+    monkeypatch.setattr(Database, 'REBUILD_RETRY_MAX', 0.0)
+    monkeypatch.setattr(queue, 'Queue', Hurried)
+    caplog.set_level(logging.ERROR, logger='postern.db')  # one warning per failed batch
+    database = Database(path)
+    try:
+        deadline = time.monotonic() + 20
+        while len(attempts) < 1100 and database.thread.is_alive() and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert database.thread.is_alive(), f'writer stopped after {len(attempts)} failed rebuild batches'
+        assert len(attempts) > 1024, 'the hurried queue must reach the old overflow point'
+        assert database.submit(lambda db: event(db, 'item_open', email='active', item_id='pdf')).result(3)
+        assert database.progress_rebuild_error == 'OperationalError'
+    finally:
+        database.close()
+
+
+def test_a_failed_commit_of_the_last_rebuild_batch_is_retried(tmp_path, monkeypatch):
+    # Value: protects=a final rebuild batch whose commit fails is rolled back and retried, so reads still move to the compact table without a restart; fails_when=pending is cleared before the commit succeeds, leaving reads on full event scans until restart; why_new=the other rebuild tests fail inside the batch, before its commit; seam=none; no_claim=which commit errors occur in practice (simulated by one failing commit)
+    path = tmp_path/'existing.sqlite3'
+    with connection(path) as db:
+        raw(db, 'old')
+        db.execute('DELETE FROM progress_events')
+    fail_commit = threading.Event()
+    class FlakyCommit(sqlite3.Connection):
+        def commit(self):
+            if fail_commit.is_set():
+                fail_commit.clear()
+                raise sqlite3.OperationalError('disk I/O error')
+            super().commit()
+    connect = sqlite3.connect
+    def writer_connect(*args, **kwargs):
+        kwargs.setdefault('factory', FlakyCommit)  # readers pass their own factory
+        return connect(*args, **kwargs)
+    original, batches = progress_store.rebuild_batch, []
+    def last_commit_fails_once(db, limit=128):
+        complete = original(db, limit)
+        batches.append(complete)
+        if complete and len(batches) == 1:
+            fail_commit.set()
+        return complete
+    monkeypatch.setattr(sqlite3, 'connect', writer_connect)
+    monkeypatch.setattr(progress_store, 'rebuild_batch', last_commit_fails_once)
+    monkeypatch.setattr(Database, 'REBUILD_RETRY_FIRST', 0.05)
+    database = Database(path)
+    try:
+        deadline = time.monotonic() + 5
+        while database.read(progress_store.source) != 'progress_events' and time.monotonic() < deadline:
+            time.sleep(.05)
+        assert database.read(progress_store.source) == 'progress_events'
+        assert batches == [True, True]  # the rolled-back batch ran again
+        assert database.progress_rebuild_error is None
+    finally:
+        database.close()
 
 
 def test_idle_rebuild_failure_rolls_back_and_restarts_without_stopping_audit(tmp_path, monkeypatch):
