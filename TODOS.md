@@ -168,7 +168,7 @@ keeps that service disabled.
   report's next request builds it, and native errors still count for the watchdog.
   A failed idle rebuild batch of the compact progress table now retries after 30
   seconds, doubling to at most 30 minutes, instead of waiting for a restart. Two of
-  the RS-07 round's review follow-ups.
+  the RS-07 round's review follow-ups. Included in v0.25.1.
 
 - **2026-11-09 — Let the serving process check its own Rust results.** Required
   before Rust becomes the default: the watchdog's parity check runs in its own
