@@ -510,16 +510,19 @@ def check_line(record, active):
     if errors >= NATIVE_ERRORS:
         return (f'FAIL in-process check: {errors} native errors (last {last_error}); '
                 'the watchdog returns Rust to Python')
+    noted = f'{errors} native error(s), last {last_error}; the watchdog acts at {NATIVE_ERRORS}' if errors else 'no native errors'
     failed, failure = record.get('check_errors', 0), record.get('last_check_error')
-    if failed and not checks:
-        return (f'FAIL in-process check: {failed} staff-report comparison(s) could not run (last error {failure}), '
-                'so Rust drift is not being checked; the Python replay fails on this data too')
+    failed_at, checked_at = record.get('last_check_error_at'), record.get('last_check_at')
+    # Judged by the latest attempt, not lifetime totals: one early success must not hide later failures.
+    if failed and (not checked_at or str(failed_at or '') > str(checked_at)):
+        return (f'FAIL in-process check: the last staff-report comparison could not run (the full Python replay '
+                f'raised {failure} at {failed_at}; {failed} in all), so Rust drift is not being checked until one '
+                f'runs; {noted}')
     compared = (f'{checks} staff-report comparison(s) with a full Python replay, all matching '
-                f'(last {record.get("last_check_at")})' if checks else
+                f'(last {checked_at})' if checks else
                 'no staff-report comparison yet (the first runs when the report is opened again)')
     if failed:
-        compared += f', and {failed} that could not run (last error {failure})'
-    noted = f'{errors} native error(s), last {last_error}; the watchdog acts at {NATIVE_ERRORS}' if errors else 'no native errors'
+        compared += f', and {failed} earlier that could not run (last error {failure})'
     return f'ok   in-process check: {compared}; {noted}'
 
 

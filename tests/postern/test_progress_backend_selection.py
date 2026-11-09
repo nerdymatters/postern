@@ -1053,10 +1053,17 @@ def test_an_in_process_breach_under_a_launchd_override_only_alerts(guard):
     ({'checks': 2, 'native_errors': 1, 'last_error': 'ValueError'}, '1 native error(s), last ValueError; the watchdog acts at 3'),
     ({'checks': 2, 'mismatches': 1}, 'FAIL in-process check: the staff report differed from a full Python replay 1 time(s)'),
     ({'native_errors': 3, 'last_error': 'PanicException'}, 'FAIL in-process check: 3 native errors (last PanicException)'),
-    ({'check_errors': 2, 'last_check_error': 'MemoryError'},
-     'FAIL in-process check: 2 staff-report comparison(s) could not run (last error MemoryError)'),
-    ({'checks': 4, 'check_errors': 1, 'last_check_error': 'MemoryError', 'last_check_at': '2026-11-09T17:00:00+00:00'},
-     'all matching (last 2026-11-09T17:00:00+00:00), and 1 that could not run (last error MemoryError)'),
+    ({'check_errors': 2, 'last_check_error': 'MemoryError', 'last_check_error_at': '2026-11-09T17:00:00+00:00'},
+     'FAIL in-process check: the last staff-report comparison could not run (the full Python replay raised '
+     'MemoryError at 2026-11-09T17:00:00+00:00; 2 in all)'),
+    ({'checks': 4, 'check_errors': 1, 'last_check_error': 'MemoryError', 'last_check_error_at': '2026-11-09T16:00:00+00:00',
+      'last_check_at': '2026-11-09T17:00:00+00:00'},
+     'all matching (last 2026-11-09T17:00:00+00:00), and 1 earlier that could not run (last error MemoryError)'),
+    # One early success must not hide later failures: the latest attempt decides.
+    ({'checks': 1, 'check_errors': 40, 'last_check_error': 'MemoryError', 'last_check_at': '2026-11-01T00:00:00+00:00',
+      'last_check_error_at': '2026-11-09T17:00:00+00:00'}, 'FAIL in-process check: the last staff-report comparison'),
+    ({'check_errors': 1, 'last_check_error': 'MemoryError', 'last_check_error_at': '2026-11-09T17:00:00+00:00',
+      'native_errors': 1, 'last_error': 'ValueError'}, '1 native error(s), last ValueError'),
 ])
 def test_the_status_shows_the_serving_processs_own_checks(guard, capsys, record, expected):
     # Value: protects=the owner sees the serving Rust process's own comparisons and errors; fails_when=a stale or missing record reads ok; why_new=new status line; seam=none; no_claim=the watchdog's reaction

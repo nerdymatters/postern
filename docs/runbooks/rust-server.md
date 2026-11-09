@@ -651,8 +651,12 @@ override or as Rust still serving.
 While a live process serves Rust, `postern.serve backend` also prints that process's
 own check: `ok … in-process check` with its staff-report comparisons and native
 errors, or `FAIL` when it recorded a difference or three native errors, or wrote no
-record (a release before v0.25.0 writes none). A record from an earlier process is
-never shown as this one's.
+record (a release before v0.25.0 writes none). It also prints `FAIL` when the latest
+comparison could not run because the full Python replay raised an error: drift is
+not being checked until a comparison runs again. The watchdog does not act on that
+state, so open the Staff progress report again after 15 minutes and check the API
+log; an `ok` line reports earlier comparisons that could not run. A record from an
+earlier process is never shown as this one's.
 
 A watchdog started from a release before v0.24.1 cannot report what it checked, so
 restart the watchdog job after upgrading (step 3). Run `postern.serve backend` as the owner,
