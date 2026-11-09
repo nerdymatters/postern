@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from postern import progress_backend
 from postern.app import create_app
 from postern.config import Config
 from postern.service import Service
@@ -145,3 +146,9 @@ def open_view(client, headers, item_id, attempt=None):
 def events(service, kind=None):
     query = 'SELECT * FROM events' + (' WHERE type=?' if kind else '') + ' ORDER BY seq'
     return service.db.read(lambda db: [dict(r) for r in db.execute(query, (kind,) if kind else ())])
+
+
+@pytest.fixture(autouse=True)
+def fresh_progress_health(monkeypatch):
+    """Each test counts its own native errors and checks; none writes into another test's data directory."""
+    monkeypatch.setattr(progress_backend, 'health', progress_backend.Health())

@@ -584,6 +584,15 @@ watchdog also guards the backend on every check:
   the history rather than loading it into memory. Any difference is a breach.
   Three failed runs in a row also count; each failure is logged with its error.
   The check is capped at 60 seconds.
+- the API's own check (v0.25.0 and later). The parity check runs in the watchdog's
+  process, so it cannot see the serving process's checkpoint. When the staff report
+  extends that checkpoint, the API compares its result with a full Python replay of
+  the same snapshot, first at once and then at most every 15 minutes. If they
+  differ, it serves the Python result and drops the checkpoint. It also counts
+  native errors on reader progress and the staff report (database errors, which
+  Python would meet too, do not count). It records both in
+  `progress-backend-check.json` with its pid. Any difference, or three native
+  errors, recorded by the verified serving process is a breach.
 
 Health is counted before any other check, so an inspection error or a bad limit
 never stops a failing API from returning to Python. On a breach the watchdog
@@ -638,6 +647,12 @@ directory. `postern.serve backend` judges that record by the current selection:
 
 A serving record whose process has exited is history: it is never reported as an
 override or as Rust still serving.
+
+While a live process serves Rust, `postern.serve backend` also prints that process's
+own check: `ok … in-process check` with its staff-report comparisons and native
+errors, or `FAIL` when it recorded a difference or three native errors, or wrote no
+record (a release before v0.25.0 writes none). A record from an earlier process is
+never shown as this one's.
 
 A watchdog started from a release before v0.24.1 cannot report what it checked, so
 restart the watchdog job after upgrading (step 3). Run `postern.serve backend` as the owner,

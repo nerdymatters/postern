@@ -1009,6 +1009,92 @@ def test_the_real_process_check_says_gone_only_when_the_process_is_certainly_gon
         assert serve.process_exists(1) is True  # launchd: not ours to signal, so unknown, and unknown counts as yes
 
 
+def in_process(guard, **counts):
+    record = {'pid': guard.host.pid, 'native_errors': 0, 'checks': 0, 'mismatches': 0, 'last_error': None, **counts}
+    (guard.config.parent / 'data' / watchdog.CHECK).write_text(json.dumps(record))
+
+
+def test_the_apis_own_drift_report_returns_rust_to_python(guard):
+    # Value: protects=a mismatch the serving process found in its own checkpoint is a breach; fails_when=the watchdog ignores the record; why_new=the parity check runs in another process; seam=none; no_claim=how the API finds it (test_progress_cache)
+    select(guard.config, 'rust')
+    serving(guard)
+    in_process(guard, checks=3, mismatches=1)
+    reasons = guard.tick()
+    assert reasons == ["the API's own check found its Rust staff report differs from a full Python replay (1 time(s))"]
+    assert stored(guard)['backend'] == 'python' and guard.host.killed == [(4242, signal.SIGTERM)]
+
+
+def test_native_errors_breach_at_three_and_only_for_the_serving_process(guard):
+    select(guard.config, 'rust')
+    serving(guard)
+    in_process(guard, pid=999, native_errors=7)  # an earlier process's record says nothing about this one
+    in_process(guard, native_errors=2, last_error='PanicException')
+    assert guard.tick() is None and guard.tick() is None and stored(guard)['backend'] == 'rust'
+    in_process(guard, native_errors=3, last_error='PanicException')
+    assert guard.tick() == ["3 native errors on the API's progress paths (last: PanicException)"]
+    assert stored(guard)['backend'] == 'python'
+
+
+def test_an_in_process_breach_under_a_launchd_override_only_alerts(guard):
+    select(guard.config, 'rust')
+    serving(guard, source='environment')
+    in_process(guard, mismatches=2)
+    assert guard.tick() is None and stored(guard)['backend'] == 'rust' and guard.host.killed == []
+    assert [subject for subject, _ in guard.sent] == ['Postern: Rust backend breach under a launchd override']
+
+
+@pytest.mark.parametrize('record,expected', [
+    (None, 'FAIL in-process check: the process serving Rust has written no record'),
+    ({'pid': 999}, 'FAIL in-process check: the process serving Rust has written no record'),
+    ({'checks': 0}, 'ok   in-process check: no staff-report comparison yet'),
+    ({'checks': 2, 'last_check_at': '2026-11-09T17:00:00+00:00'},
+     'ok   in-process check: 2 staff-report comparison(s) with a full Python replay, all matching'),
+    ({'checks': 2, 'native_errors': 1, 'last_error': 'ValueError'}, '1 native error(s), last ValueError; the watchdog acts at 3'),
+    ({'checks': 2, 'mismatches': 1}, 'FAIL in-process check: the staff report differed from a full Python replay 1 time(s)'),
+    ({'native_errors': 3, 'last_error': 'PanicException'}, 'FAIL in-process check: 3 native errors (last PanicException)'),
+])
+def test_the_status_shows_the_serving_processs_own_checks(guard, capsys, record, expected):
+    # Value: protects=the owner sees the serving Rust process's own comparisons and errors; fails_when=a stale or missing record reads ok; why_new=new status line; seam=none; no_claim=the watchdog's reaction
+    select(guard.config, 'rust')
+    serving(guard)
+    if record is not None:
+        in_process(guard, **record)
+    assert serve.main(['backend', '--config', str(guard.config)]) == 0
+    assert expected in capsys.readouterr().out
+
+
+def test_python_serving_shows_no_in_process_line(guard, capsys):
+    serving(guard, backend='python')
+    in_process(guard, mismatches=4)  # left by an earlier Rust process
+    assert serve.main(['backend', '--config', str(guard.config)]) == 0
+    assert 'in-process check' not in capsys.readouterr().out
+
+
+def test_native_errors_are_counted_where_the_service_records_them(config_path, monkeypatch, tmp_path):
+    # Value: protects=a native failure on reader progress is counted, a database error is not, and both still raise; fails_when=errors are swallowed or a shared database fault counts against Rust; why_new=new counter; seam=none; no_claim=PanicException from a real wheel
+    database = catalog_database(tmp_path)
+    data = tmp_path / 'data'
+    data.mkdir(exist_ok=True)
+    progress_backend.health.configure(data)
+    monkeypatch.setenv(progress_backend.SETTING, 'rust')
+    failure = [RuntimeError('synthetic native fault')]
+    class Failing(Native):
+        def reduce(self, metadata, cursor, evidence):
+            raise failure[0]
+    monkeypatch.setattr(progress_backend, 'native', lambda: Failing())
+    with sqlite3.connect(database) as db:
+        db.row_factory = sqlite3.Row
+        items = {item['id']: item for item in progress.dashboard_catalog(db)}
+        with pytest.raises(RuntimeError):
+            progress.history(db, items, 'reader@example.invalid')
+        failure[0] = sqlite3.OperationalError('database is locked')
+        with pytest.raises(sqlite3.OperationalError):
+            progress.history(db, items, 'reader@example.invalid')
+    record = json.loads((data / progress_backend.CHECK).read_text())
+    assert (record['pid'], record['native_errors'], record['last_error']) == (os.getpid(), 1, 'RuntimeError')
+    assert (data / progress_backend.CHECK).stat().st_mode & 0o777 == 0o600
+
+
 def test_zz_the_selection_tests_leave_the_backend_setting_as_found():
     # Runs last in this module: no fixture may leak a selected backend into later tests.
     assert os.environ.get(progress_backend.SETTING) == SETTING_AT_IMPORT

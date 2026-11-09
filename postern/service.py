@@ -74,6 +74,8 @@ class Service:
             max_workers=1, thread_name_prefix='postern-progress')
             if progress_backend.selected() == 'rust' else None)
         self.progress_history = HistoryCache(self.db) if self.progress_executor is not None else None
+        if self.progress_executor is not None:
+            progress_backend.health.configure(config.data_dir)  # the watchdog reads its checks and errors
 
     async def read_progress(self, operation):
         if self.progress_executor is None:

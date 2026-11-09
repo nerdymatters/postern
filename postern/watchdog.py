@@ -41,6 +41,8 @@ from pathlib import Path
 SELECTION = 'progress-backend.json'      # the same file postern.progress_backend reads at process start
 ACTIVE = 'progress-backend-active.json'  # written by postern.serve run: the serving pid and its backend
 GUARD = 'progress-backend-guard.json'    # written here while guarding: which watchdog checked which selection
+CHECK = 'progress-backend-check.json'    # written by a Rust-serving API: its own drift checks and native errors
+NATIVE_ERRORS = 3  # native errors the serving process may report before the guard counts a breach
 GUARD_VERSION = 2  # heartbeats from v0.24.1 on record what ran; postern.serve backend refuses older ones
 
 
@@ -401,9 +403,28 @@ class Fallback:
         self.alert('Postern finished returning to the Python backend',
                    f'Python was selected, but the API (pid {pid}) still served Rust.\n\n{outcome}')
 
+    def in_process(self, pid):
+        """What the verified serving process reported about its own Rust progress paths. A record from
+        another process (an earlier start) is ignored; a missing or unreadable one reports nothing."""
+        try:
+            data = json.loads((self.data_dir / CHECK).read_text())
+        except (OSError, ValueError):
+            return []
+        if not isinstance(data, dict) or data.get('pid') != pid:
+            return []
+        reasons = []
+        mismatches, errors = data.get('mismatches'), data.get('native_errors')
+        if type(mismatches) is int and mismatches > 0:
+            reasons.append("the API's own check found its Rust staff report differs from a full Python replay "
+                           f'({mismatches} time(s))')
+        if type(errors) is int and errors >= NATIVE_ERRORS:
+            reasons.append(f"{errors} native errors on the API's progress paths "
+                           f'(last: {str(data.get("last_error"))[:80]})')
+        return reasons
+
     def resources(self, selection, pid, info, parity_allowed):
         chosen = limits(selection)
-        reasons = []
+        reasons = self.in_process(pid)
         self.big = self.big + 1 if info['rss_mib'] > chosen['max_rss_mib'] else 0
         if self.big >= 2:
             reasons.append(f'API memory {info["rss_mib"]:.0f} MiB above {chosen["max_rss_mib"]:.0f} MiB')

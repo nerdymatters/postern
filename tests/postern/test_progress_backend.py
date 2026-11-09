@@ -1,5 +1,7 @@
 """Backend selection, real HTTP protection and rollback across the same durable store."""
 import importlib.util
+import json
+import os
 
 import pytest
 
@@ -127,6 +129,29 @@ def test_legacy_catalog_error_stays_at_request_boundary_after_restart(config, st
         with pytest.raises(TypeError):
             client.get('/api/admin/progress', headers=admin)
     assert not restarted.db.thread.is_alive()
+
+
+@native_required
+def test_a_rust_service_records_its_own_staff_report_checks(config, store, clock, monkeypatch):
+    # Value: protects=a Rust-serving API writes its own check record at startup and compares an extended staff report with Python; fails_when=the service never configures the record or never compares; why_new=unit tests drive HistoryCache directly; seam=none; no_claim=watchdog reaction (selection tests)
+    from fastapi.testclient import TestClient
+    from postern.app import create_app
+    monkeypatch.setenv('POSTERN_PROGRESS_BACKEND', 'rust')
+    service = Service(config, store=store, clock=clock)
+    check = config.data_dir / progress_backend.CHECK
+    with TestClient(create_app(config, service=service)) as client:
+        start = json.loads(check.read_text())
+        assert (start['pid'], start['checks'], start['native_errors'], start['mismatches']) == (os.getpid(), 0, 0, 0)
+        admin = sign_in(client, ADMIN)
+        post, item = ready_post(client, admin, service, pages=3)
+        reader = sign_in(client)
+        view = open_view(client, reader, item)
+        for page in (0, 1):
+            assert client.get(f"/api/views/{view['id']}/page/{page}.jpg", headers=reader).status_code == 200
+            assert client.get('/api/admin/progress', headers=admin).status_code == 200
+    assert service.progress_history.delta_replays >= 1
+    record = json.loads(check.read_text())
+    assert (record['checks'], record['mismatches'], record['last_check'], record['native_errors']) == (1, 0, 'match', 0)
 
 
 @native_required

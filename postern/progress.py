@@ -35,7 +35,12 @@ def history(db, items, email=None, coverage=False):
     if progress_backend.selected() == 'rust':
         metadata = progress_backend.metadata(items)
         if metadata is not None:
-            return progress_backend.native().reduce(metadata, cursor, _evidence)
+            try:
+                return progress_backend.native().reduce(metadata, cursor, _evidence)
+            except BaseException as error:
+                if progress_backend.native_fault(error):
+                    progress_backend.health.native_error(error)
+                raise
     return _reduce_python(items, cursor)
 
 

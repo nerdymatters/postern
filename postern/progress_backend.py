@@ -15,12 +15,16 @@ import json
 import math
 import os
 from pathlib import Path
+import sqlite3
 import stat
+import sys
 import tempfile
+import threading
 
 SETTING = 'POSTERN_PROGRESS_BACKEND'
 SELECTION = 'progress-backend.json'
 ACTIVE = 'progress-backend-active.json'
+CHECK = 'progress-backend-check.json'  # written by a Rust-serving API: its own drift checks and native errors
 
 
 def selection_path(config_path):
@@ -91,6 +95,83 @@ def record_active(data_dir, backend, source):
             'started_at': datetime.now(timezone.utc).isoformat(timespec='seconds')}
     _write_private(path, data, '.progress-backend-active-')
     return data
+
+
+def native_fault(error):
+    """An error the native reducer raised. A database error is not one: Python would meet it too."""
+    if isinstance(error, sqlite3.Error):
+        return False
+    # PyO3 reports a Rust panic as PanicException, which derives from BaseException.
+    return isinstance(error, Exception) or type(error).__name__ == 'PanicException'
+
+
+class Health:
+    """What the serving process saw on its Rust progress paths, for the watchdog.
+
+    The watchdog's own parity check replays history in another process, so it cannot see the serving
+    process's checkpoint or native errors that leave health, CPU and memory normal. This record can:
+    it counts native errors and the staff report's comparisons with a full Python replay. Counts
+    belong to one process; a restart starts them again. Nothing here is read by the server.
+    """
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.path = None
+        self.write_failed = False
+        self.started_at = None
+        self.native_errors = self.checks = self.mismatches = self.check_errors = 0
+        self.last_error = self.last_check = self.last_check_at = None
+
+    def configure(self, data_dir):
+        """Called once by a service that serves Rust; other processes only count in memory."""
+        with self.lock:
+            self.path = Path(data_dir) / CHECK
+            self.started_at = datetime.now(timezone.utc).isoformat(timespec='seconds')
+            self.native_errors = self.checks = self.mismatches = self.check_errors = 0
+            self.last_error = self.last_check = self.last_check_at = None
+            self._write()
+
+    def native_error(self, error):
+        with self.lock:
+            self.native_errors += 1
+            self.last_error = type(error).__name__
+            self._write()
+
+    def checked(self, match):
+        with self.lock:
+            self.checks += 1
+            self.mismatches += int(not match)
+            self.last_check = 'match' if match else 'mismatch'
+            self.last_check_at = datetime.now(timezone.utc).isoformat(timespec='seconds')
+            self._write()
+
+    def check_failed(self, error):
+        """The Python replay itself failed: the comparison did not run, and is not a mismatch."""
+        with self.lock:
+            self.check_errors += 1
+            self.last_check = 'error: ' + type(error).__name__
+            self.last_check_at = datetime.now(timezone.utc).isoformat(timespec='seconds')
+            self._write()
+
+    def _write(self):
+        if self.path is None:
+            return
+        data = {'pid': os.getpid(), 'started_at': self.started_at, 'native_errors': self.native_errors,
+                'last_error': self.last_error, 'checks': self.checks, 'mismatches': self.mismatches,
+                'check_errors': self.check_errors, 'last_check': self.last_check,
+                'last_check_at': self.last_check_at,
+                'updated_at': datetime.now(timezone.utc).isoformat(timespec='seconds')}
+        try:
+            _write_private(self.path, data, '.progress-backend-check-')
+        except OSError as error:
+            # Evidence for the watchdog, never a reason to fail a request. Say so once in the API log.
+            if not self.write_failed:
+                print(f'postern: {CHECK} not written ({type(error).__name__}); the watchdog cannot see '
+                      'in-process checks', file=sys.stderr, flush=True)
+                self.write_failed = True
+
+
+health = Health()
 
 
 @lru_cache(maxsize=1)
