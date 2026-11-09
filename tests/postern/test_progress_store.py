@@ -406,6 +406,7 @@ def test_a_failed_commit_of_the_last_rebuild_batch_is_retried(tmp_path, monkeypa
         deadline = time.monotonic() + 5
         while database.read(progress_store.source) != 'progress_events' and time.monotonic() < deadline:
             time.sleep(.05)
+        database.submit(lambda db: None).result(3)  # The writer has finished the batch that resumed.
         assert database.read(progress_store.source) == 'progress_events'
         assert batches == [True, True]  # the rolled-back batch ran again
         assert database.progress_rebuild_error is None
