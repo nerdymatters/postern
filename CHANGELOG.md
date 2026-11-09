@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.25.0 — Let the serving API check its own Rust progress (2026-11-09)
+
+### Added
+
+- Catch Rust progress drift where it happens. The watchdog's parity check runs in its own process, so it could not see the serving API's staff-report checkpoint. When the staff report extends that checkpoint, the API now compares the result with a full Python replay of the same snapshot, first at once and then at most every 15 minutes. If they differ, it serves Python's result, drops the checkpoint and records the difference.
+- Count native errors on reader progress and the Staff progress report. Database errors, which Python would meet too, do not count.
+- Return Rust to Python when the serving API reports trouble about itself. The API records its comparisons and native errors in `progress-backend-check.json`; the watchdog treats any difference, or three native errors, from the verified serving process as a breach.
+- See the serving process's own checks in `postern.serve backend`: its comparisons, native errors, and comparisons that could not run.
+
+### Upgrade
+
+- Restart the watchdog job after installing this release so it reads the new record. A release before 0.25.0 writes no record, so `postern.serve backend` prints `FAIL` for the in-process check until the API restarts on 0.25.0.
+
 ## 0.24.2 — Trust the Rust guard's status and alerts during the pilot (2026-11-08)
 
 ### Fixed
