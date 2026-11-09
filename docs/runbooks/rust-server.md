@@ -114,8 +114,11 @@ and a 25 ms budget checked between rows. SQLite caps each derived payload at
 `events`; the derived row is marked ineligible. The budget is cooperative, not
 a hard bound on a single SQLite operation or filesystem commit. The cursor and
 completion marker commit with each batch, so interruption resumes safely.
-An unsuccessful batch rolls back, logs `Progress read table rebuild paused`, and
-keeps the original read path active; startup retries unfinished work.
+An unsuccessful batch rolls back, logs `Progress read table rebuild paused` with
+its retry delay, and keeps the original read path active. The writer retries on idle
+time after 30 seconds, doubling the delay to at most 30 minutes, and logs `Progress
+read table rebuild resumed` when a batch succeeds again; a restart also resumes
+unfinished work.
 Do not remove `progress_events`, `progress_generation` or their triggers while
 any release uses the database: the completion marker lives in `meta`, and a
 missing trigger lets writes skip the derived copy. If startup finds any of them
@@ -143,7 +146,14 @@ required before rollout.
 ### Incremental staff-report evidence
 
 The Rust service primes a disposable checkpoint during normal startup when both
-the compact history and catalog metadata are eligible. Subsequent reports replay
+the compact history and catalog metadata are eligible. If priming fails, the API
+starts anyway and logs `postern: progress checkpoint priming deferred (<error>)`;
+the staff report's next request builds the checkpoint, so a native fault fails that
+request, not startup. Native errors there count toward the watchdog's three-error
+return to Python. Priming still has no deadline. A hung prime keeps the API from
+listening, so health checks fail and the watchdog selects Python and alerts; it
+restarts only a process it can verify as listening, so restart that one by hand.
+Subsequent reports replay
 only events after the saved sequence through the native `CHECKPOINT_VERSION=1`
 interface. Install the matching wheel before selecting Rust; an old or missing
 interface refuses selection before the writer starts. Reader-specific queries

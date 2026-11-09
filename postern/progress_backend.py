@@ -97,12 +97,15 @@ def record_active(data_dir, backend, source):
     return data
 
 
-def native_fault(error):
-    """An error the native reducer raised. A database error is not one: Python would meet it too."""
-    if isinstance(error, sqlite3.Error):
-        return False
+def recoverable(error):
+    """An error that should fail one progress request, not the process: interrupts, exits and cancellation propagate."""
     # PyO3 reports a Rust panic as PanicException, which derives from BaseException.
     return isinstance(error, Exception) or type(error).__name__ == 'PanicException'
+
+
+def native_fault(error):
+    """An error the native reducer raised. A database error is not one: Python would meet it too."""
+    return not isinstance(error, sqlite3.Error) and recoverable(error)
 
 
 class Health:

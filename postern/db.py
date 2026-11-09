@@ -95,6 +95,9 @@ class ReadConnection(sqlite3.Connection):
 
 
 class Database:
+    # Idle progress-table rebuild retries after a failed batch: 30 s, doubling to at most 30 minutes.
+    REBUILD_RETRY_FIRST, REBUILD_RETRY_MAX = 30.0, 1800.0
+
     def __init__(self, path, capacity=128, deadline=1.5):
         self.path, self.deadline = path, deadline
         self.queue = queue.Queue(maxsize=capacity)
@@ -143,11 +146,15 @@ class Database:
                 progress_store.rebuild_batch(db)
                 db.commit()
             rebuild_pending = progress_store.pending(db)
+            rebuild_failures, retry_at = 0, 0.0
             self.ready.set_result({p: db.execute('PRAGMA '+p).fetchone()[0] for p in ['journal_mode','synchronous','fullfsync','busy_timeout']})
             while True:
                 try:
-                    job = self.queue.get(timeout=.1 if rebuild_pending else None)
+                    wait = max(.1, retry_at - time.monotonic()) if rebuild_pending else None
+                    job = self.queue.get(timeout=wait)
                 except queue.Empty:
+                    if time.monotonic() < retry_at:
+                        continue
                     # Existing installations keep reading authoritative events
                     # until this bounded, resumable projection is complete. Only
                     # spend idle writer time; queued audit work always goes first.
@@ -157,11 +164,21 @@ class Database:
                         db.commit()
                     except Exception as error:
                         db.rollback()
+                        # Reads keep the authoritative events meanwhile. A busy or locked file is usually
+                        # brief, so retry on idle time with a growing delay instead of waiting for a restart.
+                        rebuild_failures += 1
+                        delay = min(self.REBUILD_RETRY_FIRST * 2 ** (rebuild_failures - 1), self.REBUILD_RETRY_MAX)
+                        retry_at = time.monotonic() + delay
                         self.progress_rebuild_error = type(error).__name__
-                        rebuild_pending = False  # retry on next startup, retain raw fallback
                         logging.getLogger(__name__).warning(
-                            'Progress read table rebuild paused (%s); audit history remains active',
-                            self.progress_rebuild_error)
+                            'Progress read table rebuild paused (%s); audit history remains active; retrying in %g s',
+                            self.progress_rebuild_error, delay)
+                    else:
+                        if rebuild_failures:
+                            logging.getLogger(__name__).warning(
+                                'Progress read table rebuild resumed after %d failed batch(es)', rebuild_failures)
+                            rebuild_failures, retry_at = 0, 0.0
+                            self.progress_rebuild_error = None
                     continue
                 if job is None:
                     break

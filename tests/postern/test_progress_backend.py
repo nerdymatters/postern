@@ -92,22 +92,58 @@ def test_restart_rollback_keeps_activity_and_certificate(config, store, clock, m
                 assert progress['opened_pages'] == [0]
 
 
+class Interrupted(BaseException):
+    """Like an interrupt or exit: not a request's error, so it must still stop startup."""
+
+
 @native_required
-def test_failed_startup_prime_closes_writer_and_progress_executor(config, store, clock, monkeypatch):
+def test_fatal_startup_prime_error_closes_writer_and_progress_executor(config, store, clock, monkeypatch):
     from fastapi.testclient import TestClient
     from postern.app import create_app
     monkeypatch.setenv('POSTERN_PROGRESS_BACKEND', 'rust')
     service = Service(config, store=store, clock=clock)
     def failed(*args):
-        raise RuntimeError('injected checkpoint failure')
+        raise Interrupted('injected interrupt while priming')
     monkeypatch.setattr(progress_backend.native(), 'reduce_incremental', failed)
-    with pytest.raises(RuntimeError, match='injected checkpoint failure'):
+    with pytest.raises(Interrupted, match='injected interrupt while priming'):
         with TestClient(create_app(config, service=service)):
             pytest.fail('startup failure must not admit requests')
     assert not service.db.thread.is_alive()
     assert service.progress_history.stamp is None
     with pytest.raises(RuntimeError, match='shutdown'):
         service.progress_executor.submit(lambda: None)
+
+
+class PanicException(BaseException):
+    """Named like PyO3's report of a Rust panic, which derives from BaseException."""
+
+
+@native_required
+@pytest.mark.parametrize('fault', [RuntimeError, PanicException])
+def test_native_fault_while_priming_defers_to_the_staff_report(config, store, clock, monkeypatch, capsys, fault):
+    # Value: protects=a native fault while warming the checkpoint fails the staff report's request, not the whole API; fails_when=startup re-raises it (launchd restarts into the same fault) or stops counting it for the watchdog; why_new=the old test pinned startup failure; seam=none; no_claim=the watchdog's reaction (selection tests)
+    from fastapi.testclient import TestClient
+    from postern.app import create_app
+    monkeypatch.setenv('POSTERN_PROGRESS_BACKEND', 'rust')
+    service = Service(config, store=store, clock=clock)
+    check = config.data_dir / progress_backend.CHECK
+    working = progress_backend.native().reduce_incremental
+    def failed(*args):
+        raise fault('injected native fault')
+    monkeypatch.setattr(progress_backend.native(), 'reduce_incremental', failed)
+    with TestClient(create_app(config, service=service)) as client:
+        assert 'progress checkpoint priming deferred (%s)' % fault.__name__ in capsys.readouterr().err
+        assert client.get('/health').status_code == 200
+        assert service.progress_history.stamp is None
+        assert json.loads(check.read_text())['native_errors'] == 1
+        admin = sign_in(client, ADMIN)
+        if fault is RuntimeError:  # A BaseException escaping a request would also stop TestClient's portal.
+            with pytest.raises(fault, match='injected native fault'):
+                client.get('/api/admin/progress', headers=admin)
+            assert json.loads(check.read_text())['native_errors'] == 2
+        monkeypatch.setattr(progress_backend.native(), 'reduce_incremental', working)
+        assert client.get('/api/admin/progress', headers=admin).status_code == 200
+        assert service.progress_history.stamp is not None
 
 
 @native_required

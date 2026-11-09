@@ -56,20 +56,16 @@ and preserved 77 events including 23 document-page events. The fresh benchmark
 cut roster wall/CPU about 49% with matching results. Python is restored and
 timing capture remains enabled.
 
-**Next measured task:** reduce concurrent health-query cost. The wider capture
-showed seven simultaneous health requests each minute spending 2.25–2.71 seconds
-in the database-query stage on both backends, despite all 18 sampled Rust guard
-checks passing. A read-only backup replay measured the audit-history aggregate
-at 122 ms median and the latest-export lookup at about 0.05 ms. The aggregate
-still scans the full covering event index. A seven-reader replay stopped at the
-70% CPU guard; retain it as stopped evidence, not a benchmark pass. Attribute the
-request source and test a query change on isolated data with exact health-result
-parity, write-cost and rollback checks. Do not mask the cost with stale health or
-a wider deadline. Sustained/representative acceptance and remaining compatibility
-checks stay open before changing the serving default.
+**Next measured task:** rank the next slice (RS-08) by measured cost. The
+health-query cost noted earlier was fixed in v0.22.1 (RS-05). The office Mac also
+runs other services, scheduled jobs, browsers and coding agents, so start
+by attributing whole-host CPU and memory to process groups over two staff weekdays
+(from November 9), then measure per-route server cost only if the API's share
+warrants another port. Sustained acceptance stays open before changing the
+serving default.
 
-**Current round (Nov 9):** v0.24.2 is installed on the office Mac (Nov 8, 3:24 PM
-EST), and the RS-07 live pilot started on November 9. The owner removed
+**Current round (Nov 9):** the RS-07 live pilot started on November 9, and
+v0.25.0 was installed while Rust served (2:22 PM EST). The owner removed
 `POSTERN_PROGRESS_BACKEND` from the API's launchd job, `progress-backend.json`
 selects Rust, and Rust has served production since 11:10 AM EST with the watchdog
 guarding. A read-only parity check matched right after the switch, and the owner's
@@ -92,15 +88,14 @@ The [remaining migration checklist](ROADMAP.md#remaining-migration-checklist)
 lists RS-07–RS-09.
 
 **Review follow-ups (not release blockers):**
-- Startup priming has no deadline. A native fault while priming fails startup,
-  instead of failing one request. Consider a bounded prime that falls back to
-  request-time replay.
+- Startup priming has no deadline. A hung prime keeps the API from listening; the
+  watchdog then selects Python and alerts, but restarts only a process it can verify
+  as listening, so the owner must restart it by hand. A bounded prime would need its
+  own signal to the watchdog, since health does not touch the progress worker.
 - One progress worker serves both reader snapshots and admin full replays. A
   rebuild after invalidation delays reader requests behind it.
 - One nonportable row, such as a payload over 64 KiB, keeps every history read on
   the original query, with no signal. Surface it in diagnostics.
-- A transient error in an idle rebuild batch pauses rebuilding until restart.
-  Retry with backoff.
 - The cache stamp relies on file identity and generation. The runbook forbids
   restoring an older database into the same file; a per-database token would
   make reuse fail closed anyway.
@@ -166,6 +161,14 @@ hosted capacity guarantee.
 keeps that service disabled.
 
 ## Completed
+
+- **2026-11-09 — Keep the API up through progress faults it can recover from.**
+  A native fault or Rust panic while priming the staff report's checkpoint no
+  longer stops startup (launchd would restart the API into the same fault); the
+  report's next request builds it, and native errors still count for the watchdog.
+  A failed idle rebuild batch of the compact progress table now retries after 30
+  seconds, doubling to at most 30 minutes, instead of waiting for a restart. Two of
+  the RS-07 round's review follow-ups.
 
 - **2026-11-09 — Let the serving process check its own Rust results.** Required
   before Rust becomes the default: the watchdog's parity check runs in its own
