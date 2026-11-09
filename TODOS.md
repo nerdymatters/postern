@@ -59,7 +59,7 @@ timing capture remains enabled.
 **Next measured task:** rank the next slice (RS-08) by measured cost. The
 health-query cost noted earlier was fixed in v0.22.1 (RS-05). The office Mac also
 runs other services, scheduled jobs, browsers and coding agents, so start
-by attributing whole-host CPU and memory to process groups over two staff weekdays
+by attributing whole-host CPU and memory to process groups over about two days
 (from November 9), then measure per-route server cost only if the API's share
 warrants another port. Sustained acceptance stays open before changing the
 serving default.
