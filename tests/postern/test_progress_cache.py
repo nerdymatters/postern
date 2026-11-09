@@ -263,3 +263,49 @@ def test_a_failed_python_replay_is_not_a_mismatch(owner, tmp_path, monkeypatch):
     record = checks(tmp_path)
     assert (record['checks'], record['mismatches'], record['check_errors'], record['last_check']) == (0, 0, 1, 'error: MemoryError')
     assert cache.stamp is not None  # the checkpoint itself was not in doubt
+
+
+@pytest.mark.parametrize('failure,counted', [(RuntimeError('synthetic native fault'), 1),
+                                             (sqlite3.OperationalError('database is locked'), 0)])
+def test_a_native_failure_on_the_staff_report_is_counted_and_still_raised(owner, tmp_path, monkeypatch, failure, counted):
+    # Value: protects=a native fault in the staff report's incremental reduce reaches the watchdog's count and the request; fails_when=the cache path stops counting or swallows it; why_new=only progress.history's counter is tested; seam=none; no_claim=PanicException from a real wheel
+    progress_backend.health.configure(tmp_path)
+    real = progress_backend.native()
+    class Failing:
+        def __getattr__(self, name):
+            return getattr(real, name)
+        def reduce_incremental(self, *args):
+            raise failure
+    monkeypatch.setattr(progress_backend, 'native', lambda: Failing())
+    cache = HistoryCache(owner)
+    write(owner, lambda db: raw(db, 1, 'first', 0))
+    def snapshot(db):
+        db.execute('BEGIN')
+        return cache.history(db, ITEMS)
+    with pytest.raises(type(failure)):
+        owner.read(snapshot)
+    record = checks(tmp_path)
+    assert (record['native_errors'], record['last_error']) == (counted, type(failure).__name__ if counted else None)
+    assert cache.stamp is None and cache.full_replays == 0  # nothing published from a failed replay
+
+
+def test_an_unwritable_check_record_never_fails_a_request(tmp_path, capsys):
+    # Value: protects=a check record that cannot be written leaves counting working and warns once; fails_when=OSError escapes into a request or the log floods; why_new=write-failure branch untested; seam=none; no_claim=watchdog reaction to a missing record
+    health = progress_backend.Health()
+    health.configure(tmp_path / 'missing')  # no such directory: every write fails
+    health.native_error(RuntimeError('x'))
+    health.checked(False)
+    health.check_failed(MemoryError('y'))
+    assert (health.native_errors, health.mismatches, health.check_errors) == (1, 1, 1)
+    assert capsys.readouterr().err.count(progress_backend.CHECK + ' not written') == 1
+    assert not (tmp_path / 'missing').exists()
+
+
+def test_a_rust_panic_counts_as_native_but_interrupts_and_database_errors_do_not():
+    # Value: protects=PyO3 PanicException (a BaseException) counts; KeyboardInterrupt/SystemExit and sqlite errors do not; fails_when=the name check or sqlite exclusion is dropped; why_new=no test covers the BaseException branch; seam=none; no_claim=the real wheel's panic type
+    PanicException = type('PanicException', (BaseException,), {})
+    assert progress_backend.native_fault(PanicException('boom'))
+    assert progress_backend.native_fault(ValueError('bad'))
+    assert not progress_backend.native_fault(KeyboardInterrupt())
+    assert not progress_backend.native_fault(SystemExit(1))
+    assert not progress_backend.native_fault(sqlite3.DatabaseError('corrupt'))
