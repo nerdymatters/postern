@@ -111,7 +111,16 @@ class Service:
                 items = {item['id']: item for item in dashboard_catalog(db)}
                 if progress_backend.metadata(items) is not None:
                     self.progress_history.history(db, items)
-            await self.read_progress(prime)
+            try:
+                await self.read_progress(prime)
+            except BaseException as error:
+                # Priming only warms the staff report's checkpoint. A native fault here would otherwise stop
+                # the whole API and restart it into the same fault; defer it to the report's own request,
+                # where it fails that request alone. Native errors are already counted for the watchdog.
+                if not progress_backend.recoverable(error):
+                    raise
+                print(f'postern: progress checkpoint priming deferred ({type(error).__name__}); '
+                      'the staff report builds it on its next request', file=sys.stderr)
         self.tasks = [asyncio.create_task(self.refresh_loop()), asyncio.create_task(self.background_loop()), asyncio.create_task(self.sweep_loop())]
         if self.config.selfie_enabled:
             self.tasks.append(asyncio.create_task(selfie.loop(self)))

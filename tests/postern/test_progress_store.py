@@ -1,7 +1,9 @@
 """Compact inputs must preserve authoritative replay, old writers and recovery."""
 import json
+import logging
 import sqlite3
 import threading
+import time
 
 import pytest
 
@@ -301,6 +303,43 @@ def test_projection_and_ready_marker_share_the_read_snapshot(tmp_path, monkeypat
             assert equivalent(monkeypatch, reader)[1]['active', 'pdf']['pages'] == {1, 3}
         finally:
             reader.close()
+
+
+def test_idle_rebuild_retries_failed_batches_with_backoff_without_a_restart(tmp_path, monkeypatch, caplog):
+    # Value: protects=a transient failure in the idle progress-table rebuild no longer leaves reads on full event scans until a restart; fails_when=a failed batch stops rebuilding, retries without waiting, or the delay neither doubles nor caps; why_new=the restart test covers only resumption on the next startup; seam=class retry delays; no_claim=which errors are transient
+    path = tmp_path/'existing.sqlite3'
+    with connection(path) as db:
+        raw(db, 'old')
+        db.execute('DELETE FROM progress_events')
+    original = progress_store.rebuild_batch
+    attempts, completed = [], threading.Event()
+    def flaky(db, limit=128):
+        attempts.append(time.monotonic())
+        result = original(db, limit)
+        if len(attempts) <= 3:
+            raise sqlite3.OperationalError('database is locked')
+        if result:
+            completed.set()
+        return result
+    monkeypatch.setattr(progress_store, 'rebuild_batch', flaky)
+    monkeypatch.setattr(Database, 'REBUILD_RETRY_FIRST', 0.2)
+    monkeypatch.setattr(Database, 'REBUILD_RETRY_MAX', 0.3)
+    caplog.set_level(logging.WARNING, logger='postern.db')
+    database = Database(path)
+    try:
+        assert completed.wait(10)
+        database.submit(lambda db: None).result(3)  # Wait for the rebuild's commit.
+        assert database.progress_rebuild_error is None
+        assert database.read(progress_store.source) == 'progress_events'
+        assert database.read(lambda db: db.execute('SELECT count(*) FROM progress_events').fetchone()[0]) == 1
+    finally:
+        database.close()
+    messages = [record.getMessage() for record in caplog.records if record.name == 'postern.db']
+    paused = [m.rsplit('retrying in ', 1)[1] for m in messages if 'rebuild paused (OperationalError)' in m]
+    assert paused == ['0.2 s', '0.3 s', '0.3 s']  # doubles, then caps
+    assert any('rebuild resumed after 3 failed batch(es)' in m for m in messages)
+    gaps = [later - earlier for earlier, later in zip(attempts, attempts[1:])]
+    assert all(gap >= wanted for gap, wanted in zip(gaps, (0.2, 0.3, 0.3)))
 
 
 def test_idle_rebuild_failure_rolls_back_and_restarts_without_stopping_audit(tmp_path, monkeypatch):
