@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.25.1 — Keep the API running through progress faults it can recover from (2026-11-09)
+
+### Fixed
+
+- Keep the API up when the Staff progress report's Rust checkpoint cannot be built at startup. A native fault or Rust panic while warming it used to stop the API, and launchd restarted it into the same fault. The API now starts anyway and logs `postern: progress checkpoint priming deferred`; the report builds the checkpoint on its next request, and native errors there still count toward the watchdog's return to Python.
+- Finish building the compact progress table without a restart. A failed rebuild batch used to pause rebuilding until the API restarted, leaving reads on the full event history. The API now retries after 30 seconds, doubling the wait to at most 30 minutes, and logs when rebuilding resumes. A batch whose commit fails is retried too.
+
+### Upgrade
+
+- Restart the API to apply. The database, Python dependencies, native wheel and watchdog are unchanged, so a rollback to 0.25.0 needs no restore.
+
 ## 0.25.0 — Let the serving API check its own Rust progress (2026-11-09)
 
 ### Added
