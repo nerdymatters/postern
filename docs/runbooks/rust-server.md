@@ -659,8 +659,9 @@ open the Staff progress report again after 15 minutes and run the command again;
 `ok` line reports earlier comparisons that could not run. A record from an
 earlier process is never shown as this one's.
 
-A watchdog started from a release before v0.24.1 cannot report what it checked, so
-restart the watchdog job after upgrading (step 3). Run `postern.serve backend` as the owner,
+A watchdog started from a release before v0.24.1 cannot report what it checked, and
+one started before v0.25.0 ignores `progress-backend-check.json`, so restart the
+watchdog job after upgrading (step 3). Run `postern.serve backend` as the owner,
 never with sudo: the API refuses a selection file it does not own.
 
 Before a production pilot:
