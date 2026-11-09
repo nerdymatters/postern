@@ -147,7 +147,7 @@ required before rollout.
 
 The Rust service primes a disposable checkpoint during normal startup when both
 the compact history and catalog metadata are eligible. If priming fails, the API
-starts anyway and logs `postern: progress checkpoint priming deferred (<error>)`;
+starts anyway and logs `postern: progress checkpoint priming deferred (<error type>)`;
 the staff report's next request builds the checkpoint, so a native fault fails that
 request, not startup. Native errors there count toward the watchdog's three-error
 return to Python. Priming still has no deadline. A hung prime keeps the API from
