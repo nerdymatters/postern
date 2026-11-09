@@ -261,7 +261,8 @@ def test_a_failed_python_replay_is_not_a_mismatch(owner, tmp_path, monkeypatch):
         return cache.history(db, ITEMS)
     assert owner.read(snapshot)['reader', 'pdf']['pages'] == {0, 1}
     record = checks(tmp_path)
-    assert (record['checks'], record['mismatches'], record['check_errors'], record['last_check']) == (0, 0, 1, 'error: MemoryError')
+    assert (record['checks'], record['mismatches'], record['check_errors'], record['last_check_error']) == (0, 0, 1, 'MemoryError')
+    assert (record['last_check'], record['last_check_at']) == (None, None)  # no comparison has run
     assert cache.stamp is not None  # the checkpoint itself was not in doubt
 
 

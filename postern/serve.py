@@ -510,9 +510,15 @@ def check_line(record, active):
     if errors >= NATIVE_ERRORS:
         return (f'FAIL in-process check: {errors} native errors (last {last_error}); '
                 'the watchdog returns Rust to Python')
+    failed, failure = record.get('check_errors', 0), record.get('last_check_error')
+    if failed and not checks:
+        return (f'FAIL in-process check: {failed} staff-report comparison(s) could not run (last error {failure}), '
+                'so Rust drift is not being checked; the Python replay fails on this data too')
     compared = (f'{checks} staff-report comparison(s) with a full Python replay, all matching '
                 f'(last {record.get("last_check_at")})' if checks else
                 'no staff-report comparison yet (the first runs when the report is opened again)')
+    if failed:
+        compared += f', and {failed} that could not run (last error {failure})'
     noted = f'{errors} native error(s), last {last_error}; the watchdog acts at {NATIVE_ERRORS}' if errors else 'no native errors'
     return f'ok   in-process check: {compared}; {noted}'
 

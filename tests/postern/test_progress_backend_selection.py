@@ -1027,7 +1027,8 @@ def test_the_apis_own_drift_report_returns_rust_to_python(guard):
 def test_native_errors_breach_at_three_and_only_for_the_serving_process(guard):
     select(guard.config, 'rust')
     serving(guard)
-    in_process(guard, pid=999, native_errors=7)  # an earlier process's record says nothing about this one
+    in_process(guard, pid=999, native_errors=7, mismatches=2)  # an earlier process's record says nothing about this one
+    assert guard.tick() is None and stored(guard)['backend'] == 'rust' and guard.host.killed == []
     in_process(guard, native_errors=2, last_error='PanicException')
     assert guard.tick() is None and guard.tick() is None and stored(guard)['backend'] == 'rust'
     in_process(guard, native_errors=3, last_error='PanicException')
@@ -1052,6 +1053,10 @@ def test_an_in_process_breach_under_a_launchd_override_only_alerts(guard):
     ({'checks': 2, 'native_errors': 1, 'last_error': 'ValueError'}, '1 native error(s), last ValueError; the watchdog acts at 3'),
     ({'checks': 2, 'mismatches': 1}, 'FAIL in-process check: the staff report differed from a full Python replay 1 time(s)'),
     ({'native_errors': 3, 'last_error': 'PanicException'}, 'FAIL in-process check: 3 native errors (last PanicException)'),
+    ({'check_errors': 2, 'last_check_error': 'MemoryError'},
+     'FAIL in-process check: 2 staff-report comparison(s) could not run (last error MemoryError)'),
+    ({'checks': 4, 'check_errors': 1, 'last_check_error': 'MemoryError', 'last_check_at': '2026-11-09T17:00:00+00:00'},
+     'all matching (last 2026-11-09T17:00:00+00:00), and 1 that could not run (last error MemoryError)'),
 ])
 def test_the_status_shows_the_serving_processs_own_checks(guard, capsys, record, expected):
     # Value: protects=the owner sees the serving Rust process's own comparisons and errors; fails_when=a stale or missing record reads ok; why_new=new status line; seam=none; no_claim=the watchdog's reaction
