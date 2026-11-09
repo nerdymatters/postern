@@ -120,7 +120,7 @@ class Health:
         self.write_failed = False
         self.started_at = None
         self.native_errors = self.checks = self.mismatches = self.check_errors = 0
-        self.last_error = self.last_check = self.last_check_at = None
+        self.last_error = self.last_check = self.last_check_at = self.last_check_error = None
 
     def configure(self, data_dir):
         """Called once by a service that serves Rust; other processes only count in memory."""
@@ -128,7 +128,7 @@ class Health:
             self.path = Path(data_dir) / CHECK
             self.started_at = datetime.now(timezone.utc).isoformat(timespec='seconds')
             self.native_errors = self.checks = self.mismatches = self.check_errors = 0
-            self.last_error = self.last_check = self.last_check_at = None
+            self.last_error = self.last_check = self.last_check_at = self.last_check_error = None
             self._write()
 
     def native_error(self, error):
@@ -146,11 +146,11 @@ class Health:
             self._write()
 
     def check_failed(self, error):
-        """The Python replay itself failed: the comparison did not run, and is not a mismatch."""
+        """The Python replay itself failed: the comparison did not run, and is not a mismatch. The last
+        comparison's result and time stay as they were; the status shows the failures beside them."""
         with self.lock:
             self.check_errors += 1
-            self.last_check = 'error: ' + type(error).__name__
-            self.last_check_at = datetime.now(timezone.utc).isoformat(timespec='seconds')
+            self.last_check_error = type(error).__name__
             self._write()
 
     def _write(self):
@@ -158,8 +158,8 @@ class Health:
             return
         data = {'pid': os.getpid(), 'started_at': self.started_at, 'native_errors': self.native_errors,
                 'last_error': self.last_error, 'checks': self.checks, 'mismatches': self.mismatches,
-                'check_errors': self.check_errors, 'last_check': self.last_check,
-                'last_check_at': self.last_check_at,
+                'check_errors': self.check_errors, 'last_check_error': self.last_check_error,
+                'last_check': self.last_check, 'last_check_at': self.last_check_at,
                 'updated_at': datetime.now(timezone.utc).isoformat(timespec='seconds')}
         try:
             _write_private(self.path, data, '.progress-backend-check-')
