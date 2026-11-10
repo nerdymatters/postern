@@ -14,13 +14,16 @@ Track implementation in the [Rust server migration](ROADMAP.md#rust-server-migra
 workstream.
 
 **Why:** The office Mac's overload remains a performance problem after the
-v0.19.1 security rollout. Reducing server CPU, memory and request cost is now a
-priority before further feature expansion.
+v0.19.1 security rollout. Reducing server CPU, memory and request cost became a
+priority on Nov 1. On Nov 10 the owner put Linux support and M2 content ahead of
+the slices that remain after RS-07.
 
 **Context:** Requested Oct 28, 2026; promoted by the owner on Nov 1, 2026 from P3
-to P1 and the next engineering priority. This is the server in `postern/`, separate
-from the roadmap's M4 Rust folder client. Existing audience/grant work remains
-tracked; new feature expansion follows the first migration slice.
+to P1 and the next engineering priority. On Nov 10, 2026 the owner re-ordered the
+work: finish RS-07, then [Linux support](ROADMAP.md#linux-support), then M2
+content. RS-08 and RS-09 resume after the first outside Postern, or earlier where
+measurement shows a cost. This is the server in `postern/`, separate from the
+roadmap's M4 Rust folder client. Existing audience/grant work remains tracked.
 
 **First steps:** Attribute CPU, memory, disk I/O and request latency to the API,
 background workers, database queries and development/build processes. Separate
@@ -56,7 +59,8 @@ and preserved 77 events including 23 document-page events. The fresh benchmark
 cut roster wall/CPU about 49% with matching results. Python is restored and
 timing capture remains enabled.
 
-**Next measured task:** rank the next slice (RS-08) by measured cost. The
+**Next measured task:** RS-08 waits behind Linux support and M2 content. When it
+resumes, rank the next slice by measured cost. The
 health-query cost noted earlier was fixed in v0.22.1 (RS-05). The office Mac also
 runs other services, scheduled jobs, browsers and coding agents, so start
 by attributing whole-host CPU and memory to process groups over about two days
@@ -120,7 +124,8 @@ for each migrated path. Require measured improvement and a rehearsed rollback
 before production cutover.
 
 **Effort:** XL, delivered in bounded slices
-**Priority:** P1 — next engineering workstream
+**Priority:** P1 for RS-07, the live pilot. RS-08 and RS-09 follow Linux support
+and M2 content.
 **Depends on:** v0.19.1 compatibility baseline (available); workload attribution
 and acceptance targets precede the first implementation. Urgent production and
 security fixes still take precedence.
