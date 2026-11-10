@@ -27,12 +27,18 @@ described in [Architecture](docs/architecture.md).
   service passed a controlled pilot on Oct 28, 2026 from a separate pilot
   frontend; registration stays closed outside watched pilot windows. Opening
   registration waits for M0 launch preparation, which runs alongside it.
-- **Next engineering priority:** migrate the Python resource server to Rust,
-  promoted to P1 by the owner on Nov 1, 2026 because office-Mac overload remains
-  after the v0.19.1 security rollout. Start with workload attribution and the
-  first bounded migration slice before further M2 content integration and
-  M3–M6 implementation. Urgent production/security fixes and required launch
-  checks retain precedence; existing M2 work remains tracked.
+- **Next engineering priority:** finish the Rust pilot (RS-07), then
+  [Linux support](#linux-support), then M2 content integration. The owner set
+  this order on Nov 10, 2026: content inside Posterns is the only road to an
+  outside customer, and every way of hosting the server needs Linux. RS-08 and
+  RS-09 resume after the first outside Postern, or earlier where measurement
+  shows a cost. This replaces the Nov 1 order, which put the whole Rust server
+  migration ahead of M2 content because of office-Mac overload. Urgent
+  production/security fixes and required launch checks retain precedence.
+- **Tenancy:** one shared platform and database for every Postern, and later a
+  dedicated deployment of the same software for a customer who needs their data
+  kept apart. Reasons and references are in the
+  [storage design](docs/designs/storage.md#tenancy-shared-by-default-a-dedicated-copy-on-request).
 - **Later milestones:** ordered proposals, with implementation details to settle
   at each milestone. Their order is not a release-date commitment.
 - **Tracking:** task IDs remain stable. Check a task only after its outcome is
@@ -44,7 +50,8 @@ described in [Architecture](docs/architecture.md).
 |---|---|---|
 | M0 Launch preparation | In progress; parallel with M1 | Current deployment baseline |
 | M1 Accounts and profiles | Production pilot passed; registration closed | M0 launch checks before release |
-| Rust server migration | P1; RS-06 passed; the RS-07 live pilot has served production from Rust since Nov 9 with the watchdog guarding, and a staff document check passed; Python remains the code default | Sustained observation and the in-process check before the RS-07 default change, then RS-08–RS-09 |
+| Rust server migration | P1; RS-06 passed; the RS-07 live pilot has served production from Rust since Nov 9 with the watchdog guarding, and a staff document check passed; Python remains the code default | Sustained observation and the in-process check before the RS-07 default change; RS-08–RS-09 after Linux support and M2 content |
+| Linux support | Next after RS-07 | The converter's sandbox, service supervision and packaging are macOS-only |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
 | M2 Private spaces and resource catalog | Isolated metadata/onboarding implemented; content integration and hosting pending | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
@@ -247,6 +254,33 @@ and explicit performance/compatibility acceptance criteria. The first slice is
 complete only after parity, measured improvement and rollback are verified.
 The remaining server migration stays open until its responsibilities have moved.
 
+## Linux support
+
+**Outcome:** the resource server runs and converts on Linux as it does on
+macOS, so it can be hosted away from the office Mac and self-hosted.
+
+The converter child already uses portable tools (poppler, ffmpeg, Pillow and
+OpenCV). Its sandbox wrapper, its memory bound, service supervision and
+packaging are macOS-only.
+
+- [ ] **LX-01** Run each conversion on Linux inside a bubblewrap sandbox with
+  the same limits and manifest contract as the macOS Seatbelt profile. Keep one
+  place that builds the sandboxed command. Bound resident memory as macOS does;
+  keep the address-space limit only if real media passes with it. Run one
+  shared conversion and sandbox test set on both platforms: matching manifests
+  and refusal codes, no network from the job, secrets unreadable, and a sandbox
+  that cannot start reported as a host fault. Existing macOS assertions stay
+  unedited.
+- [ ] **LX-02** Supervise, watch, update and package the server on a plain
+  Linux host: system services in place of launchd, the watchdog's fallback,
+  database durability settings away from macOS, a Linux lock file and release
+  build, and a CI lane that runs the full Python suite on Linux. Preflight must
+  run the real sandbox; Ubuntu 23.10 and later need an AppArmor rule for it.
+
+**Done when:** the full suite passes on both platforms from one test set, a
+Linux host installs, restarts and falls back under its watchdog, and CI keeps a
+Linux build.
+
 ## UI design and marketing
 
 **Outcome:** a consistent Postern interface and clear messaging for the resource
@@ -407,6 +441,9 @@ with chosen audiences.
   metadata/search/revocation, including signed handoff and audit-before-disclosure.
   Legacy content/object adapters, provider/region/budget, real account-store cutover
   and complete hosted/object recovery verification remain; this task is not complete.
+  On Nov 10 the owner settled tenancy: shared by default, a dedicated deployment
+  on request, and a key per Postern kept outside the database
+  ([reasons](docs/designs/storage.md#tenancy-shared-by-default-a-dedicated-copy-on-request)).
 
 **Done when:** owners can invite/revoke audiences, resources are consistently
 scoped, two-space isolation is demonstrated beyond the interface, and existing
@@ -441,6 +478,9 @@ specific audience.
 - [ ] **M4-01** Settle the first platform, transport and availability contract.
   Proposed pilot: portable Rust core, macOS first, outbound connection and a
   live read-only folder. Stored snapshots require a separate explicit choice.
+  Owner direction, Nov 10: this client is the free tier. Files stay on the
+  device and every conversion runs there; the hosted service never converts
+  for it.
 - [ ] **M4-02** Implement device enrollment, protected credential storage,
   selected-root preview, audience assignment, presence/last-seen status and
   visible pause/disconnect controls.
