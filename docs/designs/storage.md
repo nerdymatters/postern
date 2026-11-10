@@ -103,16 +103,16 @@ of the hosted database; that device's member list and activity are.
 ### Safeguards
 
 - In the design today: file bytes outside the database; hashed session and
-  invitation secrets; a restricted runtime login per service; private,
-  TLS-verified database access; a new authority generation that invalidates
-  every session after an incident
+  invitation secrets; a restricted runtime login per service; a new authority
+  generation that invalidates every session after an incident
   ([service integration](../runbooks/service-integration.md)).
 - Decided November 10: a key per Postern kept outside the database, and the
   dedicated-deployment option.
-- Proposed, to settle in the content design: sealed copies of the audit log
-  outside the database, so tampering shows; alerts on bulk reads and exports;
-  a written breach procedure (replace keys, start a new generation, notify
-  customers).
+- Proposed, to settle in the content design: private, TLS-verified access to
+  the hosted database (hosted TLS is still listed as remaining work in the
+  service integration guide); sealed copies of the audit log outside the
+  database, so tampering shows; alerts on bulk reads and exports; a written
+  breach procedure (replace keys, start a new generation, notify customers).
 
 These are design requirements. None is implemented by this section.
 
