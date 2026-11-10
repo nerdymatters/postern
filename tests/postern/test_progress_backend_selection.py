@@ -83,6 +83,40 @@ def test_selection_and_active_records_are_private_and_complete(config_path):
     assert active['pid'] == os.getpid()
 
 
+@pytest.mark.parametrize('state,expected', [
+    ('none', 'ok   progress reads: no database yet'),
+    ('compact', 'ok   progress reads: the compact progress table'),
+    ('building', 'WARN progress reads: the full event history, because the compact table is still being built (0 row(s) waiting)'),
+    ('nonportable', 'WARN progress reads: the full event history, because 1 row(s) cannot use the compact table'),
+    ('unreadable', 'FAIL progress reads: could not read the database (DatabaseError)'),
+])
+def test_the_backend_command_says_which_history_progress_reads_use(config_path, capsys, state, expected):
+    # Value: protects=the owner sees when progress reads fall back to the full event history and why, without the API; fails_when=the line is missing, calls a fallback ok, or an unreadable database raises instead of printing FAIL; why_new=nothing outside the API showed the read source; seam=none; no_claim=the counts themselves (progress_store tests)
+    path = config_path.parent / 'data' / 'postern.sqlite3'
+    if state == 'unreadable':
+        path.write_bytes(b'not a database' * 100)
+    elif state != 'none':
+        db = sqlite3.connect(path)
+        db.row_factory = sqlite3.Row  # as the writer's connection
+        db.executescript(SCHEMA)
+        db.execute("INSERT INTO events(seq,id,email,item_id,type,ts,payload,summary) VALUES "
+                   "(NULL,'old','active','pdf','page_served',1,'{\"detail\":{\"page\":1}}',1)")
+        if state != 'building':
+            while not progress_store.rebuild_batch(db, limit=3):
+                pass
+        else:
+            db.execute('DELETE FROM progress_events')
+        if state == 'nonportable':
+            db.execute('UPDATE progress_events SET portable=0')
+        db.commit()
+        db.close()
+    assert serve.main(['backend', '--config', str(config_path)]) == 0
+    line = next(line for line in capsys.readouterr().out.splitlines() if 'progress reads' in line)
+    assert line.startswith(expected)
+    if state in ('building', 'nonportable'):
+        assert line.endswith('Results are unchanged.')
+
+
 def test_serve_run_applies_the_selection_before_the_service_starts(config_path, monkeypatch, capsys):
     select(config_path, 'python')
     seen = {}

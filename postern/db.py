@@ -104,6 +104,7 @@ class Database:
         self.ready = concurrent.futures.Future()
         self.failed = False
         self.progress_rebuild_error = None
+        self.progress_rebuild_failures = 0  # consecutive failed idle rebuild batches, for private health
         self.thread = threading.Thread(target=self._worker, name='postern-writer', daemon=True)
         self.thread.start()
         self.settings = self.ready.result(timeout=10)
@@ -146,7 +147,7 @@ class Database:
                 progress_store.rebuild_batch(db)
                 db.commit()
             rebuild_pending = progress_store.pending(db)
-            rebuild_failures, retry_delay, retry_at = 0, 0.0, 0.0
+            retry_delay, retry_at = 0.0, 0.0
             self.ready.set_result({p: db.execute('PRAGMA '+p).fetchone()[0] for p in ['journal_mode','synchronous','fullfsync','busy_timeout']})
             while True:
                 try:
@@ -168,7 +169,7 @@ class Database:
                         # brief, so retry on idle time with a growing delay instead of waiting for a restart.
                         # Double the previous delay rather than raise 2 to the failure count, which
                         # overflows a float after 1,024 failures and would end this writer.
-                        rebuild_failures += 1
+                        self.progress_rebuild_failures += 1
                         retry_delay = min(retry_delay * 2 or self.REBUILD_RETRY_FIRST, self.REBUILD_RETRY_MAX)
                         retry_at = time.monotonic() + retry_delay
                         self.progress_rebuild_error = type(error).__name__
@@ -177,10 +178,10 @@ class Database:
                             self.progress_rebuild_error, retry_delay)
                     else:
                         rebuild_pending = not complete
-                        if rebuild_failures:
+                        if self.progress_rebuild_failures:
                             logging.getLogger(__name__).warning(
-                                'Progress read table rebuild resumed after %d failed batch(es)', rebuild_failures)
-                            rebuild_failures, retry_delay, retry_at = 0, 0.0, 0.0
+                                'Progress read table rebuild resumed after %d failed batch(es)', self.progress_rebuild_failures)
+                            self.progress_rebuild_failures, retry_delay, retry_at = 0, 0.0, 0.0
                             self.progress_rebuild_error = None
                     continue
                 if job is None:

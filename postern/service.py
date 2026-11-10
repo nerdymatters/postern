@@ -819,7 +819,8 @@ class Service:
             return {'process':'up','permissions':'ready' if fresh else 'paused','audit':'unavailable' if self.db.failed else 'ready',
                 'backup':'delayed' if oldest[0] and time.time()-oldest[0]>60 else 'current','pending_events':oldest[1],
                 'oldest_unexported_at':oldest[0],'last_export_at':latest,'allowlist_error':meta(db,'allowlist_error'),
-                'recovery_mode':meta(db,'recovery_mode',False)}
+                'recovery_mode':meta(db,'recovery_mode',False),
+                **({'progress_reads':progress_store.diagnostics(db)} if private else {})}
         try:result=await health_trace.read(self.db,query)
         except Exception:
             health_trace.mark('database_error')
@@ -831,4 +832,7 @@ class Service:
             health_trace.mark('disk_finished')
         if not private:return {k:result[k] for k in ['process','permissions','audit','backup','storage']}
         result['mode']=self.config.mode;result['cache']=self.cache.snapshot();result['sqlite']=self.db.settings
+        # The writer's rebuild state lives only in this process; the database alone cannot show a failing batch.
+        result['progress_reads']={**(result.get('progress_reads') or {}),'rebuild_error':self.db.progress_rebuild_error,
+                                  'rebuild_failures':self.db.progress_rebuild_failures}
         return result

@@ -200,6 +200,15 @@ def rebuild_batch(db, limit=128):
     return False
 
 
+def diagnostics(db):
+    """Which history the progress reads use, and why, for the owner. Counts use the partial indexes."""
+    if not db.execute("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='progress_events'").fetchone():
+        return {'source': 'events', 'ready': False, 'pending_rows': None, 'original_query_rows': None}
+    pending = db.execute('SELECT COUNT(*) FROM progress_events WHERE portable=-1').fetchone()[0]
+    below = db.execute('SELECT COUNT(*) FROM progress_events WHERE portable<1').fetchone()[0]
+    return {'source': source(db), 'ready': ready(db), 'pending_rows': pending, 'original_query_rows': below - pending}
+
+
 def source(db):
     # Small standalone reducer fixtures and old read-only databases have no
     # projection. Do not catch read errors or treat them as empty progress.

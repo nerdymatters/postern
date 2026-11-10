@@ -135,6 +135,13 @@ and exceptions. Ordinary old-writer rows become eligible after idle processing.
 Check `meta.progress_inputs_v1` for completion and `progress_events.portable`
 for classification: `-1` pending, `0` original-query fallback, `1` eligible.
 The source switches only when rebuilding is complete and every row is eligible.
+`postern.serve backend` reads this without the API and prints one `progress reads`
+line: `ok` on the compact table, or `WARN` with the reason reads use the full event
+history (rows still waiting for the rebuild, or rows the compact table cannot hold)
+and the count. Results are the same either way; only read cost differs. An admin's
+`/api/admin/health` adds `progress_reads` with the same counts and the writer's
+in-memory `rebuild_error` and consecutive `rebuild_failures`, which the database
+cannot show.
 
 Selecting `python` still restores the original reducer and read scheduling;
 it also uses eligible compact inputs. Rolling back to an older release reads

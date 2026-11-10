@@ -64,8 +64,8 @@ by attributing whole-host CPU and memory to process groups over about two days
 warrants another port. Sustained acceptance stays open before changing the
 serving default.
 
-**Current round (Nov 9):** the RS-07 live pilot started on November 9, and
-v0.25.0 was installed while Rust served (2:22 PM EST). The owner removed
+**Current round (Nov 9):** the RS-07 live pilot started on November 9; v0.25.0
+(2:22 PM EST) and v0.25.1 (4:40 PM EST) were installed while Rust served. The owner removed
 `POSTERN_PROGRESS_BACKEND` from the API's launchd job, `progress-backend.json`
 selects Rust, and Rust has served production since 11:10 AM EST with the watchdog
 guarding. A read-only parity check matched right after the switch, and the owner's
@@ -94,8 +94,6 @@ lists RS-07–RS-09.
   own signal to the watchdog, since health does not touch the progress worker.
 - One progress worker serves both reader snapshots and admin full replays. A
   rebuild after invalidation delays reader requests behind it.
-- One nonportable row, such as a payload over 64 KiB, keeps every history read on
-  the original query, with no signal. Surface it in diagnostics.
 - The cache stamp relies on file identity and generation. The runbook forbids
   restoring an older database into the same file; a per-database token would
   make reuse fail closed anyway.
@@ -161,6 +159,14 @@ hosted capacity guarantee.
 keeps that service disabled.
 
 ## Completed
+
+- **2026-11-09 — Show why progress reads use the full event history.** A row the
+  compact progress table cannot hold (such as a payload over 64 KiB) or an
+  unfinished rebuild kept every history read on the original query with no signal,
+  and a failing rebuild batch showed only in the API log. `postern.serve backend`
+  now prints a `progress reads` line from a read-only look at the database, and an
+  admin's private health adds the counts with the writer's rebuild error and
+  consecutive failures. Included in v0.25.2.
 
 - **2026-11-09 — Keep the API up through progress faults it can recover from.**
   A native fault or Rust panic while priming the staff report's checkpoint no
