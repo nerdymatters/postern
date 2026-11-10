@@ -143,9 +143,10 @@ or a count of rows the compact table cannot hold. Results are the same either wa
 only read cost differs. It prints `WARN … not checked` when the configuration names
 no readable data directory, and `FAIL` when the database cannot be read. An admin's
 `/api/admin/health` adds `progress_reads` with the same state (`source`, `ready`,
-`pending_rows` and `original_query_rows`, or an `error` type when they cannot be
-read) and the writer's in-memory `rebuild_error` and consecutive `rebuild_failures`,
-which the database cannot show.
+`pending_rows` and `original_query_rows`, or an `error` type when that diagnostic
+alone fails) and the writer's in-memory `rebuild_error` and consecutive
+`rebuild_failures`, which the database cannot show. When the whole health read fails,
+the usual fallback fields report it and `progress_reads` holds only the writer's two.
 
 Selecting `python` still restores the original reducer and read scheduling;
 it also uses eligible compact inputs. Rolling back to an older release reads
