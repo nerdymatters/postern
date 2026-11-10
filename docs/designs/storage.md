@@ -37,6 +37,85 @@ File bytes belong in object storage. Device folders and live resources remain
 adapter-managed sources, not mandatory cloud copies. SQLite remains useful for
 the existing host and disposable recovery comparisons until cutover.
 
+## Tenancy: shared by default, a dedicated copy on request
+
+**Owner decision, November 10, 2026.** Every Postern lives on one shared
+platform with one PostgreSQL authority. After signing in once, a person sees
+every Postern they can access. A customer who needs their data kept apart can
+later be given a dedicated deployment of the same software. Files and sensitive
+records are to be encrypted with a key per Postern that is kept outside the
+database. The line above stands: no database per space.
+
+Two shapes were compared: the shared one, and a separate copy of Postern per
+customer behind a shared sign-in.
+
+| What goes wrong | One shared database | A separate copy per customer |
+| --- | --- | --- |
+| A copy of one database is stolen | Every customer's records | One customer's records; the shared sign-in list still exposes every member's email and which Posterns they belong to |
+| A coding mistake shows one customer's data to another | Possible; every query must filter by space, backed by row-level security and tests | Cannot cross copies |
+| An attacker can change a database | Can add themselves to any Postern | Only inside that one copy |
+| The server itself is taken over | Everything on it | Everything on it |
+| One person must be cut off everywhere | One change, instant everywhere | Must reach every copy; a missed copy keeps letting them in |
+| A security hole needs fixing | Patch once | Patch every copy |
+| A bad update or operator mistake | Hits everyone; restoring one customer is hard | Hits one customer; one copy can be updated first |
+
+A separate copy contains damage better after a breach. The shared database is
+easier to keep patched and consistent, costs less to run, and gives one sign-in
+over every Postern. A takeover of the server is the same in both.
+
+Reasons for the shared shape:
+
+- Account suspension and membership changes must commit together (next
+  section). One database gives that; separate copies do not.
+- A security fix lands once.
+- The My Posterns home, creating a Postern, invitations and membership are
+  already built on it.
+- A separate copy stays available as a deployment choice, because the software
+  is open source. It needs no second architecture.
+
+This follows a common pattern. GitHub.com splits its databases by function, not
+by customer, and offers GitHub Enterprise Server, "a self-hosted version of the
+GitHub platform", to customers who need their own. AWS's SaaS guidance names
+the shapes pool (shared), silo (dedicated) and bridge (a mix), and notes that
+silo gives the strongest isolation at the most cost and complexity.
+Sources: [GitHub's database partitioning](https://github.blog/engineering/infrastructure/partitioning-githubs-relational-databases-scale/),
+[GitHub Enterprise Server](https://docs.github.com/en/enterprise-server@latest/admin/overview/about-github-enterprise-server),
+[AWS silo, pool and bridge models](https://docs.aws.amazon.com/wellarchitected/latest/saas-lens/silo-pool-and-bridge-models.html),
+[AWS tenant isolation strategies](https://docs.aws.amazon.com/whitepapers/latest/saas-tenant-isolation-strategies/the-bridge-model.html).
+
+### What a breach of the shared database would expose
+
+1. **A copy is read.** For every customer: who the members are, which Posterns
+   exist, resource titles, who can see what, and the activity and training
+   history. Not the files, which are stored apart. No passwords, because
+   sign-in is through Google. Resource sessions and invitation secrets are
+   stored only as hashes (`postern/sql/002_service_sessions.sql`,
+   `postern/sql/003_space_onboarding.sql`) and cannot be reused.
+2. **The database can be changed.** The worst case. The database decides who
+   may see what, so an attacker could add themselves to any Postern and open
+   its files through the normal application, and could alter audit and
+   training records.
+3. **The server is taken over.** Everything, files included.
+
+Files that stay on a connected device (roadmap M4) are not exposed by a breach
+of the hosted database; that device's member list and activity are.
+
+### Safeguards
+
+- In the design today: file bytes outside the database; hashed session and
+  invitation secrets; a restricted runtime login per service; private,
+  TLS-verified database access; a new authority generation that invalidates
+  every session after an incident
+  ([service integration](../runbooks/service-integration.md)).
+- Decided November 10: a key per Postern kept outside the database, and the
+  dedicated-deployment option.
+- Proposed, to settle in the content design: sealed copies of the audit log
+  outside the database, so tampering shows; alerts on bulk reads and exports;
+  a written breach procedure (replace keys, start a new generation, notify
+  customers).
+
+These are design requirements. None is implemented by this section.
+
 ## Account authority and transaction boundary
 
 The current managed account service uses D1. For the first managed multi-space
