@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.25.2 — See why progress reads use the full event history (2026-11-09)
+
+### Added
+
+- See which history progress reads use, without the API. `postern.serve backend` now prints a `progress reads` line: `ok` on the compact progress table, or `WARN` with the reason reads fall back to the full event history (the table is still being built, rows are waiting to be classified, or rows the compact table cannot hold, such as a payload over 64 KiB). Results are the same either way; only read cost differs.
+- See a failing rebuild in an admin's private health. `/api/admin/health` adds `progress_reads` with the same counts, the rebuild's last error and its consecutive failed batches, which before showed only in the API log.
+
+### Upgrade
+
+- Restart the API to apply. The database, Python dependencies, native wheel and watchdog are unchanged, so a rollback to 0.25.1 needs no restore.
+
 ## 0.25.1 — Keep the API running through progress faults it can recover from (2026-11-09)
 
 ### Fixed
