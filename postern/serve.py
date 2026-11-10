@@ -488,9 +488,40 @@ def backend(config_path, choice):
     line = check_line(records[progress_backend.CHECK], active) if choice not in ('python', 'rust') else None
     if line:  # the serving process's own checks; a new selection is judged after its restart
         print(line)
+    if choice not in ('python', 'rust'):
+        print(reads_line(data_dir))
     if choice in ('python', 'rust'):
         print(f'Restart the API to apply it. A {progress_backend.SETTING} setting in the launchd job overrides this file.')
     return 0
+
+
+def reads_line(data_dir):
+    """Which history the progress reads use, from a read-only look at the database. Both backends read it."""
+    import sqlite3
+    from . import progress_store
+    path = data_dir / 'postern.sqlite3' if data_dir else None
+    if path is None or not path.exists():
+        return 'ok   progress reads: no database yet'
+    try:
+        db = sqlite3.connect(f'{path.resolve().as_uri()}?mode=ro', uri=True, timeout=1)
+        try:
+            state = progress_store.diagnostics(db)
+        finally:
+            db.close()
+    except sqlite3.Error as error:
+        return f'FAIL progress reads: could not read the database ({type(error).__name__})'
+    if state['source'] == 'progress_events':
+        return 'ok   progress reads: the compact progress table'
+    reasons = []
+    if state['pending_rows'] is None:
+        reasons.append('this database has no compact progress table yet; the API creates it at startup')
+    elif not state['ready'] or state['pending_rows']:
+        reasons.append(f'the compact table is still being built ({state["pending_rows"]} row(s) waiting); the API '
+                       'builds it on idle time, and its log shows "Progress read table rebuild paused" if a batch fails')
+    if state['original_query_rows']:
+        reasons.append(f'{state["original_query_rows"]} row(s) cannot use the compact table (for example a payload over '
+                       '64 KiB or a nonpositive timestamp), so every history read scans the original events')
+    return 'WARN progress reads: the full event history, because ' + '; and '.join(reasons) + '. Results are unchanged.'
 
 
 def check_line(record, active):

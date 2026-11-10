@@ -241,6 +241,28 @@ def test_oversized_history_never_enters_projection_parser(monkeypatch, backend):
         assert equivalent(monkeypatch, db)[1]['active', 'pdf']['pages'] == {2}
 
 
+def test_diagnostics_say_which_history_reads_use_and_why():
+    # Value: protects=the owner can tell why progress reads use the full event history (an unfinished build or a row the compact table cannot hold), not only that they do; fails_when=the counts include eligible rows, miss pending or nonportable rows, or a database without the table raises; why_new=source() reports only the outcome; seam=none; no_claim=the status wording (serve tests)
+    plain = sqlite3.connect(':memory:')
+    plain.execute('CREATE TABLE events(seq INTEGER PRIMARY KEY)')
+    assert progress_store.diagnostics(plain) == {'source': 'events', 'ready': False, 'pending_rows': None,
+                                                 'original_query_rows': None}
+    with connection() as db:
+        raw(db, 'first')
+        db.execute('DELETE FROM progress_events')
+        building = progress_store.diagnostics(db)
+        assert (building['source'], building['ready'], building['original_query_rows']) == ('events', False, 0)
+        finish(db)
+        assert progress_store.diagnostics(db) == {'source': 'progress_events', 'ready': True, 'pending_rows': 0,
+                                                  'original_query_rows': 0}
+        raw(db, 'oversized', payload=json.dumps({'detail': {'page': 2}, 'unused': 'x'*(128*1024)}))
+        raw(db, 'old-writer')
+        db.execute("UPDATE progress_events SET portable=-1 WHERE id='old-writer'")
+        progress_store.compact_created(db, 'oversized', 'page_served')
+        assert progress_store.diagnostics(db) == {'source': 'events', 'ready': True, 'pending_rows': 1,
+                                                  'original_query_rows': 1}
+
+
 @pytest.mark.parametrize('already_built', [False, True])
 def test_rebuild_yields_between_rows_at_its_time_budget(monkeypatch, already_built):
     with connection() as db:
@@ -330,7 +352,7 @@ def test_idle_rebuild_retries_failed_batches_with_backoff_without_a_restart(tmp_
     try:
         assert completed.wait(10)
         database.submit(lambda db: None).result(3)  # Wait for the rebuild's commit.
-        assert database.progress_rebuild_error is None
+        assert database.progress_rebuild_error is None and database.progress_rebuild_failures == 0
         assert database.read(progress_store.source) == 'progress_events'
         assert database.read(lambda db: db.execute('SELECT count(*) FROM progress_events').fetchone()[0]) == 1
     finally:
@@ -370,6 +392,7 @@ def test_a_persistent_rebuild_failure_never_stops_the_writer(tmp_path, monkeypat
         assert len(attempts) > 1024, 'the hurried queue must reach the old overflow point'
         assert database.submit(lambda db: event(db, 'item_open', email='active', item_id='pdf')).result(3)
         assert database.progress_rebuild_error == 'OperationalError'
+        assert database.progress_rebuild_failures > 1024  # counted for private health
     finally:
         database.close()
 

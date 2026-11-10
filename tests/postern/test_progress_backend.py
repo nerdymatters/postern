@@ -193,6 +193,18 @@ def test_a_rust_service_records_its_own_staff_report_checks(config, store, clock
     assert (record['checks'], record['mismatches'], record['last_check'], record['native_errors']) == (1, 0, 'match', 0)
 
 
+def test_private_health_says_which_history_progress_reads_use(client, service):
+    # Value: protects=an admin's private health shows the progress read source with the writer's in-memory rebuild failures, while public health keeps its five fields; fails_when=progress_reads is missing, drops the writer state, or leaks into public health; why_new=the rebuild error was visible only in the API log; seam=none; no_claim=the counts (progress_store tests)
+    admin = sign_in(client, ADMIN)
+    reads = client.get('/api/admin/health', headers=admin).json()['progress_reads']
+    assert reads == {'source': 'progress_events', 'ready': True, 'pending_rows': 0, 'original_query_rows': 0,
+                     'rebuild_error': None, 'rebuild_failures': 0}
+    service.db.progress_rebuild_error, service.db.progress_rebuild_failures = 'OperationalError', 2
+    reads = client.get('/api/admin/health', headers=admin).json()['progress_reads']
+    assert (reads['rebuild_error'], reads['rebuild_failures']) == ('OperationalError', 2)
+    assert set(client.get('/health').json()) == {'process', 'permissions', 'audit', 'backup', 'storage'}
+
+
 @native_required
 def test_http_progress_and_rollback_preserve_new_activity(client, service, monkeypatch):
     monkeypatch.setenv('POSTERN_PROGRESS_BACKEND', 'python')
