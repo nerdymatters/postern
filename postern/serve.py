@@ -499,10 +499,17 @@ def reads_line(data_dir):
     """Which history the progress reads use, from a read-only look at the database. Both backends read it."""
     import sqlite3
     from . import progress_store
+    not_checked = 'WARN progress reads: not checked, because the configuration names no readable data directory'
     if data_dir is None:
-        return 'WARN progress reads: not checked, because the configuration names no readable data directory'
+        return not_checked
     path = data_dir / 'postern.sqlite3'
-    if not path.exists():
+    try:  # a missing or unenterable directory is not "no database yet"
+        if not data_dir.is_dir():
+            return not_checked
+        present = path.exists()
+    except OSError:
+        return not_checked
+    if not present:
         return 'ok   progress reads: no database yet'
     try:
         db = sqlite3.connect(f'{path.resolve().as_uri()}?mode=ro', uri=True, timeout=1)

@@ -199,7 +199,7 @@ def test_private_health_says_which_history_progress_reads_use(client, service):
     reads = client.get('/api/admin/health', headers=admin).json()['progress_reads']
     assert reads == {'source': 'progress_events', 'ready': True, 'pending_rows': 0, 'original_query_rows': 0,
                      'rebuild_error': None, 'rebuild_failures': 0}
-    service.db.progress_rebuild_error, service.db.progress_rebuild_failures = 'OperationalError', 2
+    service.db.progress_rebuild = ('OperationalError', 2)
     reads = client.get('/api/admin/health', headers=admin).json()['progress_reads']
     assert (reads['rebuild_error'], reads['rebuild_failures']) == ('OperationalError', 2)
     assert set(client.get('/health').json()) == {'process', 'permissions', 'audit', 'backup', 'storage'}
@@ -208,7 +208,7 @@ def test_private_health_says_which_history_progress_reads_use(client, service):
 def test_private_health_keeps_the_writer_rebuild_state_when_its_read_fails(client, service, monkeypatch):
     # Value: protects=an admin's private health still answers with the writer's rebuild error and consecutive failures when its read-only query fails (such as the open-file limit this API once hit), and claims no read source it could not read; fails_when=the merge assumes the query's progress_reads (a KeyError turns admin health into a server error during the fault) or reports counts it never read; why_new=the private-health test reads a healthy database only; seam=this service's read path raises (test double, no production hook); no_claim=which faults fail the read, the public health fallback (health trace tests)
     admin = sign_in(client, ADMIN)
-    service.db.progress_rebuild_error, service.db.progress_rebuild_failures = 'OperationalError', 3
+    service.db.progress_rebuild = ('OperationalError', 3)
     def unavailable(_operation):
         raise sqlite3.OperationalError('unable to open database file')
     monkeypatch.setattr(service.db, 'read', unavailable)  # authorization uses the writer, health the read path
@@ -217,6 +217,18 @@ def test_private_health_keeps_the_writer_rebuild_state_when_its_read_fails(clien
     health = response.json()
     assert (health['audit'], health['backup']) == ('unavailable', 'unknown')
     assert health['progress_reads'] == {'rebuild_error': 'OperationalError', 'rebuild_failures': 3}
+
+
+def test_a_failing_progress_diagnostic_leaves_the_rest_of_private_health_intact(client, service, monkeypatch):
+    # Value: protects=an error in the progress-reads diagnostic is reported in progress_reads alone, while permissions, audit and backup keep their real values; fails_when=the diagnostic shares the health read's failure path, so one bad statement shows the admin a paused, unavailable service; why_new=the read-failure test fails the whole read; seam=none; no_claim=which statements fail in practice (simulated)
+    from postern import progress_store
+    admin = sign_in(client, ADMIN)
+    def damaged(db):
+        raise sqlite3.DatabaseError('database disk image is malformed')
+    monkeypatch.setattr(progress_store, 'diagnostics', damaged)
+    health = client.get('/api/admin/health', headers=admin).json()
+    assert (health['permissions'], health['audit'], health['backup']) == ('ready', 'ready', 'current')
+    assert health['progress_reads'] == {'error': 'DatabaseError', 'rebuild_error': None, 'rebuild_failures': 0}
 
 
 @native_required

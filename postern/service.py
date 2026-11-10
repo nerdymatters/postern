@@ -812,6 +812,10 @@ class Service:
 
     async def health(self,private=False):
         health_trace.mark('handler')
+        def reads(db):
+            # Diagnostics only: their failure must not turn the rest of private health into the database-error fallback.
+            try:return progress_store.diagnostics(db)
+            except sqlite3.Error as error:return {'error':type(error).__name__}
         def query(db):
             oldest=pending_health(db)
             latest=db.execute('SELECT MAX(confirmed_at) FROM batches').fetchone()[0]
@@ -820,7 +824,7 @@ class Service:
                 'backup':'delayed' if oldest[0] and time.time()-oldest[0]>60 else 'current','pending_events':oldest[1],
                 'oldest_unexported_at':oldest[0],'last_export_at':latest,'allowlist_error':meta(db,'allowlist_error'),
                 'recovery_mode':meta(db,'recovery_mode',False),
-                **({'progress_reads':progress_store.diagnostics(db)} if private else {})}
+                **({'progress_reads':reads(db)} if private else {})}
         try:result=await health_trace.read(self.db,query)
         except Exception:
             health_trace.mark('database_error')
@@ -833,6 +837,6 @@ class Service:
         if not private:return {k:result[k] for k in ['process','permissions','audit','backup','storage']}
         result['mode']=self.config.mode;result['cache']=self.cache.snapshot();result['sqlite']=self.db.settings
         # The writer's rebuild state lives only in this process; the database alone cannot show a failing batch.
-        result['progress_reads']={**(result.get('progress_reads') or {}),'rebuild_error':self.db.progress_rebuild_error,
-                                  'rebuild_failures':self.db.progress_rebuild_failures}
+        error,failures=self.db.progress_rebuild  # one attribute, so the pair always matches
+        result['progress_reads']={**(result.get('progress_reads') or {}),'rebuild_error':error,'rebuild_failures':failures}
         return result
