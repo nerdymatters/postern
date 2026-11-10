@@ -86,16 +86,19 @@ def test_selection_and_active_records_are_private_and_complete(config_path):
 @pytest.mark.parametrize('state,expected', [
     ('none', 'ok   progress reads: no database yet'),
     ('compact', 'ok   progress reads: the compact progress table'),
-    ('building', 'WARN progress reads: the full event history, because the compact table is still being built (0 row(s) waiting)'),
+    ('building', 'WARN progress reads: the full event history, because the compact table is still being built from the event history'),
     ('nonportable', 'WARN progress reads: the full event history, because 1 row(s) cannot use the compact table'),
     ('unreadable', 'FAIL progress reads: could not read the database (DatabaseError)'),
+    ('no_config', 'WARN progress reads: not checked, because the configuration names no readable data directory'),
 ])
 def test_the_backend_command_says_which_history_progress_reads_use(config_path, capsys, state, expected):
     # Value: protects=the owner sees when progress reads fall back to the full event history and why, without the API; fails_when=the line is missing, calls a fallback ok, or an unreadable database raises instead of printing FAIL; why_new=nothing outside the API showed the read source; seam=none; no_claim=the counts themselves (progress_store tests)
     path = config_path.parent / 'data' / 'postern.sqlite3'
     if state == 'unreadable':
         path.write_bytes(b'not a database' * 100)
-    elif state != 'none':
+    elif state == 'no_config':
+        config_path.write_text('{')  # a damaged configuration must not read as "no database yet"
+    elif state not in ('none', 'no_config'):
         db = sqlite3.connect(path)
         db.row_factory = sqlite3.Row  # as the writer's connection
         db.executescript(SCHEMA)
@@ -115,6 +118,34 @@ def test_the_backend_command_says_which_history_progress_reads_use(config_path, 
     assert line.startswith(expected)
     if state in ('building', 'nonportable'):
         assert line.endswith('Results are unchanged.')
+
+
+@pytest.mark.parametrize('state', ['both', 'no_table'])
+def test_the_reads_line_names_every_reason_reads_use_the_full_history(tmp_path, state):
+    # Value: protects=the owner's progress reads line names both reasons when an older release's row awaits classification after the build beside a row the compact table cannot hold, and names a database that predates the compact table; fails_when=one reason hides the other (an elif), rows waiting after the build is ready give no reason, or a missing table reads as an unfinished build; why_new=the backend-command cases show each reason alone, before the build was ready; seam=none; no_claim=the counts themselves (progress_store tests), that show prints the line (the backend-command test)
+    db = sqlite3.connect(tmp_path / 'postern.sqlite3')
+    db.row_factory = sqlite3.Row  # as the writer's connection
+    if state == 'no_table':
+        db.executescript(SCHEMA.replace(progress_store.SCHEMA, ''))  # a database from before the compact table
+    else:
+        db.executescript(SCHEMA)
+        oversized = json.dumps({'detail': {'page': 1}, 'unused': 'x' * (65 * 1024)})
+        db.execute("INSERT INTO events(id,email,item_id,type,ts,payload,summary) VALUES ('large','active','pdf','page_served',1,?,1)",
+                   (oversized,))
+        while not progress_store.rebuild_batch(db, limit=3):
+            pass
+        # An older release's insert after the build: its trigger row waits for classification.
+        db.execute("INSERT INTO events(id,email,item_id,type,ts,payload,summary) VALUES "
+                   "('rolled-back','active','pdf','page_served',2,'{\"detail\":{\"page\":2}}',1)")
+    db.commit()
+    db.close()
+    line = serve.reads_line(tmp_path)
+    assert line.startswith('WARN progress reads: the full event history, because ') and line.endswith('Results are unchanged.')
+    if state == 'both':
+        assert 'because 1 row(s) are waiting to be classified for the compact table' in line
+        assert '; and 1 row(s) cannot use the compact table' in line
+    else:
+        assert 'because this database has no compact progress table yet' in line and 'still being built' not in line
 
 
 def test_serve_run_applies_the_selection_before_the_service_starts(config_path, monkeypatch, capsys):

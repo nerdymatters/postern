@@ -499,8 +499,10 @@ def reads_line(data_dir):
     """Which history the progress reads use, from a read-only look at the database. Both backends read it."""
     import sqlite3
     from . import progress_store
-    path = data_dir / 'postern.sqlite3' if data_dir else None
-    if path is None or not path.exists():
+    if data_dir is None:
+        return 'WARN progress reads: not checked, because the configuration names no readable data directory'
+    path = data_dir / 'postern.sqlite3'
+    if not path.exists():
         return 'ok   progress reads: no database yet'
     try:
         db = sqlite3.connect(f'{path.resolve().as_uri()}?mode=ro', uri=True, timeout=1)
@@ -515,9 +517,13 @@ def reads_line(data_dir):
     reasons = []
     if state['pending_rows'] is None:
         reasons.append('this database has no compact progress table yet; the API creates it at startup')
-    elif not state['ready'] or state['pending_rows']:
-        reasons.append(f'the compact table is still being built ({state["pending_rows"]} row(s) waiting); the API '
-                       'builds it on idle time, and its log shows "Progress read table rebuild paused" if a batch fails')
+    elif not state['ready']:
+        reasons.append('the compact table is still being built from the event history; the API builds it on idle '
+                       'time, and its log shows "Progress read table rebuild paused" if a batch fails')
+    elif state['pending_rows']:
+        reasons.append(f'{state["pending_rows"]} row(s) are waiting to be classified for the compact table; the API '
+                       'classifies them on idle time, and its log shows "Progress read table rebuild paused" if a '
+                       'batch fails')
     if state['original_query_rows']:
         reasons.append(f'{state["original_query_rows"]} row(s) cannot use the compact table (for example a payload over '
                        '64 KiB or a nonpositive timestamp), so every history read scans the original events')
