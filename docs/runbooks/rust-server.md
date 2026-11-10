@@ -137,8 +137,10 @@ for classification: `-1` pending, `0` original-query fallback, `1` eligible.
 The source switches only when rebuilding is complete and every row is eligible.
 `postern.serve backend` reads this without the API and prints one `progress reads`
 line: `ok` on the compact table, or `WARN` with the reason reads use the full event
-history (rows still waiting for the rebuild, or rows the compact table cannot hold)
-and the count. Results are the same either way; only read cost differs. An admin's
+history: the table is still being built, a count of rows waiting to be classified,
+or a count of rows the compact table cannot hold. Results are the same either way;
+only read cost differs. It prints `WARN … not checked` when the configuration names
+no readable data directory, and `FAIL` when the database cannot be read. An admin's
 `/api/admin/health` adds `progress_reads` with the same counts and the writer's
 in-memory `rebuild_error` and consecutive `rebuild_failures`, which the database
 cannot show.
