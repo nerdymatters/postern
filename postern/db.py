@@ -103,11 +103,20 @@ class Database:
         self.queue = queue.Queue(maxsize=capacity)
         self.ready = concurrent.futures.Future()
         self.failed = False
-        self.progress_rebuild_error = None
-        self.progress_rebuild_failures = 0  # consecutive failed idle rebuild batches, for private health
+        # (last error class, consecutive failed idle rebuild batches), replaced as one value so private health
+        # never reads an error with a stale count.
+        self.progress_rebuild = (None, 0)
         self.thread = threading.Thread(target=self._worker, name='postern-writer', daemon=True)
         self.thread.start()
         self.settings = self.ready.result(timeout=10)
+
+    @property
+    def progress_rebuild_error(self):
+        return self.progress_rebuild[0]
+
+    @property
+    def progress_rebuild_failures(self):
+        return self.progress_rebuild[1]
 
     def submit(self, operation):
         future = concurrent.futures.Future()
@@ -169,10 +178,9 @@ class Database:
                         # brief, so retry on idle time with a growing delay instead of waiting for a restart.
                         # Double the previous delay rather than raise 2 to the failure count, which
                         # overflows a float after 1,024 failures and would end this writer.
-                        self.progress_rebuild_failures += 1
+                        self.progress_rebuild = (type(error).__name__, self.progress_rebuild[1] + 1)
                         retry_delay = min(retry_delay * 2 or self.REBUILD_RETRY_FIRST, self.REBUILD_RETRY_MAX)
                         retry_at = time.monotonic() + retry_delay
-                        self.progress_rebuild_error = type(error).__name__
                         logging.getLogger(__name__).warning(
                             'Progress read table rebuild paused (%s); audit history remains active; retrying in %g s',
                             self.progress_rebuild_error, retry_delay)
@@ -181,8 +189,7 @@ class Database:
                         if self.progress_rebuild_failures:
                             logging.getLogger(__name__).warning(
                                 'Progress read table rebuild resumed after %d failed batch(es)', self.progress_rebuild_failures)
-                            self.progress_rebuild_failures, retry_delay, retry_at = 0, 0.0, 0.0
-                            self.progress_rebuild_error = None
+                            self.progress_rebuild, retry_delay, retry_at = (None, 0), 0.0, 0.0
                     continue
                 if job is None:
                     break

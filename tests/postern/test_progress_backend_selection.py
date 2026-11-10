@@ -90,6 +90,8 @@ def test_selection_and_active_records_are_private_and_complete(config_path):
     ('nonportable', 'WARN progress reads: the full event history, because 1 row(s) cannot use the compact table'),
     ('unreadable', 'FAIL progress reads: could not read the database (DatabaseError)'),
     ('no_config', 'WARN progress reads: not checked, because the configuration names no readable data directory'),
+    ('missing_dir', 'WARN progress reads: not checked, because the configuration names no readable data directory'),
+    ('unenterable', 'WARN progress reads: not checked, because the configuration names no readable data directory'),
 ])
 def test_the_backend_command_says_which_history_progress_reads_use(config_path, capsys, state, expected):
     # Value: protects=the owner sees when progress reads fall back to the full event history and why, without the API; fails_when=the line is missing, calls a fallback ok, or an unreadable database raises instead of printing FAIL; why_new=nothing outside the API showed the read source; seam=none; no_claim=the counts themselves (progress_store tests)
@@ -98,7 +100,13 @@ def test_the_backend_command_says_which_history_progress_reads_use(config_path, 
         path.write_bytes(b'not a database' * 100)
     elif state == 'no_config':
         config_path.write_text('{')  # a damaged configuration must not read as "no database yet"
-    elif state not in ('none', 'no_config'):
+    elif state == 'missing_dir':
+        values = json.loads(config_path.read_text())
+        config_path.write_text(json.dumps({**values, 'data_dir': str(config_path.parent / 'absent')}))
+    elif state == 'unenterable':
+        path.write_bytes(b'')
+        path.parent.chmod(0o000)  # stat of the database inside raises PermissionError
+    elif state not in ('none', 'no_config', 'missing_dir', 'unenterable'):
         db = sqlite3.connect(path)
         db.row_factory = sqlite3.Row  # as the writer's connection
         db.executescript(SCHEMA)
@@ -113,7 +121,10 @@ def test_the_backend_command_says_which_history_progress_reads_use(config_path, 
             db.execute('UPDATE progress_events SET portable=0')
         db.commit()
         db.close()
-    assert serve.main(['backend', '--config', str(config_path)]) == 0
+    try:
+        assert serve.main(['backend', '--config', str(config_path)]) == 0
+    finally:
+        path.parent.chmod(0o700)
     line = next(line for line in capsys.readouterr().out.splitlines() if 'progress reads' in line)
     assert line.startswith(expected)
     if state in ('building', 'nonportable'):
