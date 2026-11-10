@@ -201,12 +201,17 @@ def rebuild_batch(db, limit=128):
 
 
 def diagnostics(db):
-    """Which history the progress reads use, and why, for the owner. Counts use the partial indexes."""
+    """Which history the progress reads use, and why, for the owner. One statement reads the marker and both
+    counts, so a writer commit between separate reads can never make them disagree; it scans only the partial
+    index of rows below eligible. The source is decided as source() decides it."""
     if not db.execute("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='progress_events'").fetchone():
         return {'source': 'events', 'ready': False, 'pending_rows': None, 'original_query_rows': None}
-    pending = db.execute('SELECT COUNT(*) FROM progress_events WHERE portable=-1').fetchone()[0]
-    below = db.execute('SELECT COUNT(*) FROM progress_events WHERE portable<1').fetchone()[0]
-    return {'source': source(db), 'ready': ready(db), 'pending_rows': pending, 'original_query_rows': below - pending}
+    marked, below, pending = db.execute(
+        'SELECT (SELECT 1 FROM meta WHERE key=? AND value=?) IS NOT NULL, COUNT(*), TOTAL(portable=-1) '
+        'FROM progress_events WHERE portable<1', (READY, 'true')).fetchone()
+    pending = int(pending)
+    return {'source': 'progress_events' if marked and not below else 'events', 'ready': bool(marked),
+            'pending_rows': pending, 'original_query_rows': below - pending}
 
 
 def source(db):
