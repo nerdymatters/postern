@@ -51,7 +51,7 @@ described in [Architecture](docs/architecture.md).
 | M0 Launch preparation | In progress; parallel with M1 | Current deployment baseline |
 | M1 Accounts and profiles | Production pilot passed; registration closed | M0 launch checks before release |
 | Rust server migration | P1; RS-06 passed; the RS-07 live pilot has served production from Rust since Nov 9 with the watchdog guarding, and a staff document check passed; Python remains the code default | Sustained observation and the in-process check before the RS-07 default change; RS-08–RS-09 after Linux support and M2 content |
-| Linux support | Next after RS-07 | The converter's sandbox, service supervision and packaging are macOS-only |
+| Linux support | Planned; the converter's sandbox, service supervision and packaging are macOS-only today | RS-07 closing |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
 | M2 Private spaces and resource catalog | Isolated metadata/onboarding implemented; content integration and hosting pending | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
