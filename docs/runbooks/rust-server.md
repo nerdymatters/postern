@@ -136,14 +136,16 @@ Check `meta.progress_inputs_v1` for completion and `progress_events.portable`
 for classification: `-1` pending, `0` original-query fallback, `1` eligible.
 The source switches only when rebuilding is complete and every row is eligible.
 `postern.serve backend` reads this without the API and prints one `progress reads`
-line: `ok` on the compact table, or `WARN` with the reason reads use the full event
-history: the table is still being built, a count of rows waiting to be classified,
+line: `ok` on the compact table (or `no database yet`), or `WARN` with each reason
+reads use the full event history: the table is not created yet (the API creates it
+at startup) or is still being built, a count of rows waiting to be classified,
 or a count of rows the compact table cannot hold. Results are the same either way;
 only read cost differs. It prints `WARN … not checked` when the configuration names
 no readable data directory, and `FAIL` when the database cannot be read. An admin's
-`/api/admin/health` adds `progress_reads` with the same counts and the writer's
-in-memory `rebuild_error` and consecutive `rebuild_failures`, which the database
-cannot show.
+`/api/admin/health` adds `progress_reads` with the same state (`source`, `ready`,
+`pending_rows` and `original_query_rows`, or an `error` type when they cannot be
+read) and the writer's in-memory `rebuild_error` and consecutive `rebuild_failures`,
+which the database cannot show.
 
 Selecting `python` still restores the original reducer and read scheduling;
 it also uses eligible compact inputs. Rolling back to an older release reads
