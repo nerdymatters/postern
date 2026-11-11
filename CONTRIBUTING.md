@@ -11,7 +11,9 @@ installation's configuration or database.
 
 The top-level folder name `docs-private/` is reserved for material that is kept
 outside this repository. Never commit it here. CI fails when it appears in the
-files or in any commit, including a commit that a later one reverts.
+files or in any commit, including a commit that a later one reverts. To run the
+same check yourself, use `python3 scripts/check_private_files.py` in a full
+(not shallow) clone.
 
 ## Development and checks
 
