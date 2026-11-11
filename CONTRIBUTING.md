@@ -9,11 +9,15 @@ logs out of issues, commits and fixtures. Use the fictional sample course and
 isolated data directories for development. Never run tests against a live
 installation's configuration or database.
 
-The top-level folder name `docs-private/` is reserved for material that is kept
-outside this repository. Never commit it here. CI fails when it appears in the
-files or in any commit, including a commit that a later one reverts. To run the
-same check yourself, use `python3 scripts/check_private_files.py` in a full
-(not shallow) clone.
+The top-level folder name `docs-private/`, in any letter case, is reserved for
+material that is kept outside this repository. Never commit it here. CI fails
+when it appears in the files or in any commit on any branch or tag, including a
+commit that a later one reverts. To check your own branch before you push, run
+`python3 scripts/check_private_files.py` in a full (not shallow) clone.
+
+If that check fails after a push, a revert does not fix it: the commit has to
+leave the history, and whatever it held must be treated as disclosed. Stop
+pushing and tell the maintainers through [private reporting](SECURITY.md).
 
 ## Development and checks
 

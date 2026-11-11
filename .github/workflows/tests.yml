@@ -417,6 +417,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       # docs-private/ is reserved for material kept outside this repository. The
-      # script reads every commit, so the checkout above fetches the full history.
+      # script reads every commit on every branch and tag, so the checkout above
+      # fetches the full history.
       - name: Refuse the folder reserved for private material
-        run: python3 scripts/check_private_files.py
+        run: python3 scripts/check_private_files.py --all-refs
