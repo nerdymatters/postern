@@ -11,17 +11,18 @@ import sys
 import pytest
 
 from scripts import check_private_files
-from scripts.check_private_files import RESERVED, main, problem
+from scripts.check_private_files import GIT_LOCATION, RESERVED, main, problem
 
-# Scratch repositories must not pick up the developer's or the runner's git settings.
+# Scratch repositories must not pick up the developer's or the runner's git settings, and an inherited
+# GIT_DIR (set when tests run from a hook or `git rebase --exec`) must not send their commits elsewhere.
 GIT_SETTINGS = {'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1',
                 'GIT_AUTHOR_NAME': 'Test', 'GIT_AUTHOR_EMAIL': 'test@example.invalid',
                 'GIT_COMMITTER_NAME': 'Test', 'GIT_COMMITTER_EMAIL': 'test@example.invalid'}
-GIT_ENV = {**os.environ, **GIT_SETTINGS}
+GIT_ENV = {**{name: value for name, value in os.environ.items() if name not in GIT_LOCATION}, **GIT_SETTINGS}
 
 
 def git(repo, *args):
-    subprocess.run(['git', *args], cwd=repo, check=True, capture_output=True, env=GIT_ENV)
+    return subprocess.run(['git', *args], cwd=repo, check=True, capture_output=True, text=True, env=GIT_ENV).stdout
 
 
 def commit_file(repo, path, message):
@@ -34,7 +35,7 @@ def commit_file(repo, path, message):
 
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
-    # The check runs git itself, so it gets the same isolation as the helpers above.
+    # The check runs git itself, so it gets the same settings as the helpers above.
     for name, value in GIT_SETTINGS.items():
         monkeypatch.setenv(name, value)
     path = tmp_path / 'repo'
@@ -44,9 +45,9 @@ def repo(tmp_path, monkeypatch):
     return path
 
 
-def add_then_remove(repo):
-    commit_file(repo, f'{RESERVED}/plan.md', 'add')
-    git(repo, 'rm', '-r', RESERVED)
+def add_then_remove(repo, name=RESERVED):
+    commit_file(repo, f'{name}/plan.md', 'add')
+    git(repo, 'rm', '-r', name)
     git(repo, 'commit', '-m', 'remove')
 
 
@@ -64,42 +65,51 @@ def reserved_name_as_a_file(repo):
     git(repo, 'commit', '-m', 'remove')
 
 
+def added_paths(repo, commit):
+    """Paths a commit added, lower-cased."""
+    listing = git(repo, 'show', '--name-status', '--format=', commit)
+    return [line.split('\t', 1)[1].lower() for line in listing.splitlines() if line.startswith('A\t')]
+
+
 # Value: protects=problem() reports the reserved folder when any commit reachable from HEAD touched it, even
-#   after a revert or through a merged side branch, and names that commit; fails_when=--full-history is dropped
-#   (the merge case goes quiet), the path filter is removed or changed, or only the current files are read;
-#   why_new=no test ran this rule (test_package_release only keeps the folder out of release archives);
-#   seam=none; no_claim=that CI runs the script or fetches the full history (scratch repositories; unit only)
+#   after a revert or through a merged side branch, and names the commit that added it; fails_when=--full-history
+#   is dropped (the merge case goes quiet), the path filter is removed or changed, only the current files are
+#   read, or the newest touching commit (the removal) is named instead of the first; why_new=no test ran this
+#   rule (test_package_release only keeps the folder out of release archives); seam=none; no_claim=that CI runs
+#   the script or fetches the full history (scratch repositories; unit only)
 @pytest.mark.parametrize('arrange', [
     lambda repo: commit_file(repo, f'{RESERVED}/plan.md', 'add'),
     add_then_remove,
     reverted_on_a_merged_branch,
     reserved_name_as_a_file,
-], ids=['committed', 'committed then removed', 'reverted on a merged branch', 'committed as a file then removed'])
+    lambda repo: add_then_remove(repo, 'Docs-Private'),
+], ids=['committed', 'committed then removed', 'reverted on a merged branch', 'committed as a file then removed',
+        'another letter case'])
 def test_history_that_ever_held_the_reserved_folder_is_refused(repo, arrange):
     arrange(repo)
     # Only the history may give it away: take the folder out of the files where a case left it there.
     shutil.rmtree(repo / RESERVED, ignore_errors=True)
     assert not (repo / RESERVED).exists()
     found = problem(repo)
-    assert found is not None and found.startswith(f'{RESERVED} is in commit ')
-    named = found.rsplit(' ', 1)[1]
-    touched = subprocess.run(['git', 'show', '--name-only', '--format=', named], cwd=repo, check=True,
-                             capture_output=True, text=True, env=GIT_ENV).stdout
-    assert RESERVED in touched
+    assert found is not None and ' was committed in ' in found
+    named = found.split(' was committed in ', 1)[1].split('.', 1)[0]
+    assert any(path == RESERVED or path.startswith(f'{RESERVED}/') for path in added_paths(repo, named))
 
 
-# Value: protects=problem() refuses the reserved name when it is only in the files, before any commit;
-#   fails_when=the files check is removed or follows only directories (a file or a dangling link slips by);
-#   why_new=the history cases above delete the path first, so they never reach this branch; seam=none;
-#   no_claim=none beyond protects
-@pytest.mark.parametrize('make', [
-    lambda path: path.mkdir(),
-    lambda path: path.write_text('x\n'),
-    lambda path: path.symlink_to('missing-target'),
-], ids=['folder', 'file', 'dangling link'])
-def test_reserved_name_in_the_files_is_refused(repo, make):
-    make(repo / RESERVED)
-    assert problem(repo) == f'{RESERVED} is in the files'
+# Value: protects=problem() refuses the reserved name when it is only in the files, before any commit, in any
+#   letter case; fails_when=the files check is removed, follows only directories (a file or a dangling link
+#   slips by) or compares names exactly; why_new=the history cases above delete the path first, so they never
+#   reach this branch; seam=none; no_claim=none beyond protects
+@pytest.mark.parametrize('name,make', [
+    (RESERVED, lambda path: path.mkdir()),
+    (RESERVED, lambda path: path.write_text('x\n')),
+    (RESERVED, lambda path: path.symlink_to('missing-target')),
+    ('Docs-Private', lambda path: path.mkdir()),
+], ids=['folder', 'file', 'dangling link', 'another letter case'])
+def test_reserved_name_in_the_files_is_refused(repo, name, make):
+    make(repo / name)
+    found = problem(repo)
+    assert found is not None and found.startswith(f'{name} is in the files')
 
 
 # Value: protects=problem() stays quiet for a clean history and for names that only resemble the reserved one;
@@ -110,6 +120,27 @@ def test_clean_history_and_lookalike_names_pass(repo):
     for path in ('docs/private/notes.md', f'{RESERVED}.md', f'nested/{RESERVED}/notes.md', f'{RESERVED}-old/notes.md'):
         commit_file(repo, path, f'add {path}')
     assert problem(repo) is None
+    assert problem(repo, all_refs=True) is None
+
+
+# Value: protects=with all_refs the check also reads branches and tags that the checked-out commit does not
+#   descend from, and without it only the checked-out history; fails_when=--all-refs stops reaching rev-list,
+#   so a branch pushed without a pull request is never read, or the default starts reading every ref and fails
+#   a developer's clone that tracks other remotes; why_new=every other case keeps the folder on HEAD's own
+#   history; seam=none; no_claim=which refs the CI checkout fetches
+@pytest.mark.parametrize('park', [
+    lambda repo: None,
+    lambda repo: (git(repo, 'tag', 'kept', 'wip'), git(repo, 'branch', '-D', 'wip')),
+], ids=['unmerged branch', 'tag whose branch is gone'])
+def test_other_branches_and_tags_are_read_only_with_all_refs(repo, park):
+    git(repo, 'checkout', '-b', 'wip')
+    commit_file(repo, f'{RESERVED}/plan.md', 'add')
+    git(repo, 'checkout', 'main')
+    park(repo)
+    assert problem(repo) is None
+    found = problem(repo, all_refs=True)
+    assert found is not None and ' was committed in ' in found
+    assert main([str(repo)]) == 0 and main(['--all-refs', str(repo)]) == 1
 
 
 # Value: protects=a shallow clone is refused instead of passing because the offending commit is out of sight;
@@ -123,7 +154,34 @@ def test_shallow_clone_is_refused_rather_than_trusted(repo, tmp_path):
     git(tmp_path, 'clone', '--depth', '1', repo.as_uri(), str(shallow))
     assert not (shallow / RESERVED).exists()
     found = problem(shallow)
-    assert found is not None and 'history is incomplete' in found
+    assert found is not None and 'shallow clone' in found
+
+
+# Value: protects=a folder that is not the top of a checkout is refused, because git would answer for the
+#   repository around it and the paths would not line up; fails_when=the top-folder comparison is removed, so
+#   a subfolder (or a copy of the script inside another checkout) reports a clean history it never read;
+#   why_new=every other case passes the top of a scratch repository; seam=none; no_claim=none beyond protects
+def test_subfolder_of_a_checkout_is_refused_instead_of_passing(repo):
+    add_then_remove(repo)
+    (repo / 'sub').mkdir()
+    assert problem(repo) is not None
+    found = problem(repo / 'sub')
+    assert found is not None and 'not the top folder' in found
+
+
+# Value: protects=the check reads the repository in the folder it was given even when the environment points
+#   git somewhere else; fails_when=git() stops dropping GIT_DIR and its siblings, so a run from a hook or
+#   `git rebase --exec` inspects (and these tests would write to) another repository; why_new=no other case
+#   sets a git location variable; seam=none; no_claim=none beyond protects
+def test_inherited_git_dir_does_not_redirect_the_check(repo, tmp_path, monkeypatch):
+    decoy = tmp_path / 'decoy'
+    decoy.mkdir()
+    git(decoy, 'init', '--initial-branch=main')
+    add_then_remove(decoy)
+    monkeypatch.setenv('GIT_DIR', str(decoy / '.git'))
+    assert problem(repo) is None
+    add_then_remove(repo)
+    assert problem(repo) is not None
 
 
 # Value: protects=the command exits 1 and prints one GitHub error annotation when the rule is broken, and
@@ -165,7 +223,7 @@ def test_script_run_without_arguments_checks_its_own_checkout(repo):
 # Value: protects=the check fails loudly when git cannot answer, instead of reading "no output" as "no
 #   commit"; fails_when=check=True is dropped from the git helper, so a folder that is not a repository (or a
 #   broken git) returns None and the job goes green; why_new=every other case runs in a working repository;
-#   seam=none; no_claim=the wording of that failure (a traceback, not an ::error line)
+#   seam=none; no_claim=the wording of that failure (a traceback after git's own message)
 def test_folder_that_is_not_a_repository_fails_instead_of_passing(tmp_path, monkeypatch):
     for name, value in GIT_SETTINGS.items():
         monkeypatch.setenv(name, value)
