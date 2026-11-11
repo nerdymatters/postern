@@ -184,6 +184,18 @@ def test_inherited_git_dir_does_not_redirect_the_check(repo, tmp_path, monkeypat
     assert problem(repo) is not None
 
 
+# Value: protects=the history check still finds the folder when the environment tells git to read path
+#   filters literally; fails_when=git() stops dropping GIT_LITERAL_PATHSPECS, so under a tool that runs
+#   `git --literal-pathspecs` the filter matches nothing and a history that held the folder reads as clean;
+#   why_new=no other case sets a pathspec variable, and the GIT_DIR case passes without this guard; seam=none;
+#   no_claim=which tools set the variable
+def test_inherited_literal_pathspecs_do_not_blind_the_history_check(repo, monkeypatch):
+    add_then_remove(repo)
+    monkeypatch.setenv('GIT_LITERAL_PATHSPECS', '1')
+    found = problem(repo)
+    assert found is not None and ' was committed in ' in found
+
+
 # Value: protects=the command exits 1 and prints one GitHub error annotation when the rule is broken, and
 #   exits 0 in silence when it is kept; fails_when=main() ignores problem(), returns 0 on a finding, or drops
 #   the ::error line CI turns into the run's annotation; why_new=the cases above call problem() directly and
