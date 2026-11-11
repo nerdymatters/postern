@@ -416,12 +416,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # docs-private/ is reserved for material kept outside this repository. The
+      # script reads every commit, so the checkout above fetches the full history.
       - name: Refuse the folder reserved for private material
-        run: |
-          # docs-private/ is reserved for material kept outside this repository.
-          # It must not be here: not in the files, and not in any commit.
-          found="$(git rev-list -1 --full-history HEAD -- docs-private)"
-          if [ -e docs-private ] || [ -n "$found" ]; then
-            echo "::error title=Private folder::docs-private/ must never be committed to this repository${found:+ (commit $found)}."
-            exit 1
-          fi
+        run: python3 scripts/check_private_files.py
