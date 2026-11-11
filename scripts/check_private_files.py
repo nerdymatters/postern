@@ -22,10 +22,13 @@ RULE = (f'{RESERVED}/ must never be committed to this repository, and a later re
 # Variables that make git answer for another repository than the folder it runs in.
 GIT_LOCATION = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_COMMON_DIR',
                 'GIT_NAMESPACE')
+# Variables that change how git reads a path filter. With GIT_LITERAL_PATHSPECS=1, which
+# `git --literal-pathspecs` hands to the commands it starts, the filter below would match nothing.
+GIT_PATHSPEC = ('GIT_LITERAL_PATHSPECS', 'GIT_GLOB_PATHSPECS', 'GIT_NOGLOB_PATHSPECS', 'GIT_ICASE_PATHSPECS')
 
 
 def git(repo: Path, *args: str) -> str:
-    env = {name: value for name, value in os.environ.items() if name not in GIT_LOCATION}
+    env = {name: value for name, value in os.environ.items() if name not in GIT_LOCATION + GIT_PATHSPEC}
     # stderr is not captured, so git's own explanation reaches the log when it fails.
     return subprocess.run(['git', *args], cwd=repo, check=True, stdout=subprocess.PIPE, text=True,
                           env=env).stdout.strip()
