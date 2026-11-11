@@ -9,6 +9,10 @@ logs out of issues, commits and fixtures. Use the fictional sample course and
 isolated data directories for development. Never run tests against a live
 installation's configuration or database.
 
+The top-level folder name `docs-private/` is reserved for material that is kept
+outside this repository. Never commit it here. CI fails when it appears in the
+files or in any commit, including a commit that a later one reverts.
+
 ## Development and checks
 
 Follow the [README](README.md) for setup. The converter uses macOS sandboxing;
