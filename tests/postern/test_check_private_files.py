@@ -3,11 +3,14 @@ repository, run against scratch repositories. Nothing here inspects the real
 checkout: the reserved folder exists on purpose in places that are not this
 repository."""
 import os
+from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 import pytest
 
+from scripts import check_private_files
 from scripts.check_private_files import RESERVED, main, problem
 
 # Scratch repositories must not pick up the developer's or the runner's git settings.
@@ -135,3 +138,39 @@ def test_command_exit_code_and_annotation(repo, capsys):
     out = capsys.readouterr().out
     assert out.startswith('::error title=Private folder::') and out.count('\n') == 1
     assert f'{RESERVED}/ must never be committed' in out
+
+
+# Value: protects=run with no arguments, as CI runs it, the script inspects the checkout it lives in and its
+#   exit status reaches the shell; fails_when=the __main__ line stops passing main()'s result to SystemExit
+#   (the job would always be green) or ROOT stops pointing at the script's own checkout; why_new=every other
+#   case calls main() or problem() in-process with an explicit path; seam=none; no_claim=that the workflow
+#   calls the script (a copy in a scratch repository stands in for the CI checkout)
+def test_script_run_without_arguments_checks_its_own_checkout(repo):
+    script = repo / 'scripts' / 'check_private_files.py'
+    script.parent.mkdir()
+    shutil.copy(check_private_files.__file__, script)
+
+    def run():
+        # Started from another folder: the script must find its checkout from its own location.
+        return subprocess.run([sys.executable, str(script)], cwd=Path(repo).parent, capture_output=True,
+                              text=True, env=GIT_ENV)
+
+    clean = run()
+    assert (clean.returncode, clean.stdout) == (0, '')
+    commit_file(repo, f'{RESERVED}/plan.md', 'add')
+    refused = run()
+    assert refused.returncode == 1 and refused.stdout.startswith('::error title=Private folder::')
+
+
+# Value: protects=the check fails loudly when git cannot answer, instead of reading "no output" as "no
+#   commit"; fails_when=check=True is dropped from the git helper, so a folder that is not a repository (or a
+#   broken git) returns None and the job goes green; why_new=every other case runs in a working repository;
+#   seam=none; no_claim=the wording of that failure (a traceback, not an ::error line)
+def test_folder_that_is_not_a_repository_fails_instead_of_passing(tmp_path, monkeypatch):
+    for name, value in GIT_SETTINGS.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv('GIT_CEILING_DIRECTORIES', str(tmp_path))
+    plain = tmp_path / 'plain'
+    plain.mkdir()
+    with pytest.raises(subprocess.CalledProcessError):
+        problem(plain)
