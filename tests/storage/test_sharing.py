@@ -94,9 +94,12 @@ def test_scoped_targets_and_publication(api,actor):
     assert change(f,f'/audiences/{uid()}/archive',actor=actor).status_code==404
     assert get(f,f'/resources/{m.foreign}/grants',actor).status_code==404
     assert get(f,f'/resources/{m.r}/access/{m.mtb}',actor).status_code==404
-    assert grant(f,resource=m.draft,all_members=True,actor=actor).status_code==409
+    # A resource's state is not a stale page: its own code, so clients do not reload in a loop.
+    response=grant(f,resource=m.draft,all_members=True,actor=actor)
+    assert response.status_code==409 and response.json()['error']=='not_shareable'
     m.db.execute(f"UPDATE postern.resources SET supported_actions=ARRAY['discover'] WHERE id='{m.hidden}';")
-    assert grant(f,all_members=True,actor=actor).status_code==409
+    response=grant(f,all_members=True,actor=actor)
+    assert response.status_code==409 and response.json()['error']=='not_shareable'
     assert grant(f,all_members=True,actions=['discover'],actor=actor).status_code==200
 
 
@@ -245,7 +248,8 @@ def test_concurrent_writers_cannot_both_use_the_same_revision(api):
 
 
 def test_live_expiry_denies_before_cleanup_and_retry_does_not_extend_it(api):
-    f=api;end=int(time.time())+2;key=uid();rev=revision(f)
+    # Seconds of margin before expiry: the steps before it take about 0.25 s locally.
+    f=api;end=int(time.time())+4;key=uid();rev=revision(f)
     first=okay(grant(f,all_members=True,expires=end,key=key,rev=rev))
     assert access(f)['actions']==['discover','view']
     time.sleep(max(0,end-time.time())+.05)
@@ -299,3 +303,22 @@ def test_cleanup_retires_ended_recipients_and_keeps_empty_groups(api):
     assert access(f)['actions']==[]
     okay(change(f,f'/audiences/{empty}/add',{'membership_id':m.mb}))
     assert access(f)['actions']==['discover'] and [x['id'] for x in access(f)['sources']]==[kept]
+
+
+def test_unchanged_group_membership_records_no_access_change(api):
+    # Value: protects=adding a current member or removing an absent one writes no audit event, outbox entry
+    # or new policy revision, and its retry returns the same receipt; fails_when=the ROW_COUNT check is dropped
+    # and no-op changes reach the audit trail and invalidate every cursor; why_new=red-team#3 (QA capture 005
+    # showed 4 events for 2 real changes); seam=none; no_claim=none beyond protects
+    f=api;m=f.model
+    okay(change(f,f'/audiences/{m.group}/remove',{'membership_id':m.md}))  # never a member: no change
+    rev=revision(f);count=lambda: m.db.scalar(f"SELECT count(*) FROM postern.activity WHERE space_id='{m.s}' AND action LIKE 'audience.%';")
+    outbox=lambda: m.db.scalar(f"SELECT count(*) FROM postern.outbox WHERE space_id='{m.s}';")
+    events,queued,key=count(),outbox(),uid()
+    first=okay(change(f,f'/audiences/{m.group}/add',{'membership_id':m.mb},key=key,rev=rev))  # fixture member already
+    assert first['revision']==rev and revision(f)==rev and count()==events and outbox()==queued
+    assert okay(change(f,f'/audiences/{m.group}/add',{'membership_id':m.mb},key=key,rev=rev))==first
+    okay(change(f,f'/audiences/{m.group}/remove',{'membership_id':m.md}))
+    assert revision(f)==rev and count()==events
+    okay(change(f,f'/audiences/{m.group}/remove',{'membership_id':m.mb}))
+    assert revision(f)==rev+1 and int(count())==int(events)+1

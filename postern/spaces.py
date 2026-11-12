@@ -119,7 +119,9 @@ class SpaceService:
             if exc.sqlstate == 'PT412':
                 raise SpaceError(409, 'membership_changed', 'Memberships changed. Reload the member list before trying again.') from None
             if exc.sqlstate == 'PT413':
-                raise SpaceError(409, 'sharing_changed', 'Sharing or resource availability changed. Reload before trying again.') from None
+                raise SpaceError(409, 'sharing_changed', 'Sharing changed. Reload before trying again.') from None
+            if exc.sqlstate == 'PT414':
+                raise SpaceError(409, 'not_shareable', 'Only published resources can be shared, with actions they support.') from None
             if exc.sqlstate == 'PT422':
                 raise SpaceError(422, 'invalid_sharing', 'Check the group name, recipients, actions and future expiry.') from None
             if exc.sqlstate == '22023':

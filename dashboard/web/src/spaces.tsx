@@ -7,7 +7,10 @@ import { useClient, Heading, CopyCode, muted, roleLabel, expiry } from './spaces
 import { Button, Field, Message, Panel, buttonClass, input } from './ui'
 import { invitationCode, nativeSpaceId, readInvitation, readReference, referenceCode, spaceMessage, SpacesClient, type Catalog, type Invitation, type MySpaces, type PendingInvite, type Preview, type SpaceRole } from './spaces-api'
 
-const SharingPage = lazy(() => import('./sharing').then(module => ({ default: module.SharingPage })))
+// A release replaces hashed chunks, so an open tab can fail this import. Show a
+// reload message instead of letting the rejection unmount the whole app.
+const SharingPage = lazy(() => import('./sharing').then(module => ({ default: module.SharingPage }),
+  () => ({ default: () => <Message text="This page could not load. Reload to get the current version." /> })))
 
 export function SpaceOnboarding({ account, credential, path }: { account: Account; credential: string; path: string }) {
   if (path === '/spaces/new') return <CreateSpace credential={credential} />

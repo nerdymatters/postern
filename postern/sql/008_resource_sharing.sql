@@ -2,7 +2,6 @@
 -- space lock, revision, durable operation receipt, audit and outbox transaction.
 SET LOCAL ROLE postern_owner;
 ALTER TABLE postern.audiences ADD COLUMN state text NOT NULL DEFAULT 'active' CHECK(state IN ('active','archived'));
-CREATE INDEX grant_management ON postern.grants(space_id,resource_id,id) WHERE state='active';
 CREATE INDEX grant_cleanup ON postern.grants(space_id,id) WHERE state='active';
 
 CREATE FUNCTION postern.grant_guard() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog AS $$
@@ -66,7 +65,7 @@ END $$;
 CREATE FUNCTION postern.resource_sharing_change(h text,s uuid,aud text,k uuid,hash text,expected bigint,act text,target uuid,data jsonb) RETURNS jsonb
  LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,postern AS $$
 DECLARE ctx jsonb; prior postern.operations; answer jsonb; rev bigint; changed uuid=target; member uuid;
- group_id uuid; resource uuid; terms text[]; expiry timestamptz; label text; n bigint=0; detail jsonb=data; retired jsonb;
+ group_id uuid; resource uuid; terms text[]; expiry timestamptz; label text; n bigint=0; moved bigint=1; detail jsonb=data; retired jsonb;
 BEGIN
  IF act IN ('audience.add','audience.remove','grant.create') THEN member=(data->>'membership_id')::uuid; END IF;
  -- Non-null lock target selects the exclusive space lock. Never upgrade a read
@@ -106,6 +105,7 @@ BEGIN
    INSERT INTO postern.audience_members VALUES(s,target,member) ON CONFLICT DO NOTHING;
   ELSE DELETE FROM postern.audience_members WHERE space_id=s AND audience_id=target AND membership_id=member;
   END IF;
+  GET DIAGNOSTICS moved=ROW_COUNT;
  WHEN 'grant.create' THEN
   resource=target; group_id=(data->>'audience_id')::uuid;
   IF NOT EXISTS(SELECT 1 FROM postern.resources WHERE space_id=s AND id=resource) THEN RAISE EXCEPTION 'not found' USING ERRCODE='42501'; END IF;
@@ -115,7 +115,7 @@ BEGIN
    OR (SELECT count(DISTINCT x) FROM unnest(terms) x)<>cardinality(terms)
   THEN RAISE EXCEPTION 'invalid sharing request' USING ERRCODE='PT422'; END IF;
   IF NOT EXISTS(SELECT 1 FROM postern.resources WHERE space_id=s AND id=resource AND state='published' AND terms <@ supported_actions)
-  THEN RAISE EXCEPTION 'resource cannot be shared' USING ERRCODE='PT413'; END IF;
+  THEN RAISE EXCEPTION 'resource cannot be shared' USING ERRCODE='PT414'; END IF;
   IF member IS NOT NULL AND NOT EXISTS(SELECT 1 FROM postern.memberships m JOIN postern.principals p ON p.id=m.principal_id
    WHERE m.space_id=s AND m.id=member AND m.state='active' AND p.state='active') THEN RAISE EXCEPTION 'not found' USING ERRCODE='42501'; END IF;
   IF group_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM postern.audiences WHERE space_id=s AND id=group_id AND state='active') THEN RAISE EXCEPTION 'not found' USING ERRCODE='42501'; END IF;
@@ -139,7 +139,9 @@ BEGIN
   detail=jsonb_build_object('retired',retired);
  ELSE RAISE EXCEPTION 'invalid sharing request' USING ERRCODE='PT422';
  END CASE;
- rev=postern.onboarding_event(s,act,changed,detail);
+ -- Adding a current member or removing an absent one changes no access: keep the
+ -- receipt for retries, but write no audit event and leave cursors valid.
+ IF moved=0 THEN rev=(ctx->>'policy_revision')::bigint; ELSE rev=postern.onboarding_event(s,act,changed,detail); END IF;
  answer=jsonb_build_object('action',act,'target',changed,'revision',rev,'retired_count',n,'generation',ctx->>'generation');
  INSERT INTO postern.operations VALUES(s,postern.actor(),k,hash,answer);
  RETURN answer;
