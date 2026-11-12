@@ -21,9 +21,11 @@ requested action. Each child resource needs its own grant.
 
 Review each change before confirming it. A lost response leaves the exact request
 available to retry; reload to check the outcome before starting a different change.
-Concurrent policy changes require a reload. Every successful write commits its
-revision, operation receipt, audit event and outbox entry together. An audit or
-outbox failure rolls back the mutation. Group/member/grant lists contain at most
+Concurrent policy changes require a reload. Every successful write that changes
+access commits its revision, operation receipt, audit event and outbox entry
+together. Adding a current member, removing an absent one, or a cleanup that finds
+nothing commits only the receipt, so open lists stay valid. An audit or outbox
+failure rolls back the mutation. Group/member/grant lists contain at most
 50 rows per page; cursors bind the actor, space, list, target and policy revision.
 
 Select a member and resource to inspect effective discover/view access. The
@@ -117,8 +119,12 @@ bun run build
 The benchmark requires a new output directory and creates an owned disposable
 cluster. It seeds 10,000 stale grants and one usable grant, measures catalog
 latency and grant-row reads before/after authenticated cleanup, and verifies that
-the exact same resource remains visible and all retired rows remain stored. Its
-report includes input hashes. Timings describe the local machine, not hosted
+the exact same resource remains visible and all retired rows remain stored. It then
+adds 100,000 usable grants and one stale grant and times the stale-grant preview and
+one cleanup: both find stale grants through their own indexed paths, so the usable
+grants are never examined one by one (in one local run: 45 ms preview and 58 ms
+cleanup, against about 1 s for a scan of every active grant). Its report includes
+input hashes. Timings describe the local machine, not hosted
 capacity or quotas; compare row work as well as elapsed time.
 
 Provider selection, hosted cleanup scheduling, content adapters and full media

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { setAccountToken } from './accounts-api'
 import { nativeSpaceId } from './spaces-api'
 import { SharingPage } from './sharing'
+import { expiry } from './spaces-ui'
 
 const space = '11111111-1111-4111-8111-111111111111'
 const group = '22222222-2222-4222-8222-222222222222'
@@ -258,4 +259,15 @@ test('changing a selection keeps the page in place while the new lists load', as
   await act(async () => held.resolve(json({ items: [], next_cursor: null, policy_revision: f.state.revision })))
   await screen.findByText('This group has no members.')
   expect(screen.getByLabelText('Audience group')).toHaveProperty('disabled', false)
+})
+
+test('grant expiry dates stay American on a device set to Thai', () => {
+  // Value: protects=expiry dates show American months and Gregorian years whatever the device language;
+  // fails_when=expiry() stops passing en-US and a Thai device shows the Buddhist era; why_new=the suite runs under
+  // an en-US default, so only a faked Thai device catches it (as honors.test.tsx does); seam=none
+  const native = Date.prototype.toLocaleString
+  const spy = vi.spyOn(Date.prototype, 'toLocaleString').mockImplementation(function (this: Date, locales?: Intl.LocalesArgument, options?: Intl.DateTimeFormatOptions) {
+    return native.call(this, locales ?? 'th-TH', options)
+  })
+  try { expect(expiry(Date.UTC(2099, 6, 15, 12) / 1000)).toMatch(/^Jul 1[456], 2099, \d{1,2}:\d{2}\s?[AP]M$/) } finally { spy.mockRestore() }
 })

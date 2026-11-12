@@ -113,7 +113,8 @@ def test_members_and_runtime_cannot_manage_or_discover_sharing(api,runtime):
     h=f.session('a')
     assert f.client.get(f'/v1/spaces/{m.t}/audiences',headers=h).status_code==401
     db=Postgres({**m.db.env,'PGUSER':runtime['user']})
-    for query in ['SELECT * FROM postern.grants','SELECT * FROM postern.audiences',"SELECT postern.stale_grant_reason(NULL)"]:
+    for query in ['SELECT * FROM postern.grants','SELECT * FROM postern.audiences',"SELECT postern.stale_grant_reason(NULL)",
+                  'SELECT * FROM postern.stale_grants(NULL,NULL,1)']:
         assert db.execute(query,check=False).returncode
     with fail_events(m.db):
         for path in ['/audiences','/grants/cleanup',f'/resources/{m.r}/grants',f'/resources/{m.r}/access/{m.mb}']:
@@ -322,3 +323,35 @@ def test_unchanged_group_membership_records_no_access_change(api):
     assert revision(f)==rev and count()==events
     okay(change(f,f'/audiences/{m.group}/remove',{'membership_id':m.mb}))
     assert revision(f)==rev+1 and int(count())==int(events)+1
+
+
+def test_stale_preview_pages_across_reasons_and_empty_cleanup_changes_nothing(api):
+    # Value: protects=the indexed stale paths together page every stale grant once, in ID order, across a
+    # page boundary, and a cleanup that finds nothing writes no event or revision; fails_when=a path's own
+    # limit or the cursor drops or repeats a grant, or an empty batch still counts as a policy change;
+    # why_new=the earlier pagination test has one reason on one path; adversarial review found the empty
+    # batch bumping the revision; seam=none; no_claim=query cost (see scripts/grant_cleanup_benchmark.py)
+    f=api;m=f.model
+    m.db.execute(f"""INSERT INTO postern.grants(space_id,resource_id,all_members,actions,expires_at)
+      SELECT '{m.s}','{m.r}',true,ARRAY['discover'],now()-interval '1 minute' FROM generate_series(1,40);
+      INSERT INTO postern.grants(space_id,resource_id,all_members,actions) SELECT '{m.s}','{m.draft}',true,ARRAY['discover'] FROM generate_series(1,40);
+      INSERT INTO postern.grants(space_id,resource_id,all_members,actions) SELECT '{m.s}','{m.r}',true,ARRAY['download'] FROM generate_series(1,5);
+      INSERT INTO postern.grants(space_id,resource_id,all_members,actions) SELECT '{m.s}','{m.hidden}',true,ARRAY['discover'] FROM generate_series(1,30);""")
+    stale=m.db.rows(f"SELECT id::text FROM postern.grants g WHERE space_id='{m.s}' AND state='active' AND postern.stale_grant_reason(g) IS NOT NULL ORDER BY id")
+    first=okay(get(f,'/grants/cleanup')); assert len(first['items'])==50 and first['next_cursor']
+    second=okay(get(f,'/grants/cleanup',params={'cursor':first['next_cursor']}))
+    assert [x['id'] for x in first['items']+second['items']]==[r['id'] for r in stale] and len(stale)==86 # with the fixture's expired grant
+    assert okay(change(f,'/grants/cleanup'))['retired_count']==86
+    rev=revision(f);events=m.db.scalar(f"SELECT count(*) FROM postern.activity WHERE space_id='{m.s}' AND action='grant.cleanup';")
+    empty=okay(change(f,'/grants/cleanup'))
+    assert empty['retired_count']==0 and empty['revision']==rev and revision(f)==rev
+    assert m.db.scalar(f"SELECT count(*) FROM postern.activity WHERE space_id='{m.s}' AND action='grant.cleanup';")==events
+
+
+def test_access_inspection_records_the_member_inspected(api):
+    # Value: protects=the audit row for an access inspection names whose access was disclosed; fails_when=the
+    # disclosure records only the resource; why_new=adversarial review; seam=none; no_claim=none beyond protects
+    f=api;m=f.model
+    access(f,m.hidden,m.mb)
+    row=m.db.rows(f"SELECT target_id::text,detail FROM postern.activity WHERE space_id='{m.s}' AND action='resource.access_inspected'")
+    assert row==[{'target_id':m.hidden,'detail':{'membership_id':m.mb}}]

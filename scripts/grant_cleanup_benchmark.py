@@ -59,9 +59,28 @@ def run(output):
             assert before['items']==after['items'] and len(after['items'])==1
             assert sum(b['retired'] for b in batches)==10000 and after['grant_rows_read']<before['grant_rows_read']
             assert admin.execute("SELECT count(*) FROM postern.grants WHERE space_id=%s AND state='revoked'",(s,)).fetchone()[0]==10000
+            # Many usable grants and one stale one: the preview and cleanup follow the stale-grant
+            # paths, so their cost must not grow with the usable grants.
+            admin.execute("""WITH resources AS (INSERT INTO postern.resources(space_id,kind,title,state,adapter)
+              SELECT %s,'document','Shared '||n,'published','test' FROM generate_series(1,100000) n RETURNING space_id,id)
+              INSERT INTO postern.grants(space_id,resource_id,all_members,actions,expires_at)
+              SELECT space_id,id,true,ARRAY['discover','view'],CASE WHEN row_number() OVER ()=1 THEN now()-interval '1 hour' END FROM resources""",(s,))
+            admin.execute('ANALYZE postern.grants,postern.resources');admin.commit()
+            previews=[]
+            for _ in range(5):
+                start=time.perf_counter()
+                found=runtime.execute('SELECT postern.resource_sharing(%s,%s,%s,%s,%s,%s,%s)',(tokens['owner'],s,AUDIENCE,'cleanup',None,None,None)).fetchone()[0]['items']
+                runtime.commit(); previews.append((time.perf_counter()-start)*1000)
+            start=time.perf_counter()
+            result=runtime.execute('SELECT postern.resource_sharing_change(%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                (tokens['owner'],s,AUDIENCE,str(uuid.uuid4()),'a'*64,revision,'grant.cleanup',None,Jsonb({}))).fetchone()[0]
+            runtime.commit()
+            healthy={'usable_grants':100001,'stale_found':len(found),'preview_median_ms':round(statistics.median(previews),2),
+                'cleanup_ms':round((time.perf_counter()-start)*1000,2),'retired':result['retired_count']}
+            assert len(found)==1 and result['retired_count']==1
             root=Path(__file__).resolve().parents[1]
             inputs=[*sorted((root/'postern/sql').glob('*.sql')), Path(__file__).resolve(),root/'scripts/catalog_benchmark.py']
-            report={'result':'PASS','scope':'synthetic local PostgreSQL; not a hosted capacity claim','before':before,'after':after,'batches':batches,
+            report={'result':'PASS','scope':'synthetic local PostgreSQL; not a hosted capacity claim','before':before,'after':after,'batches':batches,'healthy':healthy,
                 'inputs':{str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs}}
             (output/'report.json').write_text(json.dumps(report,indent=2)+'\n')
             print(json.dumps({k:v for k,v in report.items() if k!='inputs'},indent=2))

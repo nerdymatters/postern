@@ -5,7 +5,9 @@ import { SpacesClient, type SpaceRole } from './spaces-api'
 
 export const muted = 'text-neutral-600 dark:text-neutral-300'
 export const roleLabel = (role: SpaceRole) => role === 'admin' ? 'Administrator' : role === 'owner' ? 'Owner' : 'Member'
-export const expiry = (seconds: number) => new Date(seconds * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+// American dates on every device, as in format.ts: a browser set to Thai would
+// otherwise show Thai month names and the Buddhist era.
+export const expiry = (seconds: number) => new Date(seconds * 1000).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
 
 export function useClient(credential: string) {
   const client = useMemo(() => new SpacesClient(credential), [credential])
