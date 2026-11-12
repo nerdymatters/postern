@@ -141,12 +141,20 @@ def install(config_path, user, home, check_only, force, label):
         # A vendor unit or drop-in is deliberate too; never silently shadow it.
         for directory in UNIT_DIRS:
             candidate = directory / path.name
+            dropins = directory / (path.name + '.d')
+            if dropins.exists() or dropins.is_symlink():
+                print(f'FAIL {dropins} exists; review drop-ins before installing')
+                return 1
             conflict = conflicting(candidate, document)
             if conflict and (not force or candidate != path or candidate.is_symlink()):
                 print(f'FAIL {conflict}; review before replacing (--force only replaces {path})')
                 return 1
-        installed = systemctl('show', key + '.service', '--property=LoadState', '--property=DropInPaths')
+        installed = systemctl('show', key + '.service', '--property=LoadState', '--property=DropInPaths',
+                              '--property=NeedDaemonReload')
         properties = dict(line.split('=', 1) for line in installed.stdout.splitlines() if '=' in line)
+        if properties.get('NeedDaemonReload') == 'yes':
+            print(f'FAIL {key}.service needs daemon-reload; review disk changes and reload before installing')
+            return 1
         if ((installed.returncode and properties.get('LoadState') != 'not-found')
                 or properties.get('DropInPaths', '').strip()):
             print(f'FAIL cannot verify an unmodified unit for {key}: review systemctl cat {key}.service')
@@ -159,6 +167,9 @@ def install(config_path, user, home, check_only, force, label):
     # each unit and each existing target the owner reviewed. Root works in its own temporary directory.
     commands = ['#!/bin/sh', 'set -eu', 'cd "$(dirname "$0")"']
     for key, (path, document) in jobs.items():
+        for directory in UNIT_DIRS:
+            dropins = shlex.quote(str(directory / (path.name + '.d')))
+            commands += [f'test ! -e {dropins}', f'test ! -L {dropins}']
         source = stage / path.name
         source.write_bytes(document.encode())  # the bytes the digest covers, whatever the locale
         source.chmod(0o600)
