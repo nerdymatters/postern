@@ -254,10 +254,13 @@ def test_linux_preflight_checks_bubblewrap_and_the_real_sandbox(tmp_path):
     checks = {name: (ok, detail) for name, ok, detail in serve.preflight(write_config(tmp_path))}
     assert set(checks) == {'python', 'pdftoppm', 'pdfinfo', 'ffmpeg', 'ffprobe', 'front proxy', 'pillow-heif', 'quiz bank',
                            'final exam and subtitles', 'bubblewrap', 'selfie face detector', 'config file',
-                           'data directory', 'sandbox profile', 'organization settings'}
-    required = {name for name in checks if name != 'front proxy' or shutil.which('caddy')}
-    assert all(checks[name][0] for name in required), checks
+                           'data directory', 'sandbox profile', 'organization settings', 'lsof', 'ps'}
+    # Caddy and lsof are host prerequisites, not test-runner ones; where one is absent its row must say so.
+    absent = {'front proxy': not shutil.which('caddy'), 'lsof': not os.access('/usr/bin/lsof', os.X_OK)}
+    assert all(checks[name][0] for name in checks if not absent.get(name)), checks
     assert checks['bubblewrap'][1].startswith(derive.BWRAP + ' ')
+    assert checks['lsof'] == ((True, '/usr/bin/lsof') if not absent['lsof'] else
+                              (False, '/usr/bin/lsof is missing — install lsof; the watchdog cannot guard Rust without it'))
 
 
 @pytest.mark.parametrize('output, ok, detail', [

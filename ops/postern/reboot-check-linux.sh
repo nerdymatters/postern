@@ -2,6 +2,12 @@
 # Run after a real reboot, before any manual service starts.
 # Usage: ops/postern/reboot-check-linux.sh [config.json] [installed-label] [python]
 set -eu
+# Run as the service account (for example: sudo -u postern sh ops/postern/reboot-check-linux.sh ...). As root
+# this would run the release tree's Python, which the service account can change.
+if [ "$(id -u)" -eq 0 ]; then
+  echo "Run this as the service account, not as root (for example: sudo -u postern sh $0 ...)" >&2
+  exit 1
+fi
 CONFIG="${1:-$HOME/.config/postern/config.json}"
 LABEL_PREFIX="${2:-org.nerdymatters.postern}"
 PYTHON="${3:-.venv/bin/python}"

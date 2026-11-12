@@ -225,6 +225,11 @@ def preflight(config_path):
 
     if derive.LINUX:
         checks.append(('bubblewrap', *bubblewrap_version()))
+        # The watchdog's Rust guard finds and measures the serving API with these; without them it can only alert.
+        for tool, package in (('/usr/bin/lsof', 'lsof'), ('/bin/ps', 'procps')):
+            found = os.access(tool, os.X_OK)
+            checks.append((Path(tool).name, found, tool if found else
+                           f'{tool} is missing — install {package}; the watchdog cannot guard Rust without it'))
     else:
         sandbox = Path('/usr/bin/sandbox-exec')
         checks.append(('sandbox-exec', sandbox.is_file(), str(sandbox) if sandbox.is_file() else 'missing — the converter cannot run'))

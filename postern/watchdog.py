@@ -337,7 +337,10 @@ class Fallback:
             override = self.unit_override()
         except (OSError, ValueError, subprocess.SubprocessError):
             override = 'unknown (unit environment unreadable)'
-        if backend == 'python' and selection.get('fallback') and override is None:
+        unknown = (override or '').startswith('unknown')
+        # finish_fallback acts only on a process whose own record says it took Rust from the file, which an
+        # unprovable unit environment cannot have overridden; a unit that visibly sets the backend still stops it.
+        if backend == 'python' and selection.get('fallback') and (override is None or unknown):
             self.finish_fallback(selection)
         active, dropped = self.active(), False
         if (active is not None and active.get('source') == 'environment'
@@ -346,10 +349,16 @@ class Fallback:
             # A record left by a process that has exited (say, before a start refused on a busy port) is not an
             # override. Only a process that is certainly gone is ignored: an unknown answer keeps the override.
             active, dropped = None, True
-        if (override or '').startswith('unknown') and backend not in ('rust', 'invalid') and not (
+        if unknown and backend not in ('rust', 'invalid') and not (
                 active is not None and active.get('backend') == 'rust'):
             # Nothing selects or serves Rust, so an unprovable unit environment has nothing to breach; watching it
             # would raise a Rust breach alert on a Python-only host. A live API forced to Rust still reports it.
+            override = None
+        elif (unknown and active is not None and active.get('source') == SELECTION
+                and self.alive(active['pid']) is not False):
+            # The serving process took its backend from the file, so the unit did not override it. A failed or
+            # inconclusive lookup must not make this process's guard alert-only or reset its counts: a blip on
+            # every other tick would otherwise stall the fallback for good.
             override = None
         forced = override is not None or (active is not None and active.get('source') == 'environment')
         forced_rust = forced and (override not in (None, 'python') or (active and active.get('backend') == 'rust'))
