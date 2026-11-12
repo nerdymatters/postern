@@ -72,6 +72,7 @@ def test_google_credentials_are_reused_per_thread_until_the_credential_file_chan
     # 0600 is checked only on load, or a connection Google may have closed is reused; why_new=new cache;
     # seam=none; no_claim=Google's token lifetime or connection keep-alive
     import os
+    import time
     import pytest
     from postern.storage import StoreUnavailable
     loads = []
@@ -113,10 +114,15 @@ def test_google_credentials_are_reused_per_thread_until_the_credential_file_chan
     # A copy that keeps size and mtime (cp -p over the file in place) changes only the ctime.
     current = store._service('drive', 'v3').credentials
     before = credentials.stat()
+    # Linux before 6.13 stamps ctime from a coarse clock tick, so let the clock pass the
+    # last change first, or the rewrite could keep the old ctime and prove nothing.
+    while time.time_ns() <= before.st_ctime_ns + 20_000_000:  # gstack-timing-ok: waits for a distinct ctime, asserts none
+        time.sleep(0.005)
     credentials.write_text(json.dumps({'generation': 5}, indent=2) + '\n')
     os.utime(credentials, ns=(before.st_atime_ns, before.st_mtime_ns))
     after = credentials.stat()
     assert (after.st_ino, after.st_size, after.st_mtime_ns) == (before.st_ino, before.st_size, before.st_mtime_ns)
+    assert after.st_ctime_ns != before.st_ctime_ns
     assert store._service('drive', 'v3').credentials is not current and loads[-1] == {'generation': 5}
     assert len(loads) == 6
     credentials.chmod(0o644)
