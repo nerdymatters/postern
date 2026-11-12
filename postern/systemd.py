@@ -36,6 +36,16 @@ def quote(value, command=False):
     return '"' + value + '"'
 
 
+def path_value(value):
+    # WorkingDirectory= takes the rest of the line as the path: quotes would make it relative and the
+    # unit would fail to load. Specifiers still apply, and a trailing backslash continues the line.
+    value = str(value)
+    if (not value.startswith('/') or value != value.strip() or value.endswith('\\')
+            or any(ord(char) < 32 or ord(char) == 127 for char in value)):
+        raise ValueError(f'systemd paths must be absolute, with no control characters: {value!r}')
+    return value.replace('%', '%%')
+
+
 def documents(config_path, user, home, python=None, label='org.nerdymatters.postern'):
     from . import serve
     if not re.fullmatch(r'[a-zA-Z_][a-zA-Z0-9_-]*', user):
@@ -52,7 +62,7 @@ def documents(config_path, user, home, python=None, label='org.nerdymatters.post
     }
     template = Template(TEMPLATE.read_text())
     return {key: (UNIT_DIR / (key + '.service'), template.substitute(
-        description=description, user=user, root=quote(serve.ROOT), home=quote('HOME=' + str(home)),
+        description=description, user=user, root=path_value(serve.ROOT), home=quote('HOME=' + str(home)),
         command=' '.join(quote(arg, command=True) for arg in arguments), environment=environment))
         for key, (description, arguments, environment) in jobs.items()}
 
@@ -74,19 +84,21 @@ def conflicting(path, document):
 
 def other_installation(config_path, label):
     from . import serve
+    ours = {key + '.service' for key in serve.service_labels(label)}
+    # The generated argument (with systemd escaping) or a hand-written one.
+    targets = (quote(str(config_path), command=True), str(config_path))
     for directory in UNIT_DIRS:
         for path in directory.glob('*.service'):
-            if path.name == label + '.service':
-                continue
+            if path.name in ours:
+                continue  # this label's own units, including its watchdog, which names the same config
             try:
-                content = path.read_text()
-                # Check the exact generated argument, including systemd escaping.
-                if 'postern.serve' in content and quote(str(config_path), command=True) in content:
-                    return f'{path} already supervises this configuration; keep its label'
-                if 'postern.serve' in content and str(config_path) in content:
-                    return f'{path} already supervises this configuration; keep its label'
+                commands = [line for line in path.read_text().splitlines() if line.lstrip().startswith('ExecStart=')]
             except (OSError, UnicodeError):
                 continue
+            # As on macOS, only an API job supervises a configuration; a header comment naming
+            # postern.serve, or another family's watchdog, does not.
+            if any('postern.serve' in line and any(target in line for target in targets) for line in commands):
+                return f'{path} already supervises this configuration; keep its label'
     if serve.listening(serve.settings(config_path).get('port', 8790)):
         if systemctl('is-active', '--quiet', label + '.service').returncode:
             return 'the API port is already in use by another service; stop it explicitly'
