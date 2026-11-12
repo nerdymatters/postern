@@ -174,7 +174,8 @@ class GoogleStore:
         # (RS-08). A revoked credential now stops working when its access token expires,
         # at most an hour later. Each call still opens a new connection: Google may close
         # an idle one, and httplib2 does not retry every such failure.
-        key = (str(path), status.st_ino, status.st_mtime_ns, status.st_size)
+        # ctime too: a copy that keeps size and mtime (cp -p over the file) still changes it.
+        key = (str(path), status.st_ino, status.st_mtime_ns, status.st_ctime_ns, status.st_size)
         cached = getattr(self.clients, 'by_file', {})
         credentials = cached.get(key)
         if credentials is None:
