@@ -62,7 +62,7 @@ def check_face(image):
 
 
 def main():
-    source, output, kind, max_pages, max_pixels, max_bytes, poppler = sys.argv[1:]
+    source, output, kind, max_pages, max_pixels, max_bytes, poppler, *media = sys.argv[1:]
     source, output = Path(source), Path(output)
     max_pages, max_pixels, max_bytes = int(max_pages), int(max_pixels), int(max_bytes)
     resource.setrlimit(resource.RLIMIT_CPU, (45,45))
@@ -75,7 +75,7 @@ def main():
     os.umask(0o077)
     if kind == 'video':
         # MP4 only, local protocols only, no transcoding or arbitrary network inputs.
-        tools = Path('/opt/homebrew/bin')
+        tools = Path(media[0] if media else '/opt/homebrew/bin')
         probe = json.loads(subprocess.run([str(tools/'ffprobe'), '-v', 'error', '-protocol_whitelist', 'file',
             '-show_entries', 'format=duration:stream=codec_type,codec_name,width,height', '-of', 'json', str(source)],
             capture_output=True, check=True, timeout=15).stdout)

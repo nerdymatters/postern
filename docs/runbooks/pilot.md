@@ -1,6 +1,6 @@
 # Install the macOS host
 
-Use a stable checkout or extracted release outside a temporary coding workspace. This server depends on macOS `sandbox-exec`; Linux is not a supported production host.
+Use a stable checkout or extracted release outside a temporary coding workspace. This runbook installs the server on macOS, where conversions run under `sandbox-exec`. Conversions also run on Linux under bubblewrap, but Linux service supervision and packaging (LX-02) are not done, so Linux is not yet a supported production host.
 
 ## 1. Private configuration
 

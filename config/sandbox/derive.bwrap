@@ -1,0 +1,50 @@
+# bubblewrap rules for one Postern conversion job on Linux (LX-01): the counterpart of derive.sb.
+# derive.py reads this file for every job and runs: /usr/bin/bwrap <these arguments> -- python3 -I derive_child.py ...
+# One bwrap option and its operands per line; "#" starts a comment. {NAME} is a whole operand, replaced with
+# the path the job uses for the parameter derive.sb receives as (param "NAME"); an unknown name refuses the job.
+# See README.md in this directory for why each rule exists. Do not relax a rule without reading it.
+
+# New user, PID, network, IPC, UTS and cgroup namespaces: no network, no view of the host's processes,
+# and no way to create further namespaces from inside the job. --unshare-all only tries the user namespace;
+# --unshare-user requires it, so a host that cannot create one refuses the job instead of running it without.
+--unshare-all
+--unshare-user
+--disable-userns
+--die-with-parent
+--new-session
+--cap-drop ALL
+
+# The system runtime: shared libraries, the dynamic loader's cache, the alternatives links Debian resolves some
+# libraries through (FFmpeg's libblas), poppler, FFmpeg, and fontconfig's settings.
+--ro-bind /usr /usr
+--symlink usr/bin /bin
+--symlink usr/sbin /sbin
+--symlink usr/lib /lib
+--symlink usr/lib64 /lib64
+--ro-bind-try /etc/ld.so.cache /etc/ld.so.cache
+--ro-bind-try /etc/alternatives /etc/alternatives
+--ro-bind-try /etc/fonts /etc/fonts
+--proc /proc
+--dev /dev
+
+# The staged input, converter script, pinned face model, interpreter and venv marker (absent outside a venv).
+--ro-bind {SOURCE} {SOURCE}
+--ro-bind {CHILD} {CHILD}
+--ro-bind {FACE_MODEL} {FACE_MODEL}
+--ro-bind {PYTHON} {PYTHON}
+--ro-bind-try {PYVENV} {PYVENV}
+
+# The Python runtime: the standard library, the venv's site-packages and the base interpreter.
+--ro-bind {STDLIB} {STDLIB}
+--ro-bind {PURELIB} {PURELIB}
+--ro-bind {PLATLIB} {PLATLIB}
+--ro-bind {BASE_PREFIX} {BASE_PREFIX}
+
+# The per-job temporary directory: the only place this job may write.
+--bind {OUTPUT} {OUTPUT}
+--chdir {OUTPUT}
+
+# Last: bwrap builds the sandbox on an in-memory root and /dev; make both read-only once every mount is in place,
+# so the job cannot store anything outside its directory (writing to /dev/null still works).
+--remount-ro /
+--remount-ro /dev

@@ -1,0 +1,14 @@
+# AppArmor rule that lets bubblewrap create the user namespace each Postern conversion runs in (LX-01).
+# Ubuntu 23.10 and later restrict unprivileged user namespaces (kernel.apparmor_restrict_unprivileged_userns=1):
+# without this rule bwrap starts but cannot set up the sandbox, and every conversion is a host fault.
+# Debian does not restrict them and needs no rule. Install as root, then rerun the preflight:
+#   install -m 644 config/sandbox/postern-bwrap.apparmor /etc/apparmor.d/postern-bwrap
+#   apparmor_parser -r /etc/apparmor.d/postern-bwrap
+abi <abi/4.0>,
+include <tunables/global>
+
+profile postern-bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+
+  include if exists <local/postern-bwrap>
+}

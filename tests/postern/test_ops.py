@@ -23,6 +23,7 @@ from conftest import Clock
 from postern import derive, serve, watchdog
 from postern.config import Config
 
+SEATBELT = pytest.mark.skipif(derive.LINUX, reason='macOS Seatbelt; test_sandbox.py covers bubblewrap')
 ATOM = re.compile(r'\((?:literal|subpath) "([^"]+)"\)')
 OWNER_CONFIG = Path('/Users/owner/.config/postern/config.json')
 
@@ -75,6 +76,7 @@ def test_install_refuses_to_clobber_a_plist_it_did_not_write(tmp_path):
     assert 'not a readable plist' in serve.conflicting(path, document)
 
 
+@SEATBELT
 def test_preflight_checks_every_prerequisite(tmp_path):
     checks = {name: (ok, detail) for name, ok, detail in serve.preflight(write_config(tmp_path))}
     assert set(checks) == {'python', 'pdftoppm', 'pdfinfo', 'ffmpeg', 'ffprobe', 'front proxy', 'pillow-heif', 'quiz bank', 'final exam and subtitles',
@@ -154,6 +156,7 @@ def substituted(arguments):
     return text
 
 
+@SEATBELT
 def test_every_conversion_job_runs_the_checked_in_profile(tmp_path):
     # Value: protects=the job command applies the checked-in profile with every parameter supplied, and the converter
     #   that parses untrusted uploads reads and writes only its runtime and job paths; fails_when=job_command drifts
@@ -184,6 +187,7 @@ def test_every_conversion_job_runs_the_checked_in_profile(tmp_path):
     assert '(allow file-read* (literal "/"))' in profile
 
 
+@SEATBELT
 def test_the_checked_in_profile_compiles_and_still_denies_the_secrets_directory(tmp_path):
     compiles, detail = serve.profile_compiles()
     assert compiles, detail
