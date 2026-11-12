@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.27.0 — Run the server on a Linux host under systemd (2026-11-12)
+
+### Added
+
+- Install, update and remove the server on a Debian or Ubuntu host as three system services (API, watchdog and proxy) that start at boot without a login. As the service account, `postern.serve install` renders the units and prints one root command. That command runs only the install script you reviewed, whose SHA-256 digest it carries, from a directory root owns, and it stops if a unit, a staged file or the script changed after review. `status` and `uninstall` work on Linux too, and `ops/postern/reboot-check-linux.sh` checks the services after a reboot.
+- Return from Rust to Python under systemd. The watchdog reads the API unit's environment to see whether the unit sets the backend, keeps the guard alert-only when an environment file could, and rides out a failed lookup on its last answer. On Linux, the backend selection and config files reach the disk before the watchdog restarts the API.
+- Build a Linux release bundle with `scripts/package_release.py --platform linux`. It carries `requirements-linux.lock`, with the same pinned versions as macOS, and the unit template, and it can include an approved native wheel. `docs/runbooks/linux.md` covers install, update, restart, fallback, rollback and uninstall.
+- On Linux the preflight checks for `lsof` and `ps`, gives Caddy's own reason when it rejects the proxy configuration, and names apt packages. Private health reports that `fullfsync` has no effect there.
+
+### Upgrade
+
+- macOS services and the macOS sandbox are unchanged. There, too, the preflight now gives Caddy's reason when it rejects the proxy configuration, and a macOS bundle can carry an approved native wheel with `--native-wheel`. A Linux host needs Caddy 2.8 or later from the Caddy project's repository, because Debian's own package is too old. Before a Linux host serves staff, rehearse it on that host with a real reboot, journald and public ingress; a disposable Debian 13 systemd container passed install, restart, boot, update, uninstall and the Rust-to-Python fallback.
+
 ## 0.26.0 — Convert uploads on Linux inside bubblewrap (2026-11-12)
 
 ### Added
