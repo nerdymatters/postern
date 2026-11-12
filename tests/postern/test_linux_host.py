@@ -290,6 +290,17 @@ def test_an_unprovable_unit_environment_is_not_a_rust_breach_when_nothing_select
     assert alerts == [] and not (linux.parent / watchdog.GUARD).exists()
 
 
+# Value: protects=Linux guard messages send the owner to a runbook section that exists; fails_when=they say
+# "runbook step 3", which only the macOS runbook has; why_new=other rows check the supervisor name only;
+# seam=none; no_claim=wording beyond the pointer
+def test_linux_guard_messages_point_to_the_linux_runbook(linux):
+    guard, _ = make_guard(linux, lambda *args, **kwargs: result('Environment=\nEnvironmentFiles=\n'))
+    line = serve.host_words(serve.GUARD_STATES['override'])
+    assert 'systemd job' in line and 'runbook step 3' not in line and 'step 3' not in guard.removal()
+    assert "Linux runbook's Python fallback section" in line and guard.removal() in line
+    assert '\n## Python fallback\n' in (serve.ROOT / 'docs/runbooks/linux.md').read_text()
+
+
 def test_linux_fallback_syncs_python_before_sigterm_and_names_systemd(linux, monkeypatch):
     progress_backend.write_selection(linux, 'rust')
     signals = []
