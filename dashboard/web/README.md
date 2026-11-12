@@ -128,6 +128,7 @@ then shows an email box instead of the Google button, which is what the Playwrig
 | `src/spaces-api.ts`, `src/spaces-ui.tsx` | opt-in native account/resource requests, invitation codes and shared space controls |
 | `src/spaces.tsx` | native My Posterns, creation, invitation review/acceptance and metadata catalog |
 | `src/memberships.tsx`, `src/ownership.tsx` | membership directory, role/removal/departure controls and recipient-accepted ownership transfer |
+| `src/sharing.tsx` | owner/admin audience groups, resource grants, effective-access inspection and stale-grant cleanup, each reviewed before sending; loaded on demand from `/s/{uuid}/sharing` |
 | `src/app.tsx` | config/session gate, the refusal states, the shell and the routes |
 | `src/theme.tsx`, `index.html` | day/night preference, system-theme updates, header toggle, and early theme application before React renders |
 | `src/PosternWordmark.tsx`, `src/PosternIcons.tsx` | outlined logo and 24 decorative action/format icons; see the [logo kit](../../docs/brand/logo/README.md) |

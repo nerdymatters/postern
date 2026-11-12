@@ -95,9 +95,9 @@ that the resulting grant is still active.
 ## Verification
 
 [`008_resource_sharing.sql`](../../postern/sql/008_resource_sharing.sql) is additive;
-older migrations keep their checksums. Like `007`, it builds its grant index inside
-the migration transaction, so grant changes wait until it commits. Once spaces
-hold data, apply it in a quiet window. The runtime retains only function execution
+older migrations keep their checksums. Like `007`, it builds its indexes inside
+the migration transaction (two on grants, one on resources), so grant and resource
+changes wait until it commits. Once spaces hold data, apply it in a quiet window. The runtime retains only function execution
 privileges, with no direct reads/writes of grants or audiences. The
 [real PostgreSQL tests](../../tests/storage/test_sharing.py) exercise additive
 access against `can_resource`, same-space targets, role restrictions,
@@ -120,7 +120,7 @@ The benchmark requires a new output directory and creates an owned disposable
 cluster. It seeds 10,000 stale grants and one usable grant, measures catalog
 latency and grant-row reads before/after authenticated cleanup, and verifies that
 the exact same resource remains visible and all retired rows remain stored. It then
-adds 100,000 usable grants and one stale grant and times the stale-grant preview and
+adds 100,000 grants, one of them already expired, and times the stale-grant preview and
 one cleanup: both find stale grants through their own indexed paths, so the usable
 grants are never examined one by one (in one local run: 45 ms preview and 58 ms
 cleanup, against about 1 s for a scan of every active grant). Its report includes
