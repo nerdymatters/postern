@@ -155,6 +155,9 @@ class GoogleStore:
     def __init__(self, config):
         self.config = config
         self.lock = threading.RLock()
+        # One authorized client per thread and credential file: httplib2 is not
+        # thread-safe, and google-auth does not promise safe refreshes from two threads.
+        self.clients = threading.local()
 
     def _service(self, name, version, allowlist=False):
         from google.oauth2.credentials import Credentials
@@ -163,16 +166,27 @@ class GoogleStore:
         from googleapiclient.http import build_http
         from google_auth_httplib2 import AuthorizedHttp
         path = Path(self.config.allowlist_credentials if allowlist and self.config.allowlist_credentials else self.config.host_credentials).expanduser()
-        if path.stat().st_mode & 0o077:
+        status = path.stat()
+        if status.st_mode & 0o077:
             raise StoreUnavailable('Credential files must have permissions 0600')
-        info = json.loads(path.read_text())
-        credentials = (ServiceCredentials.from_service_account_info(info, scopes=['https://www.googleapis.com/auth/spreadsheets.readonly'])
-                       if info.get('type') == 'service_account' else Credentials.from_authorized_user_info(info))
-        # Google's transport leaves resumable-upload 308 responses for the API
-        # client instead of treating them as redirects requiring Location.
-        http = build_http()
-        http.timeout = 10
-        return build(name, version, http=AuthorizedHttp(credentials, http=http), cache_discovery=False)
+        # Reuse the access token and connection until the file changes. Rebuilding them
+        # cost every 30 s allowlist refresh an OAuth exchange and new TLS handshakes,
+        # most of the API's idle CPU (RS-08). A revoked credential now stops working
+        # when its access token expires, at most an hour later.
+        key = (str(path), status.st_ino, status.st_mtime_ns, status.st_size)
+        clients = getattr(self.clients, 'by_file', {})
+        authorized = clients.get(key)
+        if authorized is None:
+            info = json.loads(path.read_text())
+            credentials = (ServiceCredentials.from_service_account_info(info, scopes=['https://www.googleapis.com/auth/spreadsheets.readonly'])
+                           if info.get('type') == 'service_account' else Credentials.from_authorized_user_info(info))
+            # Google's transport leaves resumable-upload 308 responses for the API
+            # client instead of treating them as redirects requiring Location.
+            http = build_http()
+            http.timeout = 10
+            authorized = AuthorizedHttp(credentials, http=http)
+            self.clients.by_file = {**{k: v for k, v in clients.items() if k[0] != key[0]}, key: authorized}
+        return build(name, version, http=authorized, cache_discovery=False)
 
     def allowlist(self):
         values = self._service('sheets','v4',True).spreadsheets().values()
