@@ -65,6 +65,7 @@ For separate web hosting, set `VITE_POSTERN_API` to your HTTPS API origin in you
 - [Ownership transfer](docs/runbooks/ownership-transfer.md) (explicit recipient acceptance; verified in isolation)
 - [Membership management](docs/runbooks/membership-management.md) (isolated APIs and browser controls; not deployed)
 - [Space creation and invitation acceptance](docs/runbooks/space-onboarding.md) (isolated APIs and browser flow; not deployed)
+- [Audience groups and resource grants](docs/runbooks/resource-sharing.md) (isolated APIs and browser controls; not deployed)
 - [Isolated account/resource service integration](docs/runbooks/service-integration.md) (local; not deployed)
 - [PostgreSQL schema and migration rehearsal](docs/runbooks/postgres-rehearsal.md) (local; not deployed)
 - [Product roadmap](ROADMAP.md)

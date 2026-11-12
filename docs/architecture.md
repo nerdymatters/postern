@@ -37,7 +37,7 @@ interface, configuration and rollout checks.
 
 The [M2 design contract](private-spaces.md) defines responsible owners,
 space-scoped roles, memberships, audience groups and resource grants. Native
-metadata/session, onboarding, membership and ownership APIs are implemented and
+metadata/session, onboarding, membership, ownership and sharing APIs are implemented and
 verified in isolation; see the [service integration guide](runbooks/service-integration.md).
 They are not enabled in production, and full content integration remains pending.
 Restaurant/location groups remain reporting metadata. The
