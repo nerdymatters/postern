@@ -279,11 +279,12 @@ def test_preflight_requires_a_bubblewrap_that_knows_disable_userns(monkeypatch, 
 #   what stops the sandbox, and only then; fails_when=the hint is missing for bwrap's namespace refusal, or shown for a
 #   missing mount or on a host with no restriction (the sysctl stays 1 after the rule loads); why_new=the restriction
 #   arrived with Ubuntu 23.10; seam=userns_restricted; no_claim=userns_restricted's reading of the real sysctl, or the
-#   exact wording each bwrap version prints (CI's Ubuntu 24.04 run is the live check)
+#   exact wording each bwrap version prints (the real-refusal test below checks it where the restriction is on)
 @pytest.mark.parametrize('restricted, message, hinted', [
     (True, 'bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted', True),
     (True, 'bwrap: setting up uid map: Permission denied', True),
     (True, "bwrap: Can't find source path /postern-missing: No such file or directory", False),
+    (True, "bwrap: Can't bind mount /oldroot/srv/model on /newroot/srv/model: Permission denied", False),
     (False, 'bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted', False),
 ])
 def test_the_apparmor_hint_names_the_rule_only_when_the_namespace_is_refused(monkeypatch, restricted, message, hinted):
@@ -298,17 +299,56 @@ def test_the_apparmor_hint_names_the_rule_only_when_the_namespace_is_refused(mon
 
 
 # Value: protects=a Linux host whose Poppler or FFmpeg the job cannot reach (Linuxbrew, snap, /opt) fails the preflight
-#   instead of failing every document and video as a bad upload; fails_when=the preflight runs only /usr/bin/true in
-#   the sandbox; why_new=the rows above only check `which`; seam=none; no_claim=FFmpeg from a path the job cannot reach
-#   (the same loop; Poppler stands in)
+#   instead of failing every document and video as a bad upload; fails_when=the preflight leaves out a tool the child
+#   runs (pdftoppm, ffmpeg) or runs only /usr/bin/true in the sandbox; why_new=the rows above only check `which`;
+#   seam=none; no_claim=the second tool of each pair (pdfinfo, ffprobe), which the same loop probes next
 @BUBBLEWRAP
-def test_preflight_fails_a_conversion_tool_the_sandbox_cannot_reach(tmp_path, monkeypatch):
+@pytest.mark.parametrize('finder, names', [('poppler_dir', ('pdftoppm', 'pdfinfo')), ('media_dir', ('ffmpeg', 'ffprobe'))])
+def test_preflight_fails_a_conversion_tool_the_sandbox_cannot_reach(tmp_path, monkeypatch, finder, names):
     outside = tmp_path / 'linuxbrew' / 'bin'
     outside.mkdir(parents=True)
-    (outside / 'pdfinfo').symlink_to(shutil.which('pdfinfo'))
-    monkeypatch.setattr(derive, 'poppler_dir', lambda: outside)
+    for name in names:
+        (outside / name).symlink_to(shutil.which(name))
+    monkeypatch.setattr(derive, finder, lambda: outside)
     compiles, detail = serve.profile_compiles()
-    assert not compiles and detail.startswith(f'{outside / "pdfinfo"} cannot run inside the sandbox')
+    assert not compiles and detail.startswith(f'{outside / names[0]} cannot run inside the sandbox')
     monkeypatch.undo()
     compiles, detail = serve.profile_compiles()
-    assert compiles and detail.endswith('pdfinfo and ffprobe run inside it')
+    assert compiles and detail.endswith('pdftoppm, pdfinfo, ffmpeg, ffprobe run inside it')
+
+
+# Value: protects=the preflight runs each converter tool with the job's own environment and directory, and leaves a tool
+#   missing from PATH to its own row; fails_when=the probes inherit the operator's LD_LIBRARY_PATH (a library only it
+#   finds passes preflight, then fails every job) or a missing ffmpeg is blamed on the sandbox; why_new=the probes
+#   were new in this change; seam=none (LINUX selects the Linux branch on macOS); no_claim=the probes' real exit codes
+def test_preflight_probes_tools_with_the_job_environment_and_skips_missing_ones(monkeypatch):
+    monkeypatch.setattr(derive, 'LINUX', True)
+    monkeypatch.setattr(derive, 'PROFILE', PROFILE)
+    monkeypatch.setenv('LD_LIBRARY_PATH', '/opt/custom/lib')
+    real_which = shutil.which
+    monkeypatch.setattr(serve.shutil, 'which', lambda name, *args, **kwargs: None if name == 'ffmpeg' else real_which(name))
+    calls = []
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, '', '')
+    monkeypatch.setattr(serve.subprocess, 'run', run)
+    compiles, detail = serve.profile_compiles()
+    programs = [Path(command[command.index('--') + 1]).name for command, _ in calls]
+    assert compiles and programs == ['true', 'pdftoppm', 'pdfinfo'] and detail.endswith('; pdftoppm, pdfinfo run inside it')
+    for command, kwargs in calls:
+        assert kwargs['env'] == derive.job_env(kwargs['cwd']) and 'LD_LIBRARY_PATH' not in kwargs['env']
+        assert kwargs['timeout'] and command[command.index('--bind') + 1] == str(kwargs['cwd'])
+
+
+# Value: protects=on a host that restricts user namespaces, bwrap's real refusal is recognized and names the AppArmor rule;
+#   fails_when=namespace_refused no longer matches the message this bwrap prints; why_new=the table above uses
+#   hand-written messages; seam=none (a copy of bwrap is not covered by the rule, which attaches to /usr/bin/bwrap);
+#   no_claim=hosts without the restriction (skipped there)
+@BUBBLEWRAP
+@pytest.mark.skipif(not serve.userns_restricted(), reason='needs the Ubuntu user-namespace restriction')
+def test_a_real_namespace_refusal_names_the_apparmor_rule(tmp_path, monkeypatch):
+    copy = tmp_path / 'bwrap'
+    shutil.copy2(derive.BWRAP, copy)
+    monkeypatch.setattr(derive, 'BWRAP', str(copy))
+    compiles, detail = serve.profile_compiles()
+    assert not compiles and 'postern-bwrap.apparmor' in detail, detail

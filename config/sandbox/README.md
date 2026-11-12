@@ -104,7 +104,8 @@ venv's `bin/python` symlink becomes a plain file inside the sandbox.
   marker is optional: an interpreter outside a venv has none, and bwrap refuses a missing path.
   Poppler and FFmpeg must live under `/usr` (the distribution's packages, or `/usr/local`); copies from Linuxbrew,
   snap or `/opt` pass the preflight's `which` but are not mounted inside the job, so the preflight also runs
-  `pdfinfo -v` and `ffprobe -version` inside the sandbox and fails when either cannot start there.
+  `pdftoppm`, `pdfinfo`, `ffmpeg` and `ffprobe` inside the sandbox, with the job's environment and directory, and
+  fails when one cannot start there.
 - `--bind {OUTPUT}` — the only writable mount. There is no `/tmp` at all; `TMPDIR` is the job directory.
 
 The home directory, `~/.config/postern/`, the data directory, the staging directory as a whole and the

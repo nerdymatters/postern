@@ -55,21 +55,26 @@ def profile_compiles():
         source = scratch / 'probe.bin'
         source.write_bytes(b'')
         # The job mounts only /usr on Linux: Poppler or FFmpeg from Linuxbrew, snap or /opt passes `which`
-        # but fails every document and video inside the sandbox, so run each tool where the job will.
-        programs = [['/usr/bin/true']] + ([[str(derive.poppler_dir() / 'pdfinfo'), '-v'],
-                                           [str(derive.media_dir() / 'ffprobe'), '-version']] if derive.LINUX else [])
+        # but fails every document and video inside the sandbox, so run each tool the child runs, where and as the
+        # job will. A tool missing from PATH is its own row's failure, not the sandbox's.
+        programs = [['/usr/bin/true']] + [[str(directory / name), flag] for directory, first, names, flag in (
+            (derive.poppler_dir(), 'pdftoppm', ('pdftoppm', 'pdfinfo'), '-v'),
+            (derive.media_dir(), 'ffmpeg', ('ffmpeg', 'ffprobe'), '-version'))
+            if derive.LINUX and shutil.which(first) for name in names]
         for program in programs:
             try:
                 command = derive.sandbox_command(source, scratch, program)
                 # A host without the sandbox program gets this row, not a traceback out of install.
-                result = subprocess.run(command, capture_output=True, text=True)
-            except (OSError, ValueError) as error:
+                result = subprocess.run(command, capture_output=True, text=True, cwd=scratch,
+                                        env=derive.job_env(scratch), timeout=60)
+            except (OSError, ValueError, subprocess.TimeoutExpired) as error:
                 return False, f'{derive.PROFILE} cannot be applied: {error}'
             if result.returncode:
                 break
     detail = (result.stderr or result.stdout).strip()
     if result.returncode == 0 and derive.LINUX:
-        return True, f'{derive.PROFILE} compiles and applies; pdfinfo and ffprobe run inside it'
+        tools = ', '.join(Path(program[0]).name for program in programs[1:])
+        return True, f'{derive.PROFILE} compiles and applies' + (f'; {tools} run inside it' if tools else '')
     if result.returncode and program[0] != '/usr/bin/true':
         return False, f'{program[0]} cannot run inside the sandbox: {detail.splitlines()[0] if detail else "no output"}'
     if result.returncode and derive.LINUX and userns_restricted() and namespace_refused(detail):
@@ -80,8 +85,9 @@ def profile_compiles():
 
 def namespace_refused(detail):
     """bwrap's own refusal to set up its namespaces, which is what the AppArmor rule lifts, as opposed to a
-    missing mount source or an old bwrap: the restriction's sysctl stays 1 after the rule is loaded."""
-    return any(sign in detail for sign in ('Permission denied', 'Operation not permitted', 'uid map', 'namespace'))
+    missing or unreadable mount source or an old bwrap: the restriction's sysctl stays 1 after the rule is loaded."""
+    return any(sign in detail for sign in ('setting up uid map', 'setting up gid map', 'RTM_NEWADDR',
+                                           'Creating new namespace failed', 'No permissions to create new namespace'))
 
 
 def userns_restricted():
