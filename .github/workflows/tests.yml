@@ -298,7 +298,8 @@ jobs:
           retention-days: 14
 
   pytest:
-    # macOS, because the converter runs under sandbox-exec and the audit writer uses fullfsync.
+    # macOS, where the converter runs under sandbox-exec and the audit writer uses fullfsync; pytest-linux
+    # runs the same suite under bubblewrap.
     name: ${{ matrix.progress-backend == 'python' && 'pytest' || 'pytest-rust' }}
     runs-on: macos-15
     timeout-minutes: 20
@@ -349,6 +350,43 @@ jobs:
           path: ${{ runner.temp }}/native-wheels/*.whl
           if-no-files-found: error
           retention-days: 14
+
+  pytest-linux:
+    # The same suite on Linux (LX-01): conversions run under bubblewrap, and the Seatbelt-only tests skip.
+    # Pinned to 24.04, whose AppArmor restricts the user namespace bubblewrap needs until its rule is loaded.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Install native tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils ffmpeg bubblewrap postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y --no-install-recommends postgresql-17
+          echo /usr/lib/postgresql/17/bin >> "$GITHUB_PATH"
+      - name: Load the AppArmor rule bubblewrap needs on Ubuntu
+        run: |
+          sysctl kernel.apparmor_restrict_unprivileged_userns || true
+          sudo install -m 644 config/sandbox/postern-bwrap.apparmor /etc/apparmor.d/postern-bwrap
+          sudo apparmor_parser -r /etc/apparmor.d/postern-bwrap
+          bwrap --version
+      - name: Install Postern
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test,postgres]" psutil
+      - name: Record the toolchain the converter depends on
+        run: |
+          python -c "import PIL, pillow_heif; print('pillow', PIL.__version__, 'pillow-heif', pillow_heif.__version__)"
+          pdftoppm -v 2>&1 | head -1
+          ffmpeg -version | head -1
+      - name: Run the test suite
+        run: python -m pytest tests -q
 
   rust-progress-linux:
     runs-on: ubuntu-latest
