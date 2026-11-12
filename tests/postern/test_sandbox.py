@@ -80,12 +80,25 @@ def test_every_linux_job_runs_the_checked_in_bubblewrap_profile(tmp_path, monkey
     assert ('--proc', ('/proc',)) in pairs and ('--dev', ('/dev',)) in pairs and ('--chdir', (str(output),)) in pairs
 
 
-def test_a_bubblewrap_profile_naming_an_unknown_parameter_is_refused(tmp_path, monkeypatch):
+# Value: protects=a derive.bwrap naming a parameter derive.py does not supply fails preflight's sandbox profile row and
+#   every job as a host fault; fails_when=profile_compiles or Deriver.run stops catching the profile's ValueError
+#   (install crashes, a selfie capture ends in a 500); why_new=only bubblewrap_args's own refusal was tested;
+#   seam=none (LINUX selects the Linux branch on macOS; /usr/bin/true stands in for bwrap, which never starts);
+#   no_claim=a brace token that is not a whole {NAME}, or the row's exact wording
+def test_a_bubblewrap_profile_naming_an_unknown_parameter_is_refused(config, tmp_path, monkeypatch):
     broken = tmp_path / 'derive.bwrap'
     broken.write_text(PROFILE.read_text() + '\n--ro-bind {HOME} {HOME}\n')
     monkeypatch.setattr(derive, 'PROFILE', broken)
     with pytest.raises(ValueError, match='unknown parameter'):
         derive.bubblewrap_args(tmp_path / 'upload.pdf', tmp_path / 'job')
+    monkeypatch.setattr(derive, 'LINUX', True)
+    monkeypatch.setattr(derive, 'BWRAP', '/usr/bin/true')
+    compiles, detail = serve.profile_compiles()
+    assert not compiles and 'unknown parameter {HOME}' in detail
+    config.validate()
+    with pytest.raises(derive.DeriveFault, match='could not run') as caught:
+        derive.Deriver(config).run(FIXTURES / 'photo.jpg', config.data_dir / 'derived' / 'unknown', 'photo')
+    assert isinstance(caught.value.__cause__, ValueError)
 
 
 @BUBBLEWRAP
@@ -98,8 +111,8 @@ def test_the_job_command_is_bwrap_then_the_converter(tmp_path):
     assert command[-1] == str(derive.media_dir()) == str(Path(shutil.which('ffmpeg')).parent)
 
 
-# Value: protects=a converter running attacker-controlled parser code cannot read the host's secrets, store files
-#   outside its job, reach the network or make itself a new user namespace; fails_when=a mount, namespace or
+# Value: protects=a converter running attacker-controlled parser code cannot read secrets, write outside its job,
+#   reach the network or make a new user namespace; fails_when=a mount, namespace or
 #   remount in derive.bwrap is dropped; why_new=Linux had no sandbox; seam=none
 @BUBBLEWRAP
 def test_the_bubblewrap_profile_applies_and_denies_secrets_writes_network_and_namespaces(tmp_path):
@@ -144,6 +157,32 @@ def test_a_bubblewrap_that_cannot_build_the_sandbox_is_a_host_fault(config, tmp_
         derive.Deriver(config).run(FIXTURES / 'photo.jpg', config.data_dir / 'derived' / 'broken', 'photo')
 
 
+# Value: protects=on a Linux host without /usr/bin/bwrap every job is a host fault naming bubblewrap, before any upload
+#   is parsed; fails_when=the bwrap check is dropped (Popen's FileNotFoundError escapes Deriver.run) or raises a plain
+#   DeriveError; why_new=CI always installs bubblewrap; seam=none (LINUX selects the Linux branch on macOS);
+#   no_claim=a bwrap that is present but cannot build the sandbox (the test above)
+def test_a_linux_host_without_bubblewrap_is_a_host_fault(config, tmp_path, monkeypatch):
+    monkeypatch.setattr(derive, 'LINUX', True)
+    monkeypatch.setattr(derive, 'BWRAP', str(tmp_path / 'missing' / 'bwrap'))
+    config.validate()
+    with pytest.raises(derive.DeriveFault, match='requires bubblewrap'):
+        derive.Deriver(config).run(FIXTURES / 'photo.jpg', config.data_dir / 'derived' / 'no-bwrap', 'photo')
+
+
+# Value: protects=an operator on a Linux host without bubblewrap gets the preflight table, with its bubblewrap and
+#   sandbox profile rows failed, not a traceback; fails_when=profile_compiles lets the missing bwrap's FileNotFoundError
+#   escape preflight; why_new=the bubblewrap row was tested alone, with subprocess.run mocked; seam=none;
+#   no_claim=the sandbox profile row's wording or the other rows
+def test_preflight_on_a_linux_host_without_bubblewrap_reports_it_instead_of_crashing(tmp_path, monkeypatch):
+    missing = str(tmp_path / 'missing' / 'bwrap')
+    monkeypatch.setattr(derive, 'LINUX', True)
+    monkeypatch.setattr(derive, 'PROFILE', PROFILE)
+    monkeypatch.setattr(derive, 'BWRAP', missing)
+    checks = {name: (ok, detail) for name, ok, detail in serve.preflight(write_config(tmp_path))}
+    assert checks['bubblewrap'] == (False, f'{missing} is missing — install bubblewrap; the converter cannot run')
+    assert checks['sandbox profile'][0] is False
+
+
 @pytest.mark.parametrize('linux, returncode, stderr, expected', [
     (True, 0, b'', 0),
     (True, 1, b'Traceback (most recent call last):', 1),
@@ -174,15 +213,18 @@ def test_a_job_killed_by_a_signal_counts_against_the_upload(config, tmp_path, mo
 
 
 # Value: protects=the memory bound covers the whole job, including the tools a converter starts, and stops all of
-#   them; fails_when=only the first process is measured (bwrap moves the job to a new session, so its process group
-#   is no longer the job) or a grandchild survives the kill; why_new=no test covered the memory bound; seam=none
+#   them; fails_when=only the first process is measured (bwrap gives the job a new session), a grandchild survives
+#   the kill, or /proc stat is split on whitespace before the name; why_new=no test covered the memory bound;
+#   seam=none; no_claim=a process that exits while /proc is read
 def test_a_job_over_the_memory_limit_is_stopped_with_its_whole_process_tree(config, tmp_path, monkeypatch):
     token = f'postern-greedy-{os.getpid()}'
     monkeypatch.setattr(derive, 'CHILD', child(tmp_path, f'''
         import subprocess, sys, time
-        # Like pdftoppm or ffmpeg, a process the child starts holds the memory.
-        subprocess.Popen([sys.executable, '-I', '-c', 'import time; block = bytearray(256 << 20); '
-                          'block[::4096] = bytes(len(block) // 4096); time.sleep(60)  # {token}'])
+        # Like pdftoppm or ffmpeg, a process the child starts holds the memory. On Linux it renames itself with spaces
+        # and a ")", which a process name ("tmux: server") may hold: the bound parses the name in /proc/<pid>/stat.
+        subprocess.Popen([sys.executable, '-I', '-c', 'import contextlib, time\\n'
+                          'with contextlib.suppress(OSError), open("/proc/self/comm", "w") as name: name.write("greedy) 1 (2 3")\\n'
+                          'block = bytearray(256 << 20); block[::4096] = bytes(len(block) // 4096); time.sleep(60)  # {token}'])
         time.sleep(60)
     '''))
     config.derive_memory_limit = 128 * 1024 * 1024
@@ -190,6 +232,8 @@ def test_a_job_over_the_memory_limit_is_stopped_with_its_whole_process_tree(conf
     started = time.monotonic()
     with pytest.raises(derive.DeriveError, match='memory limit'):
         derive.Deriver(config).run(FIXTURES / 'photo.jpg', config.data_dir / 'derived' / 'greedy', 'photo')
+    # gstack-timing-ok: an outer ceiling far above the 0.5 s poll; the child sleeps 60 s and derive_timeout is 90 s,
+    # so only a bound that never fires reaches it ("memory limit" above already names which limit stopped the job).
     assert time.monotonic() - started < 30
 
     def survivors():
@@ -231,15 +275,40 @@ def test_preflight_requires_a_bubblewrap_that_knows_disable_userns(monkeypatch, 
     assert serve.bubblewrap_version() == (ok, detail)
 
 
-# Value: protects=an operator on Ubuntu 23.10+ is told which file lifts the user-namespace restriction that stops
-#   every conversion; fails_when=the preflight reports only bwrap's own mount error; why_new=the restriction
-#   arrived with Ubuntu 23.10; seam=userns_restricted (CI may or may not run with the restriction)
-@BUBBLEWRAP
-def test_a_sandbox_stopped_by_the_ubuntu_namespace_restriction_names_the_apparmor_rule(tmp_path, monkeypatch):
-    broken = tmp_path / 'derive.bwrap'
-    broken.write_text(PROFILE.read_text().replace('--remount-ro /\n', '--ro-bind /postern-missing /postern-missing\n--remount-ro /\n'))
-    monkeypatch.setattr(derive, 'PROFILE', broken)
-    monkeypatch.setattr(serve, 'userns_restricted', lambda: True)
+# Value: protects=an operator on Ubuntu 23.10+ is told which file lifts the user-namespace restriction when that is
+#   what stops the sandbox, and only then; fails_when=the hint is missing for bwrap's namespace refusal, or shown for a
+#   missing mount or on a host with no restriction (the sysctl stays 1 after the rule loads); why_new=the restriction
+#   arrived with Ubuntu 23.10; seam=userns_restricted; no_claim=userns_restricted's reading of the real sysctl, or the
+#   exact wording each bwrap version prints (CI's Ubuntu 24.04 run is the live check)
+@pytest.mark.parametrize('restricted, message, hinted', [
+    (True, 'bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted', True),
+    (True, 'bwrap: setting up uid map: Permission denied', True),
+    (True, "bwrap: Can't find source path /postern-missing: No such file or directory", False),
+    (False, 'bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted', False),
+])
+def test_the_apparmor_hint_names_the_rule_only_when_the_namespace_is_refused(monkeypatch, restricted, message, hinted):
+    monkeypatch.setattr(derive, 'LINUX', True)
+    monkeypatch.setattr(derive, 'PROFILE', PROFILE)
+    monkeypatch.setattr(serve, 'userns_restricted', lambda: restricted)
+    monkeypatch.setattr(serve.subprocess, 'run', lambda *args, **kwargs: subprocess.CompletedProcess(args, 1, '', message))
     compiles, detail = serve.profile_compiles()
-    assert not compiles and 'postern-missing' in detail
-    assert 'postern-bwrap.apparmor' in detail and (derive.ROOT / 'config' / 'sandbox' / 'postern-bwrap.apparmor').is_file()
+    assert not compiles and detail.startswith(message)
+    assert ('postern-bwrap.apparmor' in detail) is hinted
+    assert (derive.ROOT / 'config' / 'sandbox' / 'postern-bwrap.apparmor').is_file()
+
+
+# Value: protects=a Linux host whose Poppler or FFmpeg the job cannot reach (Linuxbrew, snap, /opt) fails the preflight
+#   instead of failing every document and video as a bad upload; fails_when=the preflight runs only /usr/bin/true in
+#   the sandbox; why_new=the rows above only check `which`; seam=none; no_claim=FFmpeg from a path the job cannot reach
+#   (the same loop; Poppler stands in)
+@BUBBLEWRAP
+def test_preflight_fails_a_conversion_tool_the_sandbox_cannot_reach(tmp_path, monkeypatch):
+    outside = tmp_path / 'linuxbrew' / 'bin'
+    outside.mkdir(parents=True)
+    (outside / 'pdfinfo').symlink_to(shutil.which('pdfinfo'))
+    monkeypatch.setattr(derive, 'poppler_dir', lambda: outside)
+    compiles, detail = serve.profile_compiles()
+    assert not compiles and detail.startswith(f'{outside / "pdfinfo"} cannot run inside the sandbox')
+    monkeypatch.undo()
+    compiles, detail = serve.profile_compiles()
+    assert compiles and detail.endswith('pdfinfo and ffprobe run inside it')

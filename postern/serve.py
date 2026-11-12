@@ -54,16 +54,34 @@ def profile_compiles():
         scratch = Path(scratch).resolve()
         source = scratch / 'probe.bin'
         source.write_bytes(b'')
-        try:
-            command = derive.sandbox_command(source, scratch, ['/usr/bin/true'])
-        except (OSError, ValueError) as error:
-            return False, f'{derive.PROFILE} cannot be applied: {error}'
-        result = subprocess.run(command, capture_output=True, text=True)
+        # The job mounts only /usr on Linux: Poppler or FFmpeg from Linuxbrew, snap or /opt passes `which`
+        # but fails every document and video inside the sandbox, so run each tool where the job will.
+        programs = [['/usr/bin/true']] + ([[str(derive.poppler_dir() / 'pdfinfo'), '-v'],
+                                           [str(derive.media_dir() / 'ffprobe'), '-version']] if derive.LINUX else [])
+        for program in programs:
+            try:
+                command = derive.sandbox_command(source, scratch, program)
+                # A host without the sandbox program gets this row, not a traceback out of install.
+                result = subprocess.run(command, capture_output=True, text=True)
+            except (OSError, ValueError) as error:
+                return False, f'{derive.PROFILE} cannot be applied: {error}'
+            if result.returncode:
+                break
     detail = (result.stderr or result.stdout).strip()
-    if result.returncode and derive.LINUX and userns_restricted():
+    if result.returncode == 0 and derive.LINUX:
+        return True, f'{derive.PROFILE} compiles and applies; pdfinfo and ffprobe run inside it'
+    if result.returncode and program[0] != '/usr/bin/true':
+        return False, f'{program[0]} cannot run inside the sandbox: {detail.splitlines()[0] if detail else "no output"}'
+    if result.returncode and derive.LINUX and userns_restricted() and namespace_refused(detail):
         detail += ('; this host restricts unprivileged user namespaces, so bubblewrap needs the AppArmor rule '
                    f'{derive.PROFILE.with_name("postern-bwrap.apparmor")} (see {derive.PROFILE.with_name("README.md")})')
     return result.returncode == 0, detail or f'{derive.PROFILE} compiles and applies'
+
+
+def namespace_refused(detail):
+    """bwrap's own refusal to set up its namespaces, which is what the AppArmor rule lifts, as opposed to a
+    missing mount source or an old bwrap: the restriction's sysctl stays 1 after the rule is loaded."""
+    return any(sign in detail for sign in ('Permission denied', 'Operation not permitted', 'uid map', 'namespace'))
 
 
 def userns_restricted():
