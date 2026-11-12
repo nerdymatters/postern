@@ -21,8 +21,9 @@ pushing and tell the maintainers through [private reporting](SECURITY.md).
 
 ## Development and checks
 
-Follow the [README](README.md) for setup. The converter uses macOS sandboxing;
-its complete test suite must run on a supported Mac with the documented native
+Follow the [README](README.md) for setup. The converter runs under the macOS
+Seatbelt sandbox, or bubblewrap on Linux, where the Seatbelt tests skip; its
+complete test suite must run on a supported Mac with the documented native
 tools. Use the project's virtual environment and Bun, with Node 24 on `PATH` for
 frontend tests. The [web commands](dashboard/web/README.md#commands) include an
 Apple Silicon fallback when Node is not on `PATH`.
