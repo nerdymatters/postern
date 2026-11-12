@@ -16,7 +16,7 @@ def revoke(m,actor='a',target='mb',key=None,hash='a'*64):
 
 def test_schema_replay_and_checksum(db):
     checksum=apply_schema(db)
-    assert db.scalar('SELECT count(*) FROM postern.schema_migrations;')=='6'
+    assert db.scalar('SELECT count(*) FROM postern.schema_migrations;')=='8'
     db.execute("UPDATE postern.schema_migrations SET sha256='changed';")
     try:
         with pytest.raises(MigrationError) as e: apply_schema(db)
@@ -176,7 +176,7 @@ def test_upgrade_from_version_one_preserves_data(db):
     target.execute('BEGIN;'+source.read_text()+f"INSERT INTO postern.schema_migrations(version,sha256) VALUES(1,'{digest}'); INSERT INTO postern.principals(authority,account_id) VALUES('before-upgrade','preserved'); COMMIT;")
     generation=target.scalar('SELECT generation FROM postern.authority;')
     apply_schema(target)
-    assert target.scalar('SELECT count(*) FROM postern.schema_migrations;')=='6'
+    assert target.scalar('SELECT count(*) FROM postern.schema_migrations;')=='8'
     assert target.scalar('SELECT account_id FROM postern.principals;')=='preserved'
     assert target.scalar('SELECT generation FROM postern.authority;')==generation
     assert target.scalar('SELECT sha256 FROM postern.schema_migrations WHERE version=1;')==digest

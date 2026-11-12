@@ -17,7 +17,7 @@ export interface OwnershipProposal { operation_id: string; recipient_membership_
 export interface Catalog { resources: ResourceMetadata[]; next_cursor: string | null }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export const nativeSpacesEnabled = () => Boolean(import.meta.env.VITE_POSTERN_SPACES_API)
-export const nativeSpaceId = (path: string) => { const id = /^\/s\/([^/]+)(?:\/(?:members|leave|ownership))?\/?$/.exec(path)?.[1]; return id && UUID.test(id) ? id : null }
+export const nativeSpaceId = (path: string) => { const id = /^\/s\/([^/]+)(?:\/(?:members|leave|ownership|sharing))?\/?$/.exec(path)?.[1]; return id && UUID.test(id) ? id : null }
 export const onboardingDestination = (path: string) => path === '/spaces/new' || path === '/invitations/join' || Boolean(nativeSpaceId(path))
 
 function encode(prefix: string, value: unknown) {

@@ -16,8 +16,9 @@ import xml.etree.ElementTree as ET
 def run(output):
     output=output.resolve(); output.mkdir(parents=True,mode=0o700,exist_ok=False)
     root=Path(__file__).resolve().parents[1]
-    inputs=['postern/pg.py','postern/migration_bundle.py','postern/sql/001_spaces.sql','postern/sql/002_service_sessions.sql','postern/sql/003_space_onboarding.sql','postern/sql/004_invitation_preview.sql','postern/sql/005_membership_management.sql','postern/sql/006_ownership_transfer.sql','postern/spaces.py','postern/app.py',
+    inputs=['postern/pg.py','postern/migration_bundle.py','postern/spaces.py','postern/app.py',
             'scripts/local_postgres.py','scripts/migration_rehearsal.py']
+    inputs += [str(p.relative_to(root)) for p in sorted((root/'postern/sql').glob('*.sql'))]
     inputs += [str(p.relative_to(root)) for p in sorted((root/'tests/storage').glob('*.py'))]
     report={'scope':'synthetic core-schema migration, not hosted cutover or PITR',
             'inputs':{p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in inputs}}

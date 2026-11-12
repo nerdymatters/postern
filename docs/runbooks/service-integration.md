@@ -10,6 +10,8 @@ and deletion to the private account schema; it connects space sessions, catalog
 listing/search, resource metadata and membership revocation to the core schema.
 [Onboarding](space-onboarding.md) now adds operator-approved creation and
 account-bound invitations, verified in isolation.
+[Groups and sharing](resource-sharing.md) adds audience management, explicit
+resource grants, effective-access inspection and audited stale-grant cleanup.
 It does **not** expose document/video bytes, imported legacy content, object keys,
 training, exports or background processing through the new API. Those require the
 legacy agreement/enrollment/training gates and private object adapter first.
@@ -75,7 +77,7 @@ Terms validation and public profile disclosure reuse the existing account helper
 The production Worker still constructs its D1 store. The synthetic verifier is
 injected only by a separate rehearsal entrypoint.
 
-Apply core migrations in order (currently `001`–`006`), then private account
+Apply core migrations in order (currently `001`–`007`), then private account
 migrations in order (currently `001`–`006`), using the migration
 operator. Core `apply_schema` verifies each applied version's SHA-256, holds one
 installer lock/transaction and rejects unknown versions. Version 1 is unchanged.
@@ -132,6 +134,72 @@ this round does not establish a deadline for streaming bytes already in flight.
 Restoring the authority with a new generation invalidates old account/resource
 sessions and assertions, including when old rows are present in a backup.
 
+## Catalog listing at scale
+
+**October 31, 2026: verified locally; not deployed.** Core migration
+`007_catalog_listing.sql` keeps catalog pages well inside the five-second
+deadline when a member can see little of a large space. It changes how pages
+find rows, not who may see them:
+
+- Owners and admins page every resource in the space by ID, as before.
+- Members read only their own grant paths: grants to all members, direct grants
+  and grants to each of their audiences. Each path is read in resource order and
+  stops after 51 visible resources. Resources granted only to other people are
+  never read.
+- `can_resource` still decides every returned row. If it refuses a row the page
+  selected, or returns no decision, the request fails with the generic 503
+  rather than returning or silently skipping the row. Session checks,
+  revocation locks and the required audit row are unchanged.
+- Each call is planned with its own cursor and search terms. A new
+  `grant_resource` index serves the per-row `can_resource` check.
+
+Reproduce on an owned, disposable cluster:
+
+```sh
+.venv/bin/python -m scripts.catalog_benchmark --output .context/catalog-benchmark/my-run --large 100000
+```
+
+The output directory must be new. The benchmark applies the real migrations and
+seeds 230,000 synthetic resources in 104 spaces. It then calls
+`postern.resource_catalog` through a restricted resource login with the
+service's five-second statement and three-second lock deadlines. Each page is
+compared with an independent query, and authorization calls and grant rows read
+are counted. A run takes about 25 seconds after `007`, and about four minutes
+before it, because those calls time out.
+
+Results from Oct 31, 2026: PostgreSQL 17.11 on the shared office Mac (macOS
+arm64, load average 7–12). Each figure is the median of five calls after one
+warm-up, and includes committing the call's audit row.
+
+| Space and caller | Before `007` | After `007` |
+| --- | ---: | ---: |
+| 10,000 resources, each granted to another member; caller has none | timed out at 5 s | 5 ms |
+| Same space; caller has one direct grant | timed out | 3 ms |
+| Same space; caller's audience has 25 grants | timed out | 17 ms |
+| 100,000 resources granted to others; caller has none or one | timed out | 3 ms |
+| 10,000 resources shared with all members: first / last page | 28 / 50 ms | 27 / 28 ms |
+| Same space, title search with 10 matches | 13 ms | 15 ms |
+| 10,000 all-member grants that expired or point at drafts | timed out | 22 ms |
+| Admin, first / last page of 10,000 resources | 34 / 25 ms | 27 / 24 ms |
+| Admin, last page of 100,000 resources | 21 ms | 21 ms |
+| 100 spaces of 1,000 resources; caller has none | 542 ms | 3 ms |
+
+For a member who sees nothing among 10,000 resources, a page previously made
+10,000 `can_resource` calls and read 20,050 grant rows; it now makes neither.
+`tests/storage/test_catalog.py` compares every page with `can_resource` for 13
+callers and six searches in a randomized space. It also checks that authorization
+calls and grant reads stay constant when resources granted to others quadruple.
+
+These figures come from one local client, without network, object transfer or
+concurrent writes. They are not quotas or a hosted capacity claim. A page's work
+grows with the grants that reach the caller, plus up to 51 `can_resource` checks
+(about 20 ms for a full page). Grants that reach a member but cannot show anything
+are still read until an administrator runs [stale-grant cleanup](resource-sharing.md#retire-stale-grants).
+Cleanup now retires them in audited batches without changing the visible catalog. An admin's
+selective title search can read many rows in a large space. `007` builds its index
+inside the migration transaction, so grant changes wait until it commits. Once
+spaces hold data, apply it in a quiet window.
+
 ## Verification and remaining gates
 
 The tests cover native login privileges; valid and forged assertions; replay;
@@ -143,7 +211,8 @@ conflicts, logout, suspension and atomic deletion. The original migration,
 quarantine/import/restore checks remain part of the public suite.
 
 [Browser onboarding](space-onboarding.md), [membership controls](membership-management.md)
-and [ownership transfer](ownership-transfer.md) are now verified in isolation.
+and [ownership transfer](ownership-transfer.md), together with
+[groups and explicit grants](resource-sharing.md), are now verified in isolation.
 This is an integration rehearsal, not a production or capacity claim. Remaining
 work includes full legacy resource and
 private object adapters, durable outbox/cleanup scheduling, operational metrics,

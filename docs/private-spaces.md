@@ -8,7 +8,8 @@ does not enable multi-space hosting or expand anyone's existing access.
 A **Postern** is a private space with its own membership, resources and policies.
 An account may belong to several Posterns with different roles in each. An
 account with no memberships has a usable profile and an empty **My Posterns**.
-See the [design rationale and implementation order](designs/private-spaces.md),
+See [audience and grant management](runbooks/resource-sharing.md),
+the [design rationale and implementation order](designs/private-spaces.md),
 [current architecture](architecture.md) and [roadmap](../ROADMAP.md#m2-private-spaces-and-resource-catalog).
 
 ## Identity and records
