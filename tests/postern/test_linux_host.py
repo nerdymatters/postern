@@ -100,6 +100,19 @@ def test_reinstalling_or_updating_the_same_label_is_not_a_second_installation(li
     assert (stage / 'install.sh').read_text().count('cmp -s') == 3  # each reviewed unit must be unchanged at install
 
 
+def test_preflight_says_why_caddy_rejects_the_proxy(tmp_path, monkeypatch):
+    # Debian 13's own Caddy (2.6) has no PROXY protocol listener; the row must say so, not just "does not validate".
+    old = tmp_path / 'caddy'
+    old.write_text("#!/bin/sh\necho '{\"level\":\"info\"}' >&2\n"
+                   "echo 'Error: module not registered: caddy.listeners.proxy_protocol' >&2\nexit 1\n")
+    old.chmod(0o755)
+    name, ok, detail = serve.front_proxy(str(old))
+    assert name == 'front proxy' and not ok
+    assert 'Caddy 2.8 or later' in detail and detail.endswith('caddy.listeners.proxy_protocol')
+    monkeypatch.setattr(serve.derive, 'LINUX', True)
+    assert "Caddy project's Debian repository" in serve.front_proxy(None)[2]
+
+
 def test_linux_busy_port_requires_selected_active_unit(linux, tmp_path, monkeypatch):
     monkeypatch.setattr(serve, 'listening', lambda port: True)
     monkeypatch.setattr(systemd, 'systemctl', lambda *args: result('inactive', 3))
