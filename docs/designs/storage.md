@@ -309,8 +309,9 @@ the remaining integration and deployment gates:
 
 - The [native account/resource adapters](../runbooks/service-integration.md) now
   verify lifecycle transactions, pooled metadata requests and disclosure audit
-  in isolation. [Onboarding](../runbooks/space-onboarding.md) and
-  [ownership transfer](../runbooks/ownership-transfer.md) are also verified in isolation.
+  in isolation. [Onboarding](../runbooks/space-onboarding.md),
+  [ownership transfer](../runbooks/ownership-transfer.md) and
+  [resource sharing](../runbooks/resource-sharing.md) are also verified in isolation.
   Complete legacy content/object adapters, outbox/cleanup scheduling and hosted connection-pool checks. The new
   migration uses opaque identities; the integer-ID experiment stays separate.
 - Catalog pages for a member who sees little of a space holding 10,000 or

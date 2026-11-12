@@ -171,8 +171,9 @@ Provision trusted cluster roles first; do not run arbitrary untrusted SQL dumps.
 
 Before migration is ready for real data:
 
-- The [native adapters](service-integration.md), [onboarding](space-onboarding.md)
-  and [ownership transfer](ownership-transfer.md) are verified in isolation.
+- The [native adapters](service-integration.md), [onboarding](space-onboarding.md),
+  [ownership transfer](ownership-transfer.md) and [resource sharing](resource-sharing.md)
+  are verified in isolation.
   Complete legacy agreement/enrollment/training and content integration, outbox
   processing and hosted service checks before cutover.
 - Select provider/region/budget, recovery objectives and retention; require
