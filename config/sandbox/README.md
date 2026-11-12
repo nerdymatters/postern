@@ -101,9 +101,10 @@ venv's `bin/python` symlink becomes a plain file inside the sandbox.
 - `--proc /proc`, `--dev /dev` — a process table of the job's own processes, and the null, zero, random and
   terminal devices only.
 - The input, converter, model, interpreter, venv marker and runtime — read-only, exactly as above. The venv
-  marker is optional: an interpreter outside a venv (such as CI's) has none, and bwrap refuses a missing path.
-  Poppler and FFmpeg must come from the distribution's packages under `/usr`; a copy in `/usr/local/bin`
-  passes the preflight's `which` but is not mounted inside the job.
+  marker is optional: an interpreter outside a venv has none, and bwrap refuses a missing path.
+  Poppler and FFmpeg must live under `/usr` (the distribution's packages, or `/usr/local`); copies from Linuxbrew,
+  snap or `/opt` pass the preflight's `which` but are not mounted inside the job, so the preflight also runs
+  `pdfinfo -v` and `ffprobe -version` inside the sandbox and fails when either cannot start there.
 - `--bind {OUTPUT}` — the only writable mount. There is no `/tmp` at all; `TMPDIR` is the job directory.
 
 The home directory, `~/.config/postern/`, the data directory, the staging directory as a whole and the
@@ -118,5 +119,8 @@ host faults, never billed to the upload. A converter that has been taken over co
 but it would only turn its own failure into a retryable one, still within the daily server-fault budget.
 
 **Ubuntu 23.10 and later** let only programs that AppArmor approves create an unprivileged user namespace.
-Install `postern-bwrap.apparmor` as its first lines describe; the preflight says so when the restriction is
-what stops the sandbox. Debian does not restrict user namespaces and needs no rule.
+Install `postern-bwrap.apparmor` as its first lines describe; the preflight says so when bwrap's namespace setup is
+what fails. Debian does not restrict user namespaces and needs no rule. The rule applies to every user of the host:
+anyone may then run `/usr/bin/bwrap` with a user namespace, as on Debian, so it restores the pre-23.10 behavior for
+bwrap rather than for Postern alone. Ubuntu's stricter `bwrap-userns-restrict` profile, which also removes
+capabilities from what bwrap runs, has not been tested with `derive.bwrap`.
