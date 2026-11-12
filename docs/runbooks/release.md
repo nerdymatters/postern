@@ -6,6 +6,18 @@ Build a source-and-web pilot bundle from a clean, reviewed commit. Keep `VERSION
 .venv/bin/python scripts/package_release.py --output .context/release
 ```
 
+To include an approved macOS native wheel, name that artifact explicitly (use
+the exact filename for the host's architecture and Python ABI):
+
+```sh
+.venv/bin/python scripts/package_release.py --platform macos --output .context/release \
+  --native-wheel /path/to/postern_progress_native-0.2.0-cp313-cp313-macosx_11_0_arm64.whl
+```
+
+The wheel is bundled under `wheels/` and recorded in RELEASE.json. Packaging
+checks its name/platform, not whether its code runs on the target host; install
+and validate it there before selecting Rust.
+
 That builds the macOS bundle. For a Linux host add `--platform linux`; the [Linux runbook](linux.md#durability-and-releases) describes that bundle and how to include an approved native wheel.
 
 Tag the exact merged commit and upload its archive and `SHA256SUMS` as a pilot prerelease. Inspect the archive for credentials, private training, machine paths and installation artifacts. Keep root license/notice files with the bundle. Do not distribute a Python wheel as a complete host installation: operational files live beside the Python package.

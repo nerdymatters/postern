@@ -1,12 +1,20 @@
 # Architecture
 
-The React web app calls a FastAPI service on one macOS host. The API binds to loopback; an operator-managed HTTPS ingress and local Caddy proxy expose it. Exact browser origins are configured explicitly. The server's trust in proxy-derived addresses must match the documented local proxy boundary.
+The React web app calls a FastAPI service on one macOS or Linux host. The API binds to loopback; an operator-managed HTTPS ingress and local Caddy proxy expose it. Exact browser origins are configured explicitly. The server's trust in proxy-derived addresses must match the documented local proxy boundary.
 
 Google Identity supplies sign-in tokens. A separately shared read-only roster Sheet supplies membership and roles. Google Drive holds app-owned originals, portraits and sealed audit batches; an app-owned Google Sheet holds the confirmed catalog. OAuth access and roster credentials belong only on the API host.
 
 SQLite owns local state and the durable audit queue. A single application process owns background jobs, in-memory admission controls and the writer. Running additional Uvicorn workers is not a supported scaling shortcut.
 
-Documents and images are converted by a separate child process under the checked-in macOS sandbox profile and resource limits. Video preparation uses supported H.264/AAC inputs; it is not a general transcoding service. The selfie detector runs locally inside that same boundary.
+Documents and images are converted by a separate child process under the checked-in Seatbelt profile on macOS or bubblewrap profile on Linux, with resource limits. Video preparation uses supported H.264/AAC inputs; it is not a general transcoding service. The selfie detector runs locally inside that same boundary.
+
+On Linux, systemd supervises the API, watchdog and proxy as separate system
+services running under the service account. The installer renders units as that
+account and prints a root command that checks reviewed digests before installing
+anything. This pins the staged bytes, but root still trusts the renderer and
+the digest the operator approves: the owner-writable release tree is not a
+root-owned code trust boundary. A root-owned deployment tree would be a separate
+hardening step. See the [Linux operations guide](runbooks/linux.md).
 
 Reader responses require a current authorized session, applicable agreements, optional enrollment and durable audit admission. Publication is visible only after cloud confirmation. Recovery hides content until an operator verifies the restored catalog. A failed cloud or permission refresh never enables demo mode.
 

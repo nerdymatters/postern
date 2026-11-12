@@ -111,8 +111,13 @@ Run preflight as the owner. Render install again with the same label. The old
 units differ in executable/working-directory paths: inspect the displayed diff,
 then re-run with `--force` only for those reviewed changes. Vendor units,
 symlinks/masks and drop-ins are refused even with `--force`; reconcile them
-explicitly instead of silently shadowing their settings. Run the newly printed
-root command, then status, private health and a synthetic conversion.
+explicitly instead of silently shadowing their settings. A pending
+`NeedDaemonReload=yes` also stops installation: review the disk changes, reload
+the manager deliberately, then render again. Install checks all unit search
+directories for `<unit>.d/`, including drop-ins the manager has not loaded yet;
+the printed root script checks for those directories again before any install.
+Run the newly printed root command, then status, private health and a synthetic
+conversion.
 
 For a restart without changing units, the operator runs:
 
@@ -143,19 +148,32 @@ Systemd restarts it even after a clean exit. The watchdog escalates a stuck
 process after 120 seconds; systemd's cgroup cleanup also covers converter
 sessions. An operator's `systemctl stop` intentionally stays stopped.
 
+The installer sets `POSTERN_API_UNIT` in the **watchdog** unit to the API's
+full unit name, for example `org.nerdymatters.postern.service`. The watchdog
+reads this variable when it runs `systemctl show`; a custom label must name
+that same API unit, not the watchdog or proxy. Without the variable it uses
+the default API unit. An invalid name or any `LoadState` other than `loaded`
+is unknown, never evidence that the unit has no override. Alerts name that
+load state. Inspect the watchdog unit if the API label and the reported unit
+state disagree.
+
 Do not put `POSTERN_PROGRESS_BACKEND` in the unit, manager environment or a
 service environment file for a guarded rollout. Inspect `systemctl cat UNIT`
-and `systemctl show UNIT -p Environment -p EnvironmentFiles`; remove the
+and `systemctl show UNIT -p LoadState -p Environment -p EnvironmentFiles`; remove the
 backend override, run `sudo systemctl daemon-reload`, then restart. The API's
 startup record and the unit's merged Environment detect overrides. An
 environment file on the API unit makes the guard alert-only while Rust is
 selected or serving, because `systemctl show` cannot tell what it sets and the
 next start could take Rust whatever the selection says. This is reported in the
 alert; restore inspectable configuration before relying on automatic fallback.
-A lookup that fails now and then keeps the watchdog's last answer; until the
-first lookup answers, the guard is alert-only too. On a host where nothing
-selects or serves Rust, neither case raises a Rust alert. The watchdog never
-edits root-owned unit configuration.
+A brief failed lookup keeps the watchdog's last answer. After ten consecutive
+failures (about five minutes at the default 30-second interval), it expires
+that answer and alerts once that the API unit environment cannot be read.
+The guard remains alert-only until a lookup answers again, which also resets
+the failure count and allows a future outage to alert. Before the first
+successful lookup, it is alert-only too. On a Python-only host this produces
+no Rust breach alert, though ten lookup failures still report the observation
+failure. The watchdog never edits root-owned unit configuration.
 
 Prove automatic fallback using synthetic data on a disposable Linux host:
 select an installed Rust wheel, induce the documented guard threshold, then
@@ -181,6 +199,51 @@ recovery, not code rollback. A macOS-only release is not a Linux rollback target
 disable/stop and remove that unit family, then reload systemd. Data, config,
 other labels and any manually managed drop-ins remain untouched. Review any
 retained drop-ins before reinstalling.
+
+## Optional status heartbeat
+
+Follow the [Linux heartbeat instructions](status.md#linux-heartbeat) to publish
+only the API, proxy, watchdog and tunnel states to the existing status Worker.
+Use explicit `systemd/UNIT.service` targets and a private mode-0600 heartbeat
+config; launchd targets and defaults are not Linux unit names. The sender is
+copied outside the release directory and scheduled with a separate systemd
+timer. It needs no Worker change and does not replace the watchdog's alerts.
+Verify the timer and public status freshness after a real reboot as well.
+
+## Linux recovery
+
+Record the configured `data_dir` (for example `/srv/postern/data`); there is no
+separate implicit Linux data location. It holds `postern.sqlite3`, its WAL and
+SHM companions while running, private training/branding and media state.
+Use a SQLite backup operation for a live snapshot, never copy only the database
+file while its writer is running. Keep independent backups of `training/` and
+`branding.json`; cloud activity exports cannot reconstruct these assets.
+
+Back up the service account's private config directory, normally
+`/home/postern/.config/postern/`, and every external credentials path it names.
+Retain the backend selection, watchdog/heartbeat settings, exact unit names
+and the reviewed `/etc/systemd/system/<label>{,.watchdog,.proxy}.service`
+files. Record any manual drop-ins, ingress units and heartbeat service/timer
+separately. The installer stage under `~/.local/state/postern/` is not a backup
+of data or credentials, and journald is not an audit-history backup.
+
+For a disaster restore, use a spare empty directory outside the active data
+path, owned by the service account with mode 0700. Follow the
+[recovery rehearsal](recovery.md#restore-into-an-empty-directory) as that
+account using a retained Linux-capable release, the private config and the
+pinned converter packages. Restore private training and branding separately,
+read the recovery report and verify the catalog/history before clearing the
+recovery gate. Keep any incomplete-history flag truthful.
+
+Before promotion, stop the selected API, watchdog and proxy system units as
+administrator so no writer or fallback races the change. Retain the old data
+for investigation. Point a private config at the verified restored directory,
+run preflight as the owner, and follow the recovery runbook's promotion steps
+with the writer stopped. If the config path or release path changes, render
+and review new units using the same label family. Restart the services and
+verify private/local/public health, backend selection, a synthetic conversion
+and status freshness. Recovered sessions are not reused; readers sign in again.
+This is disaster recovery; ordinary code rollback keeps the current data.
 
 ## Durability and releases
 
