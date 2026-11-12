@@ -1,6 +1,6 @@
-"""Send only allowlisted launchd process states to Postern's cloud status page.
+"""Send only allowlisted service states to Postern's cloud status page.
 
-Run once per minute via launchd. No application credentials, data, logs, or PIDs
+Run once per minute via launchd or a systemd timer. No application credentials, data, logs, or PIDs
 leave this host. Credentials belong in a separate owner-only config file.
 """
 import argparse
@@ -22,6 +22,9 @@ AGENTS = {
 }
 
 
+SYSTEMD_TARGET = r'systemd/[A-Za-z0-9][A-Za-z0-9_.@-]{0,127}\.service'
+
+
 def load_settings(path, *, sending=True):
     """Private deployment settings; tokens are sent only to an explicit HTTPS endpoint."""
     info = path.stat()
@@ -32,7 +35,8 @@ def load_settings(path, *, sending=True):
         raise ValueError('Config must be an object')
     agents = settings.get('agents', AGENTS)
     if not isinstance(agents, dict) or set(agents) != set(AGENTS) or any(
-        not isinstance(target, str) or not re.fullmatch(r'(?:system|gui/\d+)/[A-Za-z0-9][A-Za-z0-9.-]{0,127}', target)
+        not isinstance(target, str) or not (re.fullmatch(r'(?:system|gui/\d+)/[A-Za-z0-9][A-Za-z0-9.-]{0,127}', target)
+                                           or re.fullmatch(SYSTEMD_TARGET, target))
         for target in agents.values()
     ):
         raise ValueError('Invalid launchd agent targets')
@@ -50,6 +54,8 @@ def load_settings(path, *, sending=True):
 
 
 def process_state(target, runner=subprocess.run):
+    if target.startswith('systemd/'):
+        return systemd_state(target, runner)
     try:
         result = runner(['/bin/launchctl', 'print', target], capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.TimeoutExpired):
@@ -61,6 +67,22 @@ def process_state(target, runner=subprocess.run):
     if not state:
         return 'unknown'
     return 'operational' if state.group(1) == 'running' else 'outage'
+
+
+def systemd_state(target, runner=subprocess.run):
+    if not re.fullmatch(SYSTEMD_TARGET, target):
+        return 'unknown'
+    try:
+        result = runner(['systemctl', '--system', 'is-active', target.split('/', 1)[1]],
+                        capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return 'unknown'
+    state = result.stdout.strip()
+    if result.returncode == 0 and state in ('active', 'reloading'):
+        return 'operational'
+    if result.returncode == 3 and state in ('inactive', 'failed', 'activating', 'deactivating', 'maintenance'):
+        return 'outage'
+    return 'unknown'  # A permission/manager failure or an unfamiliar response cannot prove an outage.
 
 
 def collect(targets=AGENTS):

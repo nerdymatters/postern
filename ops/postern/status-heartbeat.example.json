@@ -1,4 +1,5 @@
 {
+  "_comment": "These agents are macOS targets. On Linux replace all four values with systemd/UNIT.service (for example systemd/org.nerdymatters.postern.service and systemd/tailscaled.service); see docs/runbooks/status.md. No target names leave the host.",
   "url": "https://status.example.invalid/api/heartbeat",
   "token": "REPLACE_WITH_A_NEW_RANDOM_SECRET_AT_LEAST_32_CHARACTERS_LONG",
   "agents": {
