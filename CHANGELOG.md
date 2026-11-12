@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.28.1 — Check the staff list without signing in to Google every 30 seconds (2026-11-12)
+
+### Changed
+
+- The server checks the staff list in Google Sheets every 30 seconds, and each check used to sign in to Google from scratch. Each worker thread now keeps its Google sign-in until the credential file changes, so a check no longer repeats that exchange; that exchange was most of the server's idle CPU on the office Mac. Every call still opens a new connection to Google, and the file's 0600 permission is still checked every time.
+
+### Upgrade
+
+- Replacing a credential file takes effect on the next call, including a copy that keeps the file's size and time (`cp -p`). Revoking a credential in Google now stops it working when its current access token expires, at most an hour later. The database, the Python dependencies and the native wheel are unchanged, so a rollback to 0.28.0 needs no restore.
+
 ## 0.28.0 — Share a native Postern's resources with groups and members (2026-11-12)
 
 ### Added
