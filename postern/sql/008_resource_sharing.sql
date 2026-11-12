@@ -2,7 +2,10 @@
 -- space lock, revision, durable operation receipt, audit and outbox transaction.
 SET LOCAL ROLE postern_owner;
 ALTER TABLE postern.audiences ADD COLUMN state text NOT NULL DEFAULT 'active' CHECK(state IN ('active','archived'));
-CREATE INDEX grant_cleanup ON postern.grants(space_id,id) WHERE state='active';
+-- Stale-grant paths: each reason is found through its own index (see stale_grants).
+CREATE INDEX grant_expiry ON postern.grants(space_id,expires_at) WHERE state='active' AND expires_at IS NOT NULL;
+CREATE INDEX grant_no_discover ON postern.grants(space_id,id) WHERE state='active' AND NOT ('discover'=ANY(actions));
+CREATE INDEX resource_unpublished ON postern.resources(space_id,id) WHERE state<>'published';
 
 CREATE FUNCTION postern.grant_guard() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog AS $$
 BEGIN
@@ -24,6 +27,33 @@ CREATE FUNCTION postern.stale_grant_reason(g postern.grants) RETURNS text
  WHEN g.membership_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM postern.memberships m JOIN postern.principals p ON p.id=m.principal_id
    WHERE m.space_id=g.space_id AND m.id=g.membership_id AND m.state='active' AND p.state='active') THEN 'membership_ended'
  WHEN g.audience_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM postern.audiences a WHERE a.space_id=g.space_id AND a.id=g.audience_id AND a.state='active') THEN 'audience_archived' END
+$$;
+
+-- The first n stale active grants after after_id, in ID order. Each reason has its
+-- own indexed path, so the cost follows the stale grants (plus the space's ended
+-- memberships, archived groups and unpublished resources), not every active grant.
+-- Every stale grant is on at least one path, so the paths' first n cover the
+-- answer's first n; the shared predicate still decides each returned row.
+CREATE FUNCTION postern.stale_grants(s uuid,after_id uuid,n integer) RETURNS TABLE(id uuid,resource_id uuid,reason text)
+ LANGUAGE sql STABLE SET search_path=pg_catalog,postern AS $$
+ WITH candidates AS MATERIALIZED (SELECT DISTINCT u.id FROM (
+  (SELECT x.id FROM postern.grants x WHERE x.space_id=s AND x.state='active' AND x.expires_at<=statement_timestamp()
+    AND (after_id IS NULL OR x.id>after_id) ORDER BY x.id LIMIT n)
+  UNION ALL (SELECT x.id FROM postern.grants x WHERE x.space_id=s AND x.state='active' AND NOT ('discover'=ANY(x.actions))
+    AND (after_id IS NULL OR x.id>after_id) ORDER BY x.id LIMIT n)
+  -- Per ended recipient or unpublished resource, so a plan cannot walk every grant
+  -- in ID order hoping to meet n stale ones early (it meets none once cleanup ran).
+  UNION ALL (SELECT y.id FROM postern.resources r CROSS JOIN LATERAL (SELECT x.id FROM postern.grants x
+    WHERE x.space_id=s AND x.resource_id=r.id AND x.state='active' AND (after_id IS NULL OR x.id>after_id) ORDER BY x.id LIMIT n) y
+    WHERE r.space_id=s AND r.state<>'published' ORDER BY y.id LIMIT n)
+  UNION ALL (SELECT y.id FROM postern.memberships m JOIN postern.principals p ON p.id=m.principal_id CROSS JOIN LATERAL (SELECT x.id
+    FROM postern.grants x WHERE x.space_id=s AND x.membership_id=m.id AND x.state='active' AND (after_id IS NULL OR x.id>after_id) ORDER BY x.id LIMIT n) y
+    WHERE m.space_id=s AND (m.state<>'active' OR p.state<>'active') ORDER BY y.id LIMIT n)
+  UNION ALL (SELECT y.id FROM postern.audiences a CROSS JOIN LATERAL (SELECT x.id FROM postern.grants x
+    WHERE x.space_id=s AND x.audience_id=a.id AND x.state='active' AND (after_id IS NULL OR x.id>after_id) ORDER BY x.id LIMIT n) y
+    WHERE a.space_id=s AND a.state<>'active' ORDER BY y.id LIMIT n)) u)
+ SELECT g.id,g.resource_id,postern.stale_grant_reason(g) FROM candidates c JOIN postern.grants g ON g.space_id=s AND g.id=c.id
+ WHERE g.state='active' AND postern.stale_grant_reason(g) IS NOT NULL ORDER BY g.id LIMIT n
 $$;
 
 CREATE FUNCTION postern.resource_sharing(h text,s uuid,aud text,kind text,target uuid,after_id uuid,expected jsonb) RETURNS jsonb
@@ -53,10 +83,7 @@ BEGIN
    LEFT JOIN postern.memberships m ON m.space_id=s AND m.id=g.membership_id LEFT JOIN postern.principals p ON p.id=m.principal_id
    WHERE g.space_id=s AND g.resource_id=target AND g.state='active' AND (after_id IS NULL OR g.id>after_id) ORDER BY g.id LIMIT 51) x;
  ELSIF kind='cleanup' THEN
-  SELECT coalesce(jsonb_agg(x ORDER BY x.id),'[]') INTO items FROM (
-   SELECT g.id,g.resource_id,postern.stale_grant_reason(g) AS reason FROM postern.grants g
-   WHERE g.space_id=s AND g.state='active' AND postern.stale_grant_reason(g) IS NOT NULL
-   AND (after_id IS NULL OR g.id>after_id) ORDER BY g.id LIMIT 51) x;
+  SELECT coalesce(jsonb_agg(x ORDER BY x.id),'[]') INTO items FROM postern.stale_grants(s,after_id,51) x;
  ELSE RAISE EXCEPTION 'invalid sharing request' USING ERRCODE='PT422'; END IF;
  PERFORM postern.record_disclosure(s,'sharing.'||kind||'.listed',target);
  RETURN jsonb_build_object('context',ctx,'items',items);
@@ -130,17 +157,15 @@ BEGIN
  WHEN 'grant.cleanup' THEN
   -- Bound writes and audit payload. Repeated calls drain the queue; retries of
   -- the same operation return the same batch, even as more grants expire.
-  WITH candidates AS MATERIALIZED (
-   SELECT g.id,postern.stale_grant_reason(g) AS reason FROM postern.grants g
-   WHERE g.space_id=s AND g.state='active' AND postern.stale_grant_reason(g) IS NOT NULL ORDER BY g.id LIMIT 500
-  ), updated AS (
+  WITH candidates AS MATERIALIZED (SELECT x.id,x.reason FROM postern.stale_grants(s,NULL,500) x), updated AS (
    UPDATE postern.grants g SET state='revoked' FROM candidates c WHERE g.space_id=s AND g.id=c.id RETURNING g.id,c.reason
   ) SELECT count(*),coalesce(jsonb_agg(updated ORDER BY id),'[]') INTO n,retired FROM updated;
-  detail=jsonb_build_object('retired',retired);
+  moved=n; detail=jsonb_build_object('retired',retired);
  ELSE RAISE EXCEPTION 'invalid sharing request' USING ERRCODE='PT422';
  END CASE;
- -- Adding a current member or removing an absent one changes no access: keep the
- -- receipt for retries, but write no audit event and leave cursors valid.
+ -- Adding a current member, removing an absent one or a cleanup that finds nothing
+ -- changes no access: keep the receipt for retries, but write no audit event and
+ -- leave cursors valid.
  IF moved=0 THEN rev=(ctx->>'policy_revision')::bigint; ELSE rev=postern.onboarding_event(s,act,changed,detail); END IF;
  answer=jsonb_build_object('action',act,'target',changed,'revision',rev,'retired_count',n,'generation',ctx->>'generation');
  INSERT INTO postern.operations VALUES(s,postern.actor(),k,hash,answer);
@@ -166,7 +191,9 @@ BEGIN
  ) SELECT ARRAY(SELECT v FROM unnest(ARRAY['discover','view']) v WHERE v=ANY(item.supported_actions)
   AND (role_name IN ('owner','admin') OR EXISTS(SELECT 1 FROM matching WHERE v=ANY(matching.actions)))),
   (SELECT coalesce(jsonb_agg(x ORDER BY x.id),'[]') FROM (SELECT * FROM matching ORDER BY id LIMIT 51) x) INTO actions,paths;
- PERFORM postern.record_disclosure(s,'resource.access_inspected',r);
+ -- record_disclosure takes one target; this disclosure is about a resource and a member.
+ INSERT INTO postern.activity(space_id,actor_id,action,target_id,policy_revision,detail)
+ VALUES(s,postern.actor(),'resource.access_inspected',r,(ctx->>'policy_revision')::bigint,jsonb_build_object('membership_id',m));
  RETURN jsonb_build_object('membership_id',m,'resource_id',r,'role',role_name,'actions',actions,'sources',paths,'policy_revision',ctx->'policy_revision');
 END $$;
 GRANT EXECUTE ON FUNCTION postern.resource_sharing(text,uuid,text,text,uuid,uuid,jsonb),

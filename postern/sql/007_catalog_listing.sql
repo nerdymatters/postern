@@ -1,7 +1,8 @@
 -- Catalog pages read only the grant paths that reach the caller; can_resource still decides each returned row.
 SET LOCAL ROLE postern_owner;
--- can_resource looks up the active grants of each returned resource.
-CREATE INDEX grant_resource ON postern.grants(space_id,resource_id) WHERE state='active';
+-- can_resource looks up the active grants of each returned resource; the trailing
+-- id also pages one resource's grants in order (008's grant lists).
+CREATE INDEX grant_resource ON postern.grants(space_id,resource_id,id) WHERE state='active';
 -- Plan each call with its own cursor and search terms, so both can bound the index scans.
 CREATE OR REPLACE FUNCTION postern.resource_catalog(h text,s uuid,aud text,q text,after_id uuid,expected jsonb) RETURNS jsonb
  LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,postern SET plan_cache_mode=force_custom_plan AS $$
