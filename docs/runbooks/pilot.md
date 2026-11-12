@@ -1,6 +1,6 @@
 # Install the macOS host
 
-Use a stable checkout or extracted release outside a temporary coding workspace. This runbook installs the server on macOS, where conversions run under `sandbox-exec`. Conversions also run on Linux under bubblewrap, but Linux service supervision and packaging (LX-02) are not done, so Linux is not yet a supported production host.
+Use a stable checkout or extracted release outside a temporary coding workspace. This runbook installs the server on macOS, where conversions run under `sandbox-exec`. Conversions also run on Linux under bubblewrap, and since v0.27.0 the [Linux runbook](linux.md) installs the server under systemd, but that has been rehearsed only in a container, so Linux is not yet a supported production host.
 
 ## 1. Private configuration
 

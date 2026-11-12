@@ -279,8 +279,9 @@ SHA-256, and retain that provenance with the release. This lets the serving Mac
 install a tested wheel without compiling it locally.
 Linux reducer portability does not make the macOS converter sandbox portable;
 Linux conversions have their own [bubblewrap sandbox](../../config/sandbox/README.md#linux-derivebwrap)
-since LX-01, and production Linux hosting still requires a separately verified
-recovery plan and the host layer in [LX-02](../../ROADMAP.md#linux-support).
+since LX-01, and [LX-02](../../ROADMAP.md#linux-support) (v0.27.0) added the
+systemd host layer in the [Linux runbook](linux.md). Production Linux hosting
+still requires a separately verified recovery plan and a real-host rehearsal.
 
 ## Implementation validation, November 1
 
@@ -581,7 +582,9 @@ back, with the ordinary verified restart (SIGTERM; launchd starts the API
 again). Neither needs administrator rights, because the file belongs to the
 owner and the launchd job is unchanged. An environment setting in the launchd
 job still overrides the file, so remove it once (step 3) before relying on the
-file.
+file. On Linux the systemd unit's environment takes the launchd job's place; the
+[Linux runbook's Python fallback](linux.md#python-fallback) section says how the
+watchdog reads it and how to remove the setting.
 
     .venv/bin/python -m postern.serve backend          # show the selection and the serving process
     .venv/bin/python -m postern.serve backend rust     # select Rust for the next start
