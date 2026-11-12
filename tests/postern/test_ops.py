@@ -86,7 +86,9 @@ def test_preflight_checks_every_prerequisite(tmp_path):
     # Caddy is an office-Mac prerequisite, not a test-runner one; where it is absent the check must say so.
     required = {name for name in checks if name != 'front proxy' or shutil.which('caddy')}
     assert all(checks[name][0] for name in required), checks
-    assert shutil.which('caddy') or 'install caddy' in checks['front proxy'][1]
+    assert shutil.which('caddy') or checks['front proxy'][1] == (
+        "caddy not found (install caddy 2.8 or later from the Caddy project's Debian repository; Debian's own "
+        'package is too old)' if derive.LINUX else 'caddy not found (brew install caddy)')
     assert '1.' in checks['pillow-heif'][1] and 'libheif' in checks['pillow-heif'][1]
 
 

@@ -62,9 +62,15 @@ ingress, before it serves staff.
 4. Review the rendered units and `install.sh` under the owner's
    `~/.local/state/postern/install-*` directory. Run the **single root command
    printed by install**. It installs the units into `/etc/systemd/system`,
-   reloads systemd, enables and restarts the three services. It refuses an
-   installed unit changed since rendering. Keep the stage until installation
-   is complete; it contains paths and unit definitions, not config contents.
+   reloads systemd, enables and restarts the three services. The service
+   account owns the stage, so root never runs or installs a file from it
+   unchecked: the command carries the SHA-256 digest of the `install.sh` you
+   reviewed, copies it into a new directory root owns and checks it, and that
+   script checks each staged unit and each installed unit the same way before
+   it changes anything. A unit, staged file or script changed since rendering
+   stops the install. Keep the stage until installation is complete; it
+   contains paths and unit definitions, not config contents. The root step
+   needs GNU `sha256sum`, which Debian and Ubuntu have.
    Custom labels must be supplied consistently. `--user-agent` is macOS-only.
 5. Check services, private health, alerts and ingress:
 
@@ -84,10 +90,12 @@ ingress, before it serves staff.
    `~/Library/Logs/postern/traffic/access-daily.log` in the service account's
    home.
    The ingress/tunnel is provisioned independently as a boot service.
-6. Schedule a real reboot. Before manually starting anything, run:
+6. Schedule a real reboot. Before manually starting anything, run as the
+   service account (the script refuses root, because it runs the release
+   tree's Python):
 
    ```sh
-   sh ops/postern/reboot-check-linux.sh /home/postern/.config/postern/config.json org.nerdymatters.postern .venv/bin/python
+   sudo -u postern sh ops/postern/reboot-check-linux.sh /home/postern/.config/postern/config.json org.nerdymatters.postern .venv/bin/python
    ```
 
    It requires **enabled and active** for all three units and probes local

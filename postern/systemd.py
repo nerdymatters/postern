@@ -1,6 +1,7 @@
 """Linux system services. Rendering is unprivileged; the operator runs the printed root command."""
 from __future__ import annotations
 import difflib
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -44,6 +45,20 @@ def path_value(value):
             or any(ord(char) < 32 or ord(char) == 127 for char in value)):
         raise ValueError(f'systemd paths must be absolute, with no control characters: {value!r}')
     return value.replace('%', '%%')
+
+
+# Root copies the reviewed install.sh into its own new directory, checks the digest the owner saw, then runs it.
+ROOT_RUN = ('set -eu; d=$(mktemp -d); trap "rm -rf -- \\"$d\\"" EXIT; cp -- "$1" "$d/install.sh"; cd "$d"; '
+            'echo "$2  install.sh" | sha256sum -c --strict --quiet; sh ./install.sh')
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def check(expected, path):
+    """A root-script line that stops unless the file at path has the reviewed digest."""
+    return f'echo {shlex.quote(expected + "  " + path)} | sha256sum -c --strict --quiet'
 
 
 def documents(config_path, user, home, python=None, label='org.nerdymatters.postern'):
@@ -136,30 +151,36 @@ def install(config_path, user, home, check_only, force, label):
     state = Path(home) / '.local/state/postern'
     state.mkdir(parents=True, exist_ok=True, mode=0o700)
     stage = Path(tempfile.mkdtemp(prefix='install-', dir=state))
-    commands = ['#!/bin/sh', 'set -eu']
+    # The service account owns the stage, and the API runs as that account, so root never runs or
+    # installs a file from it: install.sh is pinned by the digest in the printed command, and it pins
+    # each unit and each existing target the owner reviewed. Root works in its own temporary directory.
+    commands = ['#!/bin/sh', 'set -eu', 'cd "$(dirname "$0")"']
     for key, (path, document) in jobs.items():
         source = stage / path.name
         source.write_text(document)
         source.chmod(0o600)
+        commands += [shlex.join(['cp', '--', str(source), path.name]), check(digest(document.encode()), path.name)]
         # Refuse a change made after the owner reviewed the install, before touching any unit.
-        if path.exists() or path.is_symlink():
-            snapshot = stage / (path.name + '.before')
-            snapshot.write_bytes(path.read_bytes())
-            commands.append(f'cmp -s {shlex.quote(str(snapshot))} {shlex.quote(str(path))}')
+        # One command per line: set -e ignores a failure that is not the last command of an && list.
+        commands.append(f'test ! -L {shlex.quote(str(path))}')
+        if path.exists():
+            commands.append(check(digest(path.read_bytes()), str(path)))
         else:
-            # One command per line: set -e ignores a failure that is not the last command of an && list.
-            commands += [f'test ! -e {shlex.quote(str(path))}', f'test ! -L {shlex.quote(str(path))}']
+            commands.append(f'test ! -e {shlex.quote(str(path))}')
     for path, _ in jobs.values():
-        commands.append(shlex.join(['install', '-o', 'root', '-g', 'root', '-m', '0644', str(stage / path.name), str(path)]))
+        commands.append(shlex.join(['install', '-o', 'root', '-g', 'root', '-m', '0644', path.name, str(path)]))
     units = [path.name for path, _ in jobs.values()]
     commands += ['systemctl --system daemon-reload',
                  shlex.join(['systemctl', '--system', 'enable', *units]),
                  shlex.join(['systemctl', '--system', 'restart', *units])]
     script = stage / 'install.sh'
-    script.write_text('\n'.join(commands) + '\n')
+    text = '\n'.join(commands) + '\n'
+    script.write_text(text)
     script.chmod(0o600)
-    print(f'ok   rendered units in {stage}; review them, then run this root command:\n\n'
-          f'  {shlex.join(["sudo", "/bin/sh", str(script)])}\n\n'
+    root = shlex.join(['sudo', '/bin/sh', '-c', ROOT_RUN, 'sh', str(script), digest(text.encode())])
+    print(f'ok   rendered units in {stage}; review them, then run this root command, which runs only the\n'
+          f'     install.sh you reviewed (its digest is in the command) from a directory root owns:\n\n'
+          f'  {root}\n\n'
           f'     Run status and ops/postern/reboot-check-linux.sh after installation and a real reboot.')
     return 0
 
