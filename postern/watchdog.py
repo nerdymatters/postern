@@ -342,6 +342,11 @@ class Fallback:
             # A record left by a process that has exited (say, before a start refused on a busy port) is not an
             # override. Only a process that is certainly gone is ignored: an unknown answer keeps the override.
             active, dropped = None, True
+        if (override or '').startswith('unknown') and backend not in ('rust', 'invalid') and not (
+                active is not None and active.get('backend') == 'rust'):
+            # Nothing selects or serves Rust, so an unprovable unit environment has nothing to breach; watching it
+            # would raise a Rust breach alert on a Python-only host. A live API forced to Rust still reports it.
+            override = None
         forced = override is not None or (active is not None and active.get('source') == 'environment')
         forced_rust = forced and (override not in (None, 'python') or (active and active.get('backend') == 'rust'))
         # A launchd job that forces Rust is watched (alert only) even without a Rust selection file.

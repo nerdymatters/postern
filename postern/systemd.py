@@ -147,7 +147,8 @@ def install(config_path, user, home, check_only, force, label):
             snapshot.write_bytes(path.read_bytes())
             commands.append(f'cmp -s {shlex.quote(str(snapshot))} {shlex.quote(str(path))}')
         else:
-            commands.append(f'test ! -e {shlex.quote(str(path))} && test ! -L {shlex.quote(str(path))}')
+            # One command per line: set -e ignores a failure that is not the last command of an && list.
+            commands += [f'test ! -e {shlex.quote(str(path))}', f'test ! -L {shlex.quote(str(path))}']
     for path, _ in jobs.values():
         commands.append(shlex.join(['install', '-o', 'root', '-g', 'root', '-m', '0644', str(stage / path.name), str(path)]))
     units = [path.name for path, _ in jobs.values()]
