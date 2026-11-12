@@ -68,7 +68,7 @@ def test_resumable_upload_continues_after_308(tmp_path, monkeypatch):
 def test_google_credentials_are_reused_per_thread_until_the_credential_file_changes(tmp_path, monkeypatch):
     # Value: protects=each thread reuses its Google credentials (no OAuth exchange per call, RS-08), yet
     # reloads a changed file, refuses loosened permissions and opens a new connection every call;
-    # fails_when=the cache is dropped or shared across threads, a renamed or overwritten file is ignored,
+    # fails_when=the cache is dropped or shared across threads, a renamed, overwritten or cp -p copied file is ignored,
     # 0600 is checked only on load, or a connection Google may have closed is reused; why_new=new cache;
     # seam=none; no_claim=Google's token lifetime or connection keep-alive
     import os
@@ -110,6 +110,15 @@ def test_google_credentials_are_reused_per_thread_until_the_credential_file_chan
     assert overwritten.st_mtime_ns != renamed.st_mtime_ns
     assert store._service('drive', 'v3').credentials is not reloaded and loads[-1] == {'generation': 4}
     assert len(loads) == 5
+    # A copy that keeps size and mtime (cp -p over the file in place) changes only the ctime.
+    current = store._service('drive', 'v3').credentials
+    before = credentials.stat()
+    credentials.write_text(json.dumps({'generation': 5}, indent=2) + '\n')
+    os.utime(credentials, ns=(before.st_atime_ns, before.st_mtime_ns))
+    after = credentials.stat()
+    assert (after.st_ino, after.st_size, after.st_mtime_ns) == (before.st_ino, before.st_size, before.st_mtime_ns)
+    assert store._service('drive', 'v3').credentials is not current and loads[-1] == {'generation': 5}
+    assert len(loads) == 6
     credentials.chmod(0o644)
     with pytest.raises(StoreUnavailable, match='0600'):
         store._service('drive', 'v3')
