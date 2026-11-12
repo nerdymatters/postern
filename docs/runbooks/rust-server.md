@@ -278,7 +278,9 @@ run bound to the intended release commit, verify its filename/platform and
 SHA-256, and retain that provenance with the release. This lets the serving Mac
 install a tested wheel without compiling it locally.
 Linux reducer portability does not make the macOS converter sandbox portable;
-production Linux hosting still requires a separately verified isolation and recovery plan.
+Linux conversions have their own [bubblewrap sandbox](../../config/sandbox/README.md#linux-derivebwrap)
+since LX-01, and production Linux hosting still requires a separately verified
+recovery plan and the host layer in [LX-02](../../ROADMAP.md#linux-support).
 
 ## Implementation validation, November 1
 

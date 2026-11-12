@@ -10,8 +10,8 @@ was moved. M2-06 remains open through hosted integration and verified cutover.
 ## Run the isolated rehearsal
 
 Install the project's `test,postgres` extras and put PostgreSQL 17+ CLI tools on
-`PATH`. The same native prerequisite is included in the macOS CI job. From the
-repository root:
+`PATH`. The same native prerequisite is included in the macOS and Linux
+(`pytest-linux`) CI jobs. From the repository root:
 
 ```sh
 .venv/bin/python -m scripts.migration_rehearsal --output .context/my-schema-rehearsal

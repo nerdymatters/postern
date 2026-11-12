@@ -86,7 +86,8 @@ parameters as above. They are not resolved: bwrap mounts each path where the chi
 venv's `bin/python` symlink becomes a plain file inside the sandbox.
 
 - `--unshare-all`, `--unshare-user` — new user, PID, network, IPC, UTS and cgroup namespaces. The network
-  namespace has only a loopback interface that is down, which is how "no network rule" is expressed here. The
+  namespace has only its own loopback interface, which bwrap brings up at 127.0.0.1 and which reaches nothing
+  outside the job. With no other interface or route, that is how "no network rule" is expressed here. The
   job cannot see or signal the server's processes. `--unshare-all` alone only tries the user namespace;
   `--unshare-user` makes it required, so a host that cannot create one refuses the job.
 - `--disable-userns` — code running in the job cannot create another user namespace, which would otherwise
@@ -98,8 +99,8 @@ venv's `bin/python` symlink becomes a plain file inside the sandbox.
   fontconfig's settings — the system libraries, Poppler and FFmpeg. Debian reaches some libraries only through
   `/etc/alternatives` (FFmpeg's `libblas.so.3`), and that directory holds only symlinks. Nothing else from
   `/etc` is mounted: no `passwd`, no TLS keys, no host configuration.
-- `--proc /proc`, `--dev /dev` — a process table of the job's own processes, and the null, zero, random and
-  terminal devices only.
+- `--proc /proc`, `--dev /dev` — a process table of the job's own processes, and the null, zero, full, random,
+  urandom and terminal devices only.
 - The input, converter, model, interpreter, venv marker and runtime — read-only, exactly as above. The venv
   marker is optional: an interpreter outside a venv has none, and bwrap refuses a missing path.
   Poppler and FFmpeg must live under `/usr` (the distribution's packages, or `/usr/local`); copies from Linuxbrew,

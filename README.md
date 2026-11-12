@@ -2,7 +2,7 @@
 
 Postern is a self-hosted staff reading room for private documents, images, videos and training. Readers sign in with Google; a Google Sheet determines membership and roles. Administrators publish material and inspect delivery, playback and assessment history.
 
-The current server targets **macOS**, with Google Drive and Sheets for durable originals, catalog and audit exports. The web app can be hosted separately. This is a pilot: it is not a managed cloud service, and Linux production hosting is not supported by the macOS converter sandbox.
+The current server targets **macOS**, with Google Drive and Sheets for durable originals, catalog and audit exports. The web app can be hosted separately. This is a pilot, not a managed cloud service. Conversions also run on Linux under bubblewrap, but Linux is not a supported production host until its service supervision and packaging ship.
 
 ## What it does
 
@@ -85,7 +85,7 @@ bun run --cwd dashboard/web test
 bun run --cwd dashboard/web build
 ```
 
-The optional status Worker has its own checks: `cd status && bun install --frozen-lockfile && bun test`. Its Wrangler dry run needs Node 24. Python integration tests require macOS because they exercise the real converter sandbox. Do not substitute a Linux test run for those checks.
+The optional status Worker has its own checks: `cd status && bun install --frozen-lockfile && bun test`. Its Wrangler dry run needs Node 24. Python integration tests exercise the real converter sandbox: Seatbelt on macOS, and bubblewrap on Linux, where CI's `pytest-linux` job runs the same suite. The Seatbelt tests skip on Linux, so do not substitute a Linux test run for the macOS checks.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the DCO sign-off workflow and [SECURITY.md](SECURITY.md) for private vulnerability reports.
 
