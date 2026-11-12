@@ -91,6 +91,7 @@ class Config:
 
 
 def private_json(path, data):
+    from .durability import sync_file, sync_directory
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     temporary = path.with_suffix('.tmp')
@@ -98,4 +99,6 @@ def private_json(path, data):
         os.chmod(temporary, 0o600)
         json.dump(data, output, indent=2)
         output.write('\n')
+        sync_file(output)
     temporary.replace(path)
+    sync_directory(path.parent)

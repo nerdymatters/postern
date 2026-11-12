@@ -20,6 +20,7 @@ import stat
 import sys
 import tempfile
 import threading
+from .durability import sync_file, sync_directory
 
 SETTING = 'POSTERN_PROGRESS_BACKEND'
 SELECTION = 'progress-backend.json'
@@ -71,7 +72,11 @@ def _write_private(path, data, prefix, indent=None):
             os.chmod(output.name, 0o600)
             json.dump(data, output, indent=indent)
             output.write('\n')
+            if path.name == SELECTION:
+                sync_file(output)
         os.replace(output.name, path)
+        if path.name == SELECTION:
+            sync_directory(path.parent)
     except BaseException:
         Path(output.name).unlink(missing_ok=True)
         raise

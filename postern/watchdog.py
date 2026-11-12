@@ -3,7 +3,7 @@
     .venv/bin/python -m postern.watchdog run   --config ~/.config/postern/config.json [--interval 30] [--failures 3]
     .venv/bin/python -m postern.watchdog check --config ~/.config/postern/config.json
 
-Installed by postern.serve as its own launchd job. It imports nothing from the application — only the
+Installed by postern.serve as its own launchd job or systemd unit. It imports nothing from the application — only the
 config file's port, data_dir and optional smtp block — so a server that is wedged, crash-looping or
 gone cannot take its own alerting down with it.
 
@@ -27,6 +27,8 @@ import json
 import math
 import os
 import signal
+import shlex
+import re
 import smtplib
 import stat
 import subprocess
@@ -163,7 +165,17 @@ def write_private_json(path, data, prefix, indent=None):
             os.chmod(output.name, 0o600)
             json.dump(data, output, indent=indent)
             output.write('\n')
+            if sys.platform == 'linux' and path.name == SELECTION:
+                output.flush()
+                os.fsync(output.fileno())
         os.replace(output.name, path)
+        if sys.platform == 'linux' and path.name == SELECTION:
+            # Keep this stdlib-only: selecting Python must survive a crash before we stop Rust.
+            descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
     except BaseException:
         Path(output.name).unlink(missing_ok=True)
         raise
@@ -241,7 +253,7 @@ class Fallback:
             return None
 
     def listening(self):
-        result = self.run(['/usr/sbin/lsof', '-nP', f'-iTCP:{self.port}', '-sTCP:LISTEN', '-t'],
+        result = self.run(['/usr/bin/lsof' if sys.platform == 'linux' else '/usr/sbin/lsof', '-nP', f'-iTCP:{self.port}', '-sTCP:LISTEN', '-t'],
                           capture_output=True, text=True, timeout=10)
         return {int(line) for line in result.stdout.split() if line.isdigit()}
 
@@ -287,11 +299,41 @@ class Fallback:
         except OSError:
             pass  # A heartbeat is evidence for the owner, never a reason to stop guarding.
 
+    def supervisor(self):
+        return 'systemd' if sys.platform == 'linux' else 'launchd'
+
+    def unit_override(self):
+        """Read systemd's merged Environment, including drop-ins, even if the API failed to start.
+        EnvironmentFile contents are not expanded by show; refuse automatic fallback when those
+        could override the selection. The live API record also detects inherited overrides."""
+        if sys.platform != 'linux':
+            return None
+        unit = os.environ.get('POSTERN_API_UNIT', 'org.nerdymatters.postern.service')
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{0,127}\.service', unit):
+            raise ValueError('invalid POSTERN_API_UNIT')
+        result = self.run(['systemctl', '--system', 'show', unit, '--property=Environment',
+                           '--property=EnvironmentFiles'], capture_output=True, text=True, timeout=10)
+        if result.returncode:
+            raise OSError('cannot read systemd unit environment')
+        properties = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+        # EnvironmentFile values win over Environment, so even a visible Python override is
+        # inconclusive when a file could replace it with Rust.
+        if properties.get('EnvironmentFiles', '').strip():
+            return 'unknown (EnvironmentFile)'
+        for value in shlex.split(properties.get('Environment', '')):
+            if value.startswith('POSTERN_PROGRESS_BACKEND='):
+                return value.split('=', 1)[1]
+        return None
+
     def observe(self, healthy, detail=''):
         """Called after every health check. Returns the reasons when this tick returned Rust to Python."""
         selection = self.selection()
         backend = selection.get('backend') if selection else None
-        if backend == 'python' and selection.get('fallback'):
+        try:
+            override = self.unit_override()
+        except (OSError, ValueError, subprocess.SubprocessError):
+            override = 'unknown (unit environment unreadable)'
+        if backend == 'python' and selection.get('fallback') and override is None:
             self.finish_fallback(selection)
         active, dropped = self.active(), False
         if (active is not None and active.get('source') == 'environment'
@@ -300,15 +342,15 @@ class Fallback:
             # A record left by a process that has exited (say, before a start refused on a busy port) is not an
             # override. Only a process that is certainly gone is ignored: an unknown answer keeps the override.
             active, dropped = None, True
-        forced = active is not None and active.get('source') == 'environment'
-        forced_rust = forced and active.get('backend') == 'rust'
+        forced = override is not None or (active is not None and active.get('source') == 'environment')
+        forced_rust = forced and (override not in (None, 'python') or (active and active.get('backend') == 'rust'))
         # A launchd job that forces Rust is watched (alert only) even without a Rust selection file.
         if backend not in ('rust', 'invalid') and not forced_rust:
             self.watched = None
             self.reset()
             return None
         # An unreadable, unsafe or unknown selection stops the API from starting; health alone decides that case.
-        identity = selection['identity'] if backend in ('rust', 'invalid') else ('environment', active.get('pid'))
+        identity = selection['identity'] if backend in ('rust', 'invalid') else ('environment', active.get('pid') if active else override)
         # Counts from an alert-only override period never carry into the file-governed process, or back.
         key = (identity, forced)
         if key != self.watched:
@@ -327,7 +369,10 @@ class Fallback:
             self.heartbeat(identity, 'override')
             return None  # The launchd job forces Python; the file is not in effect.
         pid, info = self.serving(active)  # never raises: a lookup failure is "unverified"
-        fallback = ('Nothing returns Rust to Python while the launchd job sets POSTERN_PROGRESS_BACKEND; remove that '
+        override_detail = (f'The systemd unit environment overrides the selection or cannot be verified ({override}).'
+                           if sys.platform == 'linux' else
+                           'The launchd job sets POSTERN_PROGRESS_BACKEND, which the watchdog cannot change.')
+        fallback = (f'Nothing returns Rust to Python while the {self.supervisor()} job sets POSTERN_PROGRESS_BACKEND; remove that '
                     'setting (runbook step 3) so the watchdog can guard the selection file.' if forced
                     else 'Failed health checks still return Rust to Python.')
         state = 'waiting'  # Rust is selected but the API has not started with it yet
@@ -361,9 +406,8 @@ class Fallback:
             return None
         if forced:
             if not self.reported:
-                self.alert('Postern: Rust backend breach under a launchd override',
-                           'The launchd job sets POSTERN_PROGRESS_BACKEND, which the watchdog cannot change.\n\n'
-                           + '\n'.join(reasons))
+                self.alert(f'Postern: Rust backend breach under a {self.supervisor()} override',
+                           override_detail + '\n\n' + '\n'.join(reasons))
                 self.reported = True
             return None
         return self.fall_back(selection, reasons, pid, dropped)
@@ -374,6 +418,19 @@ class Fallback:
         active = self.active()
         if not active or active.get('backend') != 'rust' or active.get('source') != SELECTION:
             return
+        if sys.platform == 'linux':
+            try:
+                # A previous rename may have succeeded while its directory sync failed. Do not
+                # treat the visible Python selection as durable until that sync can finish.
+                with self.config_path.with_name(SELECTION).open('rb') as selected:
+                    os.fsync(selected.fileno())
+                descriptor = os.open(self.config_path.parent, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+            except OSError:
+                return  # The earlier write alert remains true; retry on the next observation.
         identity = selection['identity']
         if self.retry[0] != identity:
             self.retry = (identity, 0)
@@ -459,7 +516,7 @@ class Fallback:
         outcome = 'The next API start uses Python.'
         if dropped_override:  # the last start was forced by launchd; the file decides only once that setting is gone
             outcome = ('Python is selected, but the last API start took its backend from POSTERN_PROGRESS_BACKEND in the '
-                       'launchd job; while the job sets it, that setting decides the next start (runbook step 3 removes it).')
+                       f'{self.supervisor()} job; while the job sets it, that setting decides the next start (runbook step 3 removes it).')
         try:
             write_python(self.config_path.with_name(SELECTION), reasons, selection)
         except OSError as error:
@@ -519,7 +576,7 @@ class Fallback:
         try:
             self.kill(pid, signal.SIGTERM)
         except ProcessLookupError:
-            return 'The API had already exited; launchd starts it again with Python.'
+            return f'The API had already exited; {self.supervisor()} starts it again with Python.'
         # Uvicorn closes its port at once but waits without limit for stuck requests and in-flight media
         # conversions (90 s each); launchd restarts the job only after the process exits, so wait for the
         # process, not the port, and longer than one conversion before SIGKILL could orphan its converter.
@@ -527,7 +584,7 @@ class Fallback:
         while self.now() < deadline:
             self.sleep(1)
             if self.alive(pid) is False:
-                return f'Restarted the API (pid {pid}); launchd starts it again with Python.'
+                return f'Restarted the API (pid {pid}); {self.supervisor()} starts it again with Python.'
         state = self.alive(pid)
         if state is True:
             try:
@@ -550,9 +607,9 @@ class Fallback:
                     '; its media conversions could not be listed, so any still running finish by themselves'
                     if groups is None else '')
             return (f'The API (pid {pid}) ignored SIGTERM for {self.exit_wait} s and was killed{also}; '
-                    'launchd starts it again with Python.')
+                    f'{self.supervisor()} starts it again with Python.')
         if state is False:
-            return f'Restarted the API (pid {pid}); launchd starts it again with Python.'
+            return f'Restarted the API (pid {pid}); {self.supervisor()} starts it again with Python.'
         return f'Sent SIGTERM to the API (pid {pid}) but could not confirm it exited; check it by hand.'
 
 
