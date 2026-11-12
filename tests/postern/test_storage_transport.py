@@ -65,13 +65,12 @@ def test_resumable_upload_continues_after_308(tmp_path, monkeypatch):
         thread.join(timeout=2)
 
 
-def test_google_clients_are_reused_per_thread_until_the_credential_file_changes(tmp_path, monkeypatch):
-    # Value: protects=the 30 s allowlist refresh reuses its token and connection instead of a new OAuth
-    # exchange and TLS handshake each time (RS-08: most of the API's idle CPU), while threads never share
-    # an httplib2 client, a changed file is reloaded and loosened permissions still refuse;
-    # fails_when=the cache is dropped, shared across threads, keyed so a rotated file is ignored, or the
-    # 0600 check runs only on the first load; why_new=no test counted client construction; seam=none;
-    # no_claim=Google's token lifetime or connection keep-alive
+def test_google_credentials_are_reused_per_thread_until_the_credential_file_changes(tmp_path, monkeypatch):
+    # Value: protects=each thread reuses its Google credentials (no OAuth exchange per call, RS-08), yet
+    # reloads a changed file, refuses loosened permissions and opens a new connection every call;
+    # fails_when=the cache is dropped or shared across threads, a renamed or overwritten file is ignored,
+    # 0600 is checked only on load, or a connection Google may have closed is reused; why_new=new cache;
+    # seam=none; no_claim=Google's token lifetime or connection keep-alive
     import os
     import pytest
     from postern.storage import StoreUnavailable
@@ -82,16 +81,60 @@ def test_google_clients_are_reused_per_thread_until_the_credential_file_changes(
     private_json(credentials, {'generation': 1})
     store = GoogleStore(Config(tmp_path, host_credentials=str(credentials)))
     first = store._service('drive', 'v3')
-    assert store._service('sheets', 'v4') is first and len(loads) == 1
+    again = store._service('sheets', 'v4')
+    assert again.credentials is first.credentials and len(loads) == 1
+    assert again is not first and again.http is not first.http
     other = []
     thread = threading.Thread(target=lambda: other.append(store._service('drive', 'v3')))
     thread.start(); thread.join()
-    assert other[0] is not first and len(loads) == 2
+    assert other[0].credentials is not first.credentials and len(loads) == 2
     private_json(credentials, {'generation': 2})
     os.utime(credentials, ns=(1, 1))
-    rotated = store._service('drive', 'v3')
-    assert rotated is not first and loads[-1] == {'generation': 2}
-    assert store._service('drive', 'v3') is rotated and len(loads) == 3
+    rotated = store._service('drive', 'v3').credentials
+    assert rotated is not first.credentials and loads[-1] == {'generation': 2}
+    assert store._service('drive', 'v3').credentials is rotated and len(loads) == 3
+    # A rename that keeps size and mtime (cp -p, then mv) changes only the inode.
+    previous = credentials.stat()
+    private_json(credentials, {'generation': 3})
+    os.utime(credentials, ns=(1, 1))
+    renamed = credentials.stat()
+    assert renamed.st_ino != previous.st_ino
+    assert (renamed.st_size, renamed.st_mtime_ns) == (previous.st_size, previous.st_mtime_ns)
+    reloaded = store._service('drive', 'v3').credentials
+    assert reloaded is not rotated and loads[-1] == {'generation': 3}
+    # An overwrite in place (cp onto the file) keeps the inode and size and changes only the mtime.
+    credentials.write_text(json.dumps({'generation': 4}, indent=2) + '\n')
+    os.utime(credentials, (2, 2))
+    overwritten = credentials.stat()
+    assert (overwritten.st_ino, overwritten.st_size) == (renamed.st_ino, renamed.st_size)
+    assert overwritten.st_mtime_ns != renamed.st_mtime_ns
+    assert store._service('drive', 'v3').credentials is not reloaded and loads[-1] == {'generation': 4}
+    assert len(loads) == 5
     credentials.chmod(0o644)
     with pytest.raises(StoreUnavailable, match='0600'):
         store._service('drive', 'v3')
+
+
+def test_allowlist_and_host_credentials_are_kept_apart_on_one_thread(tmp_path, monkeypatch):
+    # Value: protects=a worker thread alternating allowlist reads (service account) and host Drive calls
+    # keeps both credentials, and allowlist reads use the allowlist file; fails_when=a thread caches one
+    # credential file at a time, or allowlist reads load host credentials; why_new=the reuse test uses
+    # one authorized-user file; seam=none; no_claim=the service account's Sheets scope or thread pool reuse
+    from google.oauth2.service_account import Credentials as ServiceCredentials
+    loads = []
+    monkeypatch.setattr(Credentials, 'from_authorized_user_info',
+                        lambda info: loads.append(info['file']) or Credentials(token='host-token'))
+    monkeypatch.setattr(ServiceCredentials, 'from_service_account_info',
+                        lambda info, **_: loads.append(info['file']) or Credentials(token='allowlist-token'))
+    monkeypatch.setattr('googleapiclient.discovery.build', lambda *args, **kwargs: kwargs['http'])
+    host, reader = tmp_path / 'host.json', tmp_path / 'allowlist.json'
+    private_json(host, {'file': 'host'})
+    private_json(reader, {'type': 'service_account', 'file': 'allowlist'})
+    store = GoogleStore(Config(tmp_path, host_credentials=str(host), allowlist_credentials=str(reader)))
+    sheet = store._service('sheets', 'v4', True).credentials
+    drive = store._service('drive', 'v3').credentials
+    assert sheet is not drive and loads == ['allowlist', 'host']
+    for _ in range(3):
+        assert store._service('sheets', 'v4', True).credentials is sheet
+        assert store._service('drive', 'v3').credentials is drive
+    assert loads == ['allowlist', 'host']
