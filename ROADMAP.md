@@ -51,7 +51,7 @@ described in [Architecture](docs/architecture.md).
 | M0 Launch preparation | In progress; parallel with M1 | Current deployment baseline |
 | M1 Accounts and profiles | Production pilot passed; registration closed | M0 launch checks before release |
 | Rust server migration | P1; RS-06 passed; the RS-07 live pilot has served production from Rust since Nov 9 with the watchdog guarding, and a staff document check passed; Python remains the code default | Sustained observation and the in-process check before the RS-07 default change; RS-08–RS-09 after Linux support and M2 content |
-| Linux support | Planned; the converter's sandbox, service supervision and packaging are macOS-only today | RS-07 closing |
+| Linux support | In progress alongside RS-07 observation (owner, Nov 11): LX-01 done, so conversions run under bubblewrap and CI runs the full suite on Ubuntu; LX-02's host layer is in review | LX-02 before a Linux host serves production |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
 | M2 Private spaces and resource catalog | Isolated metadata/onboarding implemented; content integration and hosting pending | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
@@ -259,11 +259,11 @@ The remaining server migration stays open until its responsibilities have moved.
 **Outcome:** the resource server runs and converts on Linux as it does on
 macOS, so it can be hosted away from the office Mac and self-hosted.
 
-The converter child already uses portable tools (poppler, ffmpeg, Pillow and
-OpenCV). Its sandbox wrapper, its memory bound, service supervision and
-packaging are macOS-only.
+The converter child already used portable tools (poppler, ffmpeg, Pillow and
+OpenCV). Since LX-01 its sandbox and memory bound work on Linux too; service
+supervision and packaging are still macOS-only.
 
-- [ ] **LX-01** Run each conversion on Linux inside a bubblewrap sandbox with
+- [x] **LX-01** Run each conversion on Linux inside a bubblewrap sandbox with
   the same limits and manifest contract as the macOS Seatbelt profile. Keep one
   place that builds the sandboxed command. Bound resident memory as macOS does;
   keep the address-space limit only if real media passes with it. Run one
@@ -271,11 +271,25 @@ packaging are macOS-only.
   and refusal codes, no network from the job, secrets unreadable, and a sandbox
   that cannot start reported as a host fault. Existing macOS assertions stay
   unedited.
+  **Done Nov 11 (v0.26.0):** `config/sandbox/derive.bwrap` mirrors `derive.sb`
+  rule for rule, and one builder serves every job and the preflight. Jobs get
+  new namespaces with no network, read-only system and Python mounts, the job
+  directory as the only writable path, and no further user namespaces. The 2 GiB
+  address-space limit stays: real PDFs, photos, HEIC, video and selfies pass
+  with it. The memory bound covers the job's whole process tree, and bwrap's
+  signal exits still count against the upload. The full suite passes on macOS
+  and Ubuntu 24.04 (new `pytest-linux` CI job,
+  [run](https://github.com/nerdymatters/postern/actions/runs/43141644673)) and
+  locally on Debian 13. The Seatbelt-only tests skip on Linux, where bubblewrap
+  twins cover them. Ubuntu 23.10 and later need the checked-in AppArmor rule,
+  which the preflight names.
 - [ ] **LX-02** Supervise, watch, update and package the server on a plain
   Linux host: system services in place of launchd, the watchdog's fallback,
   database durability settings away from macOS, a Linux lock file and release
   build, and a CI lane that runs the full Python suite on Linux. Preflight must
   run the real sandbox; Ubuntu 23.10 and later need an AppArmor rule for it.
+  The CI lane, the preflight's real sandbox and the AppArmor rule shipped with
+  LX-01; the host layer is in review.
 
 **Done when:** the full suite passes on both platforms from one test set, a
 Linux host installs, restarts and falls back under its watchdog, and CI keeps a
