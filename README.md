@@ -2,7 +2,7 @@
 
 Postern is a self-hosted staff reading room for private documents, images, videos and training. Readers sign in with Google; a Google Sheet determines membership and roles. Administrators publish material and inspect delivery, playback and assessment history.
 
-The current server targets **macOS**, with Google Drive and Sheets for durable originals, catalog and audit exports. The web app can be hosted separately. This is a pilot, not a managed cloud service. Conversions also run on Linux under bubblewrap, but Linux is not a supported production host until its service supervision and packaging ship.
+The current server targets **macOS**, with Google Drive and Sheets for durable originals, catalog and audit exports. The web app can be hosted separately. This is a pilot, not a managed cloud service. Conversions also run on Linux under bubblewrap, and v0.27.0 adds systemd supervision and packaging, but they have been rehearsed only in a container, so Linux is not yet a supported production host.
 
 ## What it does
 
@@ -42,7 +42,7 @@ Open `http://localhost:5173`. Use `admin@example.invalid` or `reader@example.inv
 
 ## Install for an organization
 
-Start with [Google setup](docs/runbooks/google-setup.md), then the [Mac installation guide](docs/runbooks/pilot.md). Production requires private configuration, credentials, training and an explicit `branding.json` file. Use [branding settings](docs/branding.md) to specify the operator, privacy contact, agreement and certificate identity.
+Start with [Google setup](docs/runbooks/google-setup.md), then the [Mac installation guide](docs/runbooks/pilot.md) (the [Linux runbook](docs/runbooks/linux.md) has been rehearsed only in a container so far). Production requires private configuration, credentials, training and an explicit `branding.json` file. Use [branding settings](docs/branding.md) to specify the operator, privacy contact, agreement and certificate identity.
 
 The [release guide](docs/runbooks/release.md) covers upgrades from private pilot installations, including byte-preserving training migration and preserving existing certificate numbers. Back up training and branding independently of Google media/audit backups. Rehearse [recovery](docs/runbooks/recovery.md) before relying on it.
 
@@ -55,6 +55,7 @@ For separate web hosting, set `VITE_POSTERN_API` to your HTTPS API origin in you
 - [Enrollment and privacy](docs/runbooks/selfie-preview.md)
 - [Capacity rehearsal and known limits](docs/runbooks/capacity.md)
 - [First Rust server slice, measurements and rollback](docs/runbooks/rust-server.md)
+- [Linux host install, update and rollback](docs/runbooks/linux.md) (rehearsed in a container; a real host has not served yet)
 - [Isolated resource pilot and health diagnostics](docs/runbooks/pilot-rehearsal.md)
 - [Optional independent status service](docs/runbooks/status.md)
 - [Account isolation](docs/runbooks/account-isolation.md)

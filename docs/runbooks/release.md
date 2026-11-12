@@ -6,6 +6,8 @@ Build a source-and-web pilot bundle from a clean, reviewed commit. Keep `VERSION
 .venv/bin/python scripts/package_release.py --output .context/release
 ```
 
+That builds the macOS bundle. For a Linux host add `--platform linux`; the [Linux runbook](linux.md#durability-and-releases) describes that bundle and how to include an approved native wheel.
+
 Tag the exact merged commit and upload its archive and `SHA256SUMS` as a pilot prerelease. Inspect the archive for credentials, private training, machine paths and installation artifacts. Keep root license/notice files with the bundle. Do not distribute a Python wheel as a complete host installation: operational files live beside the Python package.
 
 ## Private training content
@@ -32,6 +34,8 @@ Set the web hosting project's API origin, organization and privacy-contact envir
 Existing LaunchDaemons keep their names. Use `--label YOUR_EXISTING_LABEL` for service management; do not reinstall generic jobs alongside them. Existing status monitoring also needs its deployment-specific URLs and labels preserved privately before deploying generic monitor code.
 
 ## Roll out
+
+These roll-out and roll-back steps update a macOS host's checkout in place. A Linux host installs each release into a new directory with its own venv; use the [Linux runbook's update](linux.md#update-and-restart) and [rollback](linux.md#roll-back-or-uninstall) steps instead.
 
 1. Record the installed commit. Save an owner-only config/training/branding backup. For a live SQLite snapshot, use `sqlite3.Connection.backup()`; copying a WAL database file alone is not a consistent backup.
 2. Ensure the installed checkout is clean, then fast-forward it to the intended release. Keep its data, credentials and virtual environment. Install changed pinned dependencies when required and refresh the editable package.

@@ -18,7 +18,7 @@ configuration files outside Git, owned by the service operator, with mode 0600.
 | `install-status-heartbeat.py` | Install the optional sender outside the checkout. |
 | `traffic-report.py` | Summarize private Caddy logs into UTC daily HTTP-body totals. |
 
-## Install
+## Install on macOS
 
 ```sh
 .venv/bin/python -P -m postern.serve install --check-only

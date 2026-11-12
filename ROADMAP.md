@@ -51,7 +51,7 @@ described in [Architecture](docs/architecture.md).
 | M0 Launch preparation | In progress; parallel with M1 | Current deployment baseline |
 | M1 Accounts and profiles | Production pilot passed; registration closed | M0 launch checks before release |
 | Rust server migration | P1; RS-06 passed; the RS-07 live pilot has served production from Rust since Nov 9 with the watchdog guarding, and a staff document check passed; Python remains the code default | Sustained observation and the in-process check before the RS-07 default change; RS-08–RS-09 after Linux support and M2 content |
-| Linux support | In progress alongside RS-07 observation (owner, Nov 11): LX-01 done, so conversions run under bubblewrap and CI runs the full suite on Ubuntu; LX-02's host layer is in review | LX-02 before a Linux host serves production |
+| Linux support | In progress alongside RS-07 observation (owner, Nov 11): LX-01 done, so conversions run under bubblewrap and CI runs the full suite on Ubuntu; LX-02's host layer shipped in v0.27.0 and was rehearsed in a Debian 13 systemd container | A real-host rehearsal before a Linux host serves production |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
 | M2 Private spaces and resource catalog | Isolated metadata/onboarding implemented; content integration and hosting pending | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
@@ -260,8 +260,9 @@ The remaining server migration stays open until its responsibilities have moved.
 macOS, so it can be hosted away from the office Mac and self-hosted.
 
 The converter child already used portable tools (poppler, ffmpeg, Pillow and
-OpenCV). Since LX-01 its sandbox and memory bound work on Linux too; service
-supervision and packaging are still macOS-only.
+OpenCV). Since LX-01 its sandbox and memory bound work on Linux too. Since
+LX-02 (v0.27.0) systemd supervises the server there, its watchdog falls back
+from Rust to Python under systemd, and the release script builds a Linux bundle.
 
 - [x] **LX-01** Run each conversion on Linux inside a bubblewrap sandbox with
   the same limits and manifest contract as the macOS Seatbelt profile. Keep one
@@ -289,7 +290,16 @@ supervision and packaging are still macOS-only.
   build, and a CI lane that runs the full Python suite on Linux. Preflight must
   run the real sandbox; Ubuntu 23.10 and later need an AppArmor rule for it.
   The CI lane, the preflight's real sandbox and the AppArmor rule shipped with
-  LX-01; the host layer is in review.
+  LX-01.
+  **Host layer shipped Nov 12 (v0.27.0):** `postern.serve install` renders API,
+  watchdog and proxy system units as the owner and prints one root command that
+  runs only the digest-pinned install script the owner reviewed; the watchdog
+  reads the unit's environment and falls back under systemd; selection and
+  config writes are synced; `scripts/package_release.py --platform linux` builds
+  the bundle with `requirements-linux.lock`. A disposable Debian 13 container
+  running systemd 257 passed install, a clean-exit restart, a boot, an update,
+  uninstall and a real Rust-to-Python fallback. Still open: the same run on a
+  real host (hardware reboot, journald, ingress), tracked in TODOS.md.
 
 **Done when:** the full suite passes on both platforms from one test set, a
 Linux host installs, restarts and falls back under its watchdog, and CI keeps a
