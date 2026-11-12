@@ -165,6 +165,14 @@ keeps that service disabled.
 
 ## Completed
 
+- **2026-11-11 — Run each conversion inside bubblewrap on Linux (LX-01).** On
+  Linux every conversion job now runs under `/usr/bin/bwrap` with the rules in
+  `config/sandbox/derive.bwrap`, the counterpart of the macOS Seatbelt profile,
+  and the preflight checks bubblewrap and runs the real sandbox. The new
+  `pytest-linux` CI job runs the full suite on Ubuntu 24.04. The fault-load tests
+  no longer read the test runner's memory and CPU as the probe's. macOS behavior
+  is unchanged. Included in v0.26.0.
+
 - **2026-11-09 — Show why progress reads use the full event history.** A row the
   compact progress table cannot hold (such as a payload over 64 KiB) or an
   unfinished rebuild kept every history read on the original query with no signal,
