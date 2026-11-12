@@ -130,6 +130,35 @@ and M2 content.
 and acceptance targets precede the first implementation. Urgent production and
 security fixes still take precedence.
 
+### Prove the Linux host layer on a real host and close its review notes
+
+**What:** Run docs/runbooks/linux.md end to end on the first real Debian or
+Ubuntu host (a hardware reboot, journald retention, network wait-online, public
+ingress and a synthetic conversion), then close the LX-02 review notes below.
+
+**Why:** v0.27.0's install, restart, boot, update, uninstall and Rust-to-Python
+fallback were rehearsed only in a disposable Debian 13 systemd container, and
+the reviews left edge cases that only matter on a long-lived host.
+
+**Context:** Review notes on PR #28: the watchdog keeps its last unit lookup
+forever, so a lookup that never recovers should alert after N failures in a row;
+`unit_override` should ask for `LoadState` so a mistyped `POSTERN_API_UNIT` is
+inconclusive, not "no override"; install should refuse a drop-in written since
+the last `daemon-reload` (`NeedDaemonReload`); root trusts a digest the service
+account's renderer prints, so a root-owned release tree would close that gap;
+test rows for an unchanged unit on `--force`, `finish_fallback` after an
+inconclusive lookup and GNU `sha256sum` outside `/usr/bin:/bin`. CI's
+`rust-progress-linux` builds the native package but uploads no wheel; adding
+that artifact is a workflow change the owner approves. Docs debt from the
+v0.27.0 audit: document `POSTERN_API_UNIT` (rendered into the watchdog unit),
+`--native-wheel` for macOS bundles in docs/runbooks/release.md, and the Linux
+install trust boundary in docs/architecture.md (whose sandbox line still says
+macOS only); the status heartbeat sender checks launchd only.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** The owner choosing the first Linux host (not the office Mac)
+
 ### Version the progress projection schema before changing it
 
 **What:** Record a projection schema version in the database. On a mismatch,
@@ -163,7 +192,34 @@ hosted capacity guarantee.
 **Depends on:** Complete before enabling native Posterns in production; v0.19.0
 keeps that service disabled.
 
+### Close the LX-01 sandbox review notes
+
+**What:** Tidy the bubblewrap follow-ups the LX-01 reviews left as notes.
+
+**Why:** None blocks a conversion, but each makes a failure harder to read or
+leaves a rule broader than it needs to be.
+
+**Context:** The manifest read in `postern/derive.py` should refuse a symlink or
+FIFO; the AppArmor rule in `config/sandbox/postern-bwrap.apparmor` could be
+narrowed and its interaction with Ubuntu's `bwrap-userns-restrict` tested;
+`namespace_refused` wording; a preflight probe timeout should name the tool that
+timed out and the five 60 s waits could be shorter; the job's PATH and the
+operator's `which` can disagree about where a tool lives.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ## Completed
+
+- **2026-11-12 — Supervise, update and package the server on Linux (LX-02 host
+  layer).** On Linux `postern.serve install`, `status` and `uninstall` manage
+  three system units (API, watchdog and proxy) through one printed root command
+  that runs only the reviewed, digest-pinned install script. The watchdog's
+  Rust-to-Python fallback works under systemd, selection and config writes are
+  synced on Linux, and `scripts/package_release.py --platform linux` builds a
+  Linux bundle with `requirements-linux.lock`. Rehearsed in a Debian 13 systemd
+  container; the real-host proof stays open above. Included in v0.27.0.
 
 - **2026-11-11 — Run each conversion inside bubblewrap on Linux (LX-01).** On
   Linux every conversion job now runs under `/usr/bin/bwrap` with the rules in
