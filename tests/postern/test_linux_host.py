@@ -1,10 +1,13 @@
-"""Linux host contracts, using synthetic files and fake systemctl on every OS."""
+"""Linux host contracts, using synthetic files and fake systemctl on every OS; one test asks the real systemd-analyze."""
+import getpass
 import json
 import os
 from pathlib import Path
 import signal
 import stat
+import shutil
 import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -82,6 +85,21 @@ def test_linux_dropin_and_duplicate_cannot_be_overwritten_even_with_force(linux,
     assert not (tmp_path / '.local').exists()
 
 
+def test_reinstalling_or_updating_the_same_label_is_not_a_second_installation(linux, tmp_path, monkeypatch, capsys):
+    # The installed family's watchdog names the same config; it must not block that family's own update.
+    for path, document in systemd.documents(linux.resolve(), 'owner', tmp_path).values():
+        path.write_text(document)
+    state = tmp_path / '.local/state/postern'
+    assert serve.install(linux, 'owner', tmp_path, False, False, False) == 0  # identical units: nothing to review
+    monkeypatch.setattr(serve, 'ROOT', tmp_path / 'releases/next')
+    assert serve.install(linux, 'owner', tmp_path, False, False, False) == 1
+    assert 'differs' in capsys.readouterr().out
+    before = set(state.glob('install-*'))
+    assert serve.install(linux, 'owner', tmp_path, False, False, True) == 0
+    stage, = set(state.glob('install-*')) - before
+    assert (stage / 'install.sh').read_text().count('cmp -s') == 3  # each reviewed unit must be unchanged at install
+
+
 def test_linux_busy_port_requires_selected_active_unit(linux, tmp_path, monkeypatch):
     monkeypatch.setattr(serve, 'listening', lambda port: True)
     monkeypatch.setattr(systemd, 'systemctl', lambda *args: result('inactive', 3))
@@ -114,6 +132,27 @@ def test_systemd_quoting_cannot_expand_or_inject_directives(tmp_path):
         systemd.quote('config\nUser=root')
     with pytest.raises(ValueError, match='user'):
         systemd.documents(tmp_path / 'config', 'root\nExecStart=/bin/false', tmp_path)
+    assert systemd.path_value('/srv/a b/%i') == '/srv/a b/%%i'
+    for bad in ('relative/path', '/srv/a\nUser=root', '/srv/a\\', ' /srv/a'):
+        with pytest.raises(ValueError, match='absolute'):
+            systemd.path_value(bad)
+
+
+@pytest.mark.skipif(not shutil.which('systemd-analyze'), reason='needs systemd-analyze (Linux CI has it)')
+def test_rendered_units_load_in_real_systemd(tmp_path, monkeypatch):
+    # Fake systemctl elsewhere cannot tell whether systemd accepts the files; this asks it.
+    caddy = tmp_path / 'caddy'
+    caddy.write_text('#!/bin/sh\n')
+    caddy.chmod(0o755)
+    monkeypatch.setattr(systemd.shutil, 'which', lambda name: str(caddy))
+    config_path = tmp_path / 'config $HOME %h.json'
+    jobs = systemd.documents(config_path, getpass.getuser(), tmp_path, python=sys.executable)
+    for path, document in jobs.values():
+        (tmp_path / path.name).write_text(document)
+    result = subprocess.run(['systemd-analyze', 'verify', '--man=no', *[str(tmp_path / path.name) for path, _ in jobs.values()]],
+                            capture_output=True, text=True, timeout=60)
+    ours = [line for line in result.stderr.splitlines() if 'postern' in line]
+    assert result.returncode == 0 and not ours, result.stderr
 
 
 def make_guard(linux, run, **kwargs):
