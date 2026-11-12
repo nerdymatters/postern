@@ -1,6 +1,6 @@
 # The converter sandbox profile
 
-`derive.sb` is the macOS Seatbelt profile that every Postern conversion job runs under (ENG-D6). It is
+`derive.sb` is the macOS Seatbelt profile that every Postern conversion job on macOS runs under (ENG-D6); Linux uses `derive.bwrap` (see [below](#linux-derivebwrap)). It is
 checked in so it can be reviewed and diffed: uploaded bytes are parsed by Poppler, libheif, and FFmpeg, and the
 account running them holds the host Drive token and the session secret in `~/.config/postern/`.
 
@@ -63,11 +63,60 @@ output is bounded by `video_upload_limit` plus 16 MiB for remux overhead, while 
 
 ## Checking it
 
-Every conversion job runs this file: `postern/derive.py` builds the `sandbox-exec -f derive.sb -D ...`
+Every conversion job on macOS runs this file: `postern/derive.py` builds the `sandbox-exec -f derive.sb -D ...`
 command for each job (`job_command`). `postern.serve install` compiles the profile with the placeholders
 substituted before it installs anything, and its preflight runs the real converter and face detector
 under it on a blank photo, expecting "no face found". `tests/postern/test_ops.py` proves the job command
 applies this file with every parameter supplied, pins exactly what it may read and write (only the job
 directory and `/dev/null` are writable), and that a read of a `postern/config.json` under it is refused;
 `tests/postern/test_selfie_faces.py` drives a real capture under a patched copy of it, proving production
-jobs load the file.
+jobs load the file. On Linux, `tests/postern/test_sandbox.py` pins `derive.bwrap` the same way (on both
+platforms), and runs the real bwrap to prove the secrets, writes outside the job, the network and new user
+namespaces are refused, that a sandbox bwrap cannot build is a host fault, and that the memory bound stops a
+job's whole process tree; the face-detector twins in `test_selfie_faces.py` drive a capture under a copy of
+`derive.bwrap` without the model. CI's `pytest-linux` job runs the full suite on Ubuntu.
+
+## Linux: `derive.bwrap`
+
+On Linux every conversion job runs under [bubblewrap](https://github.com/containers/bubblewrap) 0.8.0 or
+later at `/usr/bin/bwrap` instead (LX-01). `derive.bwrap` holds its rules in the same order as
+`derive.sb`, one option per line, and `sandbox_command` in `postern/derive.py` builds every job's command
+and preflight's checks from it, so there is one place to review. Its `{NAME}` operands are the same
+parameters as above. They are not resolved: bwrap mounts each path where the child will look for it, so a
+venv's `bin/python` symlink becomes a plain file inside the sandbox.
+
+- `--unshare-all`, `--unshare-user` — new user, PID, network, IPC, UTS and cgroup namespaces. The network
+  namespace has only a loopback interface that is down, which is how "no network rule" is expressed here. The
+  job cannot see or signal the server's processes. `--unshare-all` alone only tries the user namespace;
+  `--unshare-user` makes it required, so a host that cannot create one refuses the job.
+- `--disable-userns` — code running in the job cannot create another user namespace, which would otherwise
+  hand it a fresh set of capabilities to probe the kernel with.
+- `--die-with-parent`, `--new-session` — the job dies with the server's kill of its process group, and it
+  cannot push input into a terminal it does not own.
+- `--cap-drop ALL` — no capabilities inside, even if the server were ever started as root.
+- `/usr` read-only, with the merged-`/usr` links, the dynamic loader's cache, `/etc/alternatives` and
+  fontconfig's settings — the system libraries, Poppler and FFmpeg. Debian reaches some libraries only through
+  `/etc/alternatives` (FFmpeg's `libblas.so.3`), and that directory holds only symlinks. Nothing else from
+  `/etc` is mounted: no `passwd`, no TLS keys, no host configuration.
+- `--proc /proc`, `--dev /dev` — a process table of the job's own processes, and the null, zero, random and
+  terminal devices only.
+- The input, converter, model, interpreter, venv marker and runtime — read-only, exactly as above. The venv
+  marker is optional: an interpreter outside a venv (such as CI's) has none, and bwrap refuses a missing path.
+  Poppler and FFmpeg must come from the distribution's packages under `/usr`; a copy in `/usr/local/bin`
+  passes the preflight's `which` but is not mounted inside the job.
+- `--bind {OUTPUT}` — the only writable mount. There is no `/tmp` at all; `TMPDIR` is the job directory.
+
+The home directory, `~/.config/postern/`, the data directory, the staging directory as a whole and the
+derivative cache are simply not mounted. Resident memory is bounded from the server as on macOS: it adds up
+the job's whole process tree, because bwrap moves the job into a new session. The child's address-space
+limit applies on Linux, which accepts it.
+
+bwrap stays the job's parent. It reports a job killed by signal N as exit 128 + N, which the server reads
+back as that signal, so a CPU or file-size limit still counts against the upload. Its own setup failures
+exit 1 with a `bwrap: ` message; those, a missing `/usr/bin/bwrap` and an unreadable `derive.bwrap` are
+host faults, never billed to the upload. A converter that has been taken over could print that message itself,
+but it would only turn its own failure into a retryable one, still within the daily server-fault budget.
+
+**Ubuntu 23.10 and later** let only programs that AppArmor approves create an unprivileged user namespace.
+Install `postern-bwrap.apparmor` as its first lines describe; the preflight says so when the restriction is
+what stops the sandbox. Debian does not restrict user namespaces and needs no rule.

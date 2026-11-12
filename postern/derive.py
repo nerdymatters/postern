@@ -14,8 +14,11 @@ import time
 from .derive_child import FACE_MODEL, FACE_FAILURES
 
 ROOT = Path(__file__).resolve().parents[1]
-# The one Seatbelt profile every conversion job runs under; preflight compiles and exercises this same file.
-PROFILE = ROOT / 'config' / 'sandbox' / 'derive.sb'
+LINUX = platform.system() == 'Linux'
+# The one profile every conversion job runs under, Seatbelt on macOS and bubblewrap on Linux (LX-01);
+# preflight compiles and exercises this same file.
+PROFILE = ROOT / 'config' / 'sandbox' / ('derive.bwrap' if LINUX else 'derive.sb')
+BWRAP = '/usr/bin/bwrap'
 CHILD = Path(__file__).with_name('derive_child.py').resolve()
 # A selfie becomes a 256px square, so a small pixel budget and output are enough, whatever the document limits.
 SELFIE_MAX_PIXELS = 4_000_000
@@ -36,6 +39,11 @@ class DeriveCapacity(DeriveFault):
 
 def poppler_dir():
     return Path(shutil.which('pdftoppm') or '/missing/pdftoppm').parent
+
+
+def media_dir():
+    """Where ffprobe and ffmpeg live: Homebrew's on macOS, as before; wherever PATH finds them on Linux."""
+    return Path(shutil.which('ffmpeg') or '/missing/ffmpeg').parent if LINUX else Path('/opt/homebrew/bin')
 
 
 class SelfieFaceError(DeriveError):
@@ -60,10 +68,78 @@ def sandbox_profile_args(source, output):
     return arguments
 
 
-def job_command(source, output, kind, max_pages, max_pixels, max_bytes, poppler):
+def bubblewrap_args(source, output):
+    """derive.bwrap with its {NAME} operands filled in, as bwrap arguments for one conversion job.
+
+    Paths stay as the job uses them, not resolved: bwrap binds each path where the child will look for it
+    (a venv's bin/python is a symlink outside the sandbox and a plain file inside it).
+    """
+    params = {'SOURCE': source, 'CHILD': CHILD, 'FACE_MODEL': FACE_MODEL, 'PYTHON': sys.executable,
+              'PYVENV': Path(sys.prefix) / 'pyvenv.cfg', 'STDLIB': sysconfig.get_path('stdlib'),
+              'PURELIB': sysconfig.get_path('purelib'), 'PLATLIB': sysconfig.get_path('platlib'),
+              'BASE_PREFIX': sys.base_prefix, 'OUTPUT': output}
+    arguments = []
+    for line in PROFILE.read_text().splitlines():
+        for token in line.split('#', 1)[0].split():
+            if '{' in token or '}' in token:
+                name = token[1:-1] if token.startswith('{') and token.endswith('}') else None
+                if name not in params:
+                    raise ValueError(f'{PROFILE.name}: unknown parameter {token}')
+                token = os.path.abspath(params[name])
+            arguments.append(token)
+    return arguments
+
+
+def sandbox_command(source, output, program):
+    """The one place a job's sandbox is built: the same profile for conversions and preflight's checks."""
+    if LINUX:
+        return [BWRAP, *bubblewrap_args(source, output), '--', *program]
+    return ['/usr/bin/sandbox-exec', *sandbox_profile_args(source, output), *program]
+
+
+def job_command(source, output, kind, max_pages, max_pixels, max_bytes, poppler, media=None):
     """The exact sandboxed command for one conversion job."""
-    return ['/usr/bin/sandbox-exec', *sandbox_profile_args(source, output), sys.executable, '-I', str(CHILD),
-            str(source), str(output), kind, str(max_pages), str(max_pixels), str(max_bytes), str(poppler)]
+    return sandbox_command(source, output, [sys.executable, '-I', str(CHILD), str(source), str(output), kind,
+                                            str(max_pages), str(max_pixels), str(max_bytes), str(poppler),
+                                            str(media or media_dir())])
+
+
+def outcome(returncode, stderr):
+    """The job's exit as the child reported it, or None when the sandbox itself could not start it.
+
+    sandbox-exec execs the child, so its status is the child's own. bwrap stays the parent: it reports a
+    job killed by signal N as 128 + N, and its own setup failures as 1 with a "bwrap: " message.
+    """
+    if not LINUX or returncode <= 0:
+        return returncode
+    if returncode == 1 and stderr.startswith(b'bwrap: '):
+        return None
+    return 128 - returncode if returncode > 128 else returncode
+
+
+def tree_resident(root):
+    """Resident bytes of a process and all its descendants, from /proc (Linux).
+
+    bwrap starts the job in a new session and PID namespace, so its process group is not the job's.
+    """
+    children, rss = {}, {}
+    for entry in os.scandir('/proc'):
+        if not entry.name.isdigit():
+            continue
+        try:
+            with open(f'/proc/{entry.name}/stat', 'rb') as handle:
+                fields = handle.read().rsplit(b')', 1)[1].split()
+        except OSError:
+            continue  # exited while the table was read
+        pid = int(entry.name)
+        children.setdefault(int(fields[1]), []).append(pid)
+        rss[pid] = int(fields[21])
+    total, pending = 0, [root]
+    while pending:
+        pid = pending.pop()
+        total += rss.get(pid, 0)
+        pending += children.get(pid, [])
+    return total * os.sysconf('SC_PAGE_SIZE')
 
 
 def job_env(output):
@@ -79,7 +155,10 @@ class Deriver:
 
     def run(self, source, destination, kind):
         """One conversion job. Callers bound how many run at once (Service.convert); this method does not."""
-        if platform.system() != 'Darwin' or not shutil.which('sandbox-exec'):
+        if LINUX:
+            if not os.access(BWRAP, os.X_OK):
+                raise DeriveFault('This converter requires bubblewrap at /usr/bin/bwrap')
+        elif platform.system() != 'Darwin' or not shutil.which('sandbox-exec'):
             raise DeriveFault('This converter requires the configured macOS sandbox')
         source, destination = Path(source).resolve(), Path(destination).resolve()
         output_limit = (SELFIE_OUTPUT_LIMIT if kind == 'selfie' else self.config.video_upload_limit + 16 * 1024**2 if kind == 'video' else self.config.derive_output_limit)
@@ -88,21 +167,28 @@ class Deriver:
             raise DeriveCapacity('Not enough free disk space to prepare this attachment')
         with tempfile.TemporaryDirectory(prefix='derive-',dir=self.config.data_dir/'staging') as tmp:
             output = Path(tmp)
-            command = job_command(source, output, kind, self.config.max_pages,
-                                  min(self.config.max_pixels, SELFIE_MAX_PIXELS) if kind == 'selfie' else self.config.max_pixels,
-                                  output_limit, self.poppler)
+            try:
+                command = job_command(source, output, kind, self.config.max_pages,
+                                      min(self.config.max_pixels, SELFIE_MAX_PIXELS) if kind == 'selfie' else self.config.max_pixels,
+                                      output_limit, self.poppler)
+            except (OSError, ValueError) as error:
+                # A missing or malformed bubblewrap profile, like sandbox-exec refusing derive.sb, is the host's fault.
+                raise DeriveFault('The converter could not run') from error
             process = subprocess.Popen(command,cwd=output,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
                 env=job_env(output),start_new_session=True)
             try:
-                self.wait(process)
+                _, stderr = self.wait(process)
             except DeriveError:
                 os.killpg(process.pid,signal.SIGKILL)
                 process.communicate()
                 raise
-            if process.returncode:
-                if kind == 'selfie' and process.returncode in FACE_FAILURES:
-                    raise SelfieFaceError(FACE_FAILURES[process.returncode])
-                if process.returncode >= 64:
+            returncode = outcome(process.returncode, stderr or b'')
+            if returncode is None:
+                raise DeriveFault('The converter could not run')
+            if returncode:
+                if kind == 'selfie' and returncode in FACE_FAILURES:
+                    raise SelfieFaceError(FACE_FAILURES[returncode])
+                if returncode >= 64:
                     # sandbox-exec itself refusing to start (65 for an unreadable profile).
                     raise DeriveFault('The converter could not run')
                 # Signals can come from the upload: the child's CPU/file-size limits or a decoder crash.
@@ -132,6 +218,8 @@ class Deriver:
 
     def resident(self, process):
         # macOS refuses address-space rlimits, so the whole job's resident memory is bounded here.
+        if LINUX:
+            return tree_resident(process.pid)
         result = subprocess.run(['/bin/ps','-o','rss=','-g',str(process.pid)],capture_output=True)
         return sum(int(line) for line in result.stdout.split())*1024
 
@@ -139,8 +227,7 @@ class Deriver:
         deadline = time.monotonic()+self.config.derive_timeout
         while True:
             try:
-                process.communicate(timeout=0.5)
-                return
+                return process.communicate(timeout=0.5)
             except subprocess.TimeoutExpired:
                 pass
             if time.monotonic() >= deadline:

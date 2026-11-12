@@ -15,6 +15,8 @@ from postern.derive import SelfieFaceError
 from test_selfie import capture, enrollment, enroll, failing, login, read_photo
 
 FIXTURES = Path(__file__).resolve().parents[1] / 'fixtures'
+SEATBELT = pytest.mark.skipif(derive.LINUX, reason='macOS Seatbelt; test_sandbox.py and the twins below cover bubblewrap')
+BUBBLEWRAP = pytest.mark.skipif(not derive.LINUX, reason='runs the real bubblewrap, which needs a Linux host')
 
 
 def portrait():
@@ -138,11 +140,38 @@ def without_model(tmp_path):
     return profile
 
 
+@SEATBELT
 def test_sandbox_model_read_failure_is_reported_without_parser_details(client, service, monkeypatch, tmp_path):
     monkeypatch.setattr(derive, 'PROFILE', without_model(tmp_path))
     result = capture(client, login(client))
     assert (result.status_code, result.json()['error']) == (503, 'face_check_unavailable')
     assert 'Traceback' not in result.text and 'onnx' not in result.text
+
+
+def without_model_mount(tmp_path):
+    """derive.bwrap without the model's mount: native imports and image preparation still work."""
+    rule = '--ro-bind {FACE_MODEL} {FACE_MODEL}\n'
+    text = derive.PROFILE.read_text()
+    assert text.count(rule) == 1
+    profile = tmp_path/'derive.bwrap'
+    profile.write_text(text.replace(rule, ''))
+    return profile
+
+
+@BUBBLEWRAP
+def test_bubblewrap_model_read_failure_is_reported_without_parser_details(client, service, monkeypatch, tmp_path):
+    monkeypatch.setattr(derive, 'PROFILE', without_model_mount(tmp_path))
+    result = capture(client, login(client))
+    assert (result.status_code, result.json()['error']) == (503, 'face_check_unavailable')
+    assert 'Traceback' not in result.text and 'onnx' not in result.text
+
+
+@BUBBLEWRAP
+def test_preflight_runs_the_face_detector_inside_the_bubblewrap_sandbox(tmp_path, monkeypatch):
+    assert detector_check(tmp_path)[0] is True
+    monkeypatch.setattr(derive, 'PROFILE', without_model_mount(tmp_path))
+    ok, detail = detector_check(tmp_path)
+    assert ok is False and 'inside the converter sandbox' in detail
 
 
 @pytest.mark.parametrize('box', [(-30, 30, 130, 140), (170, 30, 130, 140)])
@@ -165,6 +194,7 @@ def test_every_face_check_outcome_has_a_refusal_and_a_new_one_asks_for_a_retake(
 # Value: protects=preflight fails when the detector cannot run where enrollment runs it; fails_when=the face-detector
 #   check runs only in the server process, outside the profile and limits; why_new=a sandbox-only failure showed
 #   green before; seam=none
+@SEATBELT
 def test_preflight_runs_the_face_detector_inside_the_converter_sandbox(tmp_path, monkeypatch):
     assert detector_check(tmp_path)[0] is True
     monkeypatch.setattr(derive, 'PROFILE', without_model(tmp_path))

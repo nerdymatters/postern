@@ -17,7 +17,7 @@ Operator training content and branding live outside the software package. The in
 
 ## Try it locally
 
-Use macOS with Python 3.13, Bun 1.4 or later, and the native converter tools. Homebrew users can install the tools with `brew install poppler ffmpeg caddy`. The host must provide `sandbox-exec`.
+Use macOS with Python 3.13, Bun 1.4 or later, and the native converter tools. Homebrew users can install the tools with `brew install poppler ffmpeg caddy`. The host must provide `sandbox-exec`. On Debian or Ubuntu, install `poppler-utils ffmpeg bubblewrap` instead: conversions run under bubblewrap 0.8 or later, and Ubuntu 23.10 and later also need the AppArmor rule in [`config/sandbox/`](config/sandbox/README.md#linux-derivebwrap).
 
 ```sh
 python3.13 -m venv .venv

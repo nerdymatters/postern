@@ -54,10 +54,38 @@ def profile_compiles():
         scratch = Path(scratch).resolve()
         source = scratch / 'probe.bin'
         source.write_bytes(b'')
-        result = subprocess.run(['/usr/bin/sandbox-exec', *derive.sandbox_profile_args(source, scratch), '/usr/bin/true'],
-                                capture_output=True, text=True)
+        try:
+            command = derive.sandbox_command(source, scratch, ['/usr/bin/true'])
+        except (OSError, ValueError) as error:
+            return False, f'{derive.PROFILE} cannot be applied: {error}'
+        result = subprocess.run(command, capture_output=True, text=True)
     detail = (result.stderr or result.stdout).strip()
+    if result.returncode and derive.LINUX and userns_restricted():
+        detail += ('; this host restricts unprivileged user namespaces, so bubblewrap needs the AppArmor rule '
+                   f'{derive.PROFILE.with_name("postern-bwrap.apparmor")} (see {derive.PROFILE.with_name("README.md")})')
     return result.returncode == 0, detail or f'{derive.PROFILE} compiles and applies'
+
+
+def userns_restricted():
+    """Ubuntu 23.10 and later let only AppArmor-approved programs use the user namespace bwrap needs."""
+    try:
+        return Path('/proc/sys/kernel/apparmor_restrict_unprivileged_userns').read_text().strip() == '1'
+    except OSError:
+        return False
+
+
+def bubblewrap_version():
+    """(ok, detail) for /usr/bin/bwrap: derive.bwrap's --disable-userns needs bubblewrap 0.8.0 or later."""
+    try:
+        words = subprocess.run([derive.BWRAP, '--version'], capture_output=True, text=True, timeout=10).stdout.split()
+    except (OSError, subprocess.SubprocessError):
+        words = []
+    if not words:
+        return False, f'{derive.BWRAP} is missing — install bubblewrap; the converter cannot run'
+    version = tuple(int(part) for part in re.findall(r'\d+', words[-1])[:3])
+    if version < (0, 8, 0):
+        return False, f'{derive.BWRAP} {words[-1]} — 0.8.0 or later is required'
+    return True, f'{derive.BWRAP} {words[-1]}'
 
 
 def face_check_in_sandbox():
@@ -160,8 +188,11 @@ def preflight(config_path):
     except Exception as error:
         checks.append(('final exam and subtitles', False, f'Invalid training content: {error}'))
 
-    sandbox = Path('/usr/bin/sandbox-exec')
-    checks.append(('sandbox-exec', sandbox.is_file(), str(sandbox) if sandbox.is_file() else 'missing — the converter cannot run'))
+    if derive.LINUX:
+        checks.append(('bubblewrap', *bubblewrap_version()))
+    else:
+        sandbox = Path('/usr/bin/sandbox-exec')
+        checks.append(('sandbox-exec', sandbox.is_file(), str(sandbox) if sandbox.is_file() else 'missing — the converter cannot run'))
 
     try:
         from PIL import Image
