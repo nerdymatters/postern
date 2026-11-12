@@ -1,4 +1,4 @@
-"""Run Postern as a service on this Mac.
+"""Run Postern as a service on macOS or Linux.
 
     .venv/bin/python -m postern.serve run       --config ~/.config/postern/config.json
     .venv/bin/python -m postern.serve install   [--check-only] [--user-agent] [--user NAME] [--force]
@@ -373,6 +373,12 @@ def other_installation(config_path, label, user_agent, home):
 
 
 def install(config_path, user, home, user_agent, check_only, force, label=LABEL):
+    if sys.platform == 'linux':
+        from . import systemd
+        if user_agent:
+            print('FAIL --user-agent is macOS-only; Linux uses system services')
+            return 1
+        return systemd.install(config_path, user, home, check_only, force, label)
     label, watcher, _ = service_labels(label)
     print(f'Postern {"user agent" if user_agent else "LaunchDaemon"} for {user} ({home})')
     checks = preflight(config_path)
@@ -433,6 +439,12 @@ def install(config_path, user, home, user_agent, check_only, force, label=LABEL)
 
 
 def uninstall(user, home, user_agent, label=LABEL):
+    if sys.platform == 'linux':
+        from . import systemd
+        if user_agent:
+            print('FAIL --user-agent is macOS-only; Linux uses system services')
+            return 1
+        return systemd.uninstall(label)
     where = domain(user_agent)
     for job_label in service_labels(label):
         path = plist_path(job_label, user_agent, home)
@@ -452,6 +464,12 @@ def uninstall(user, home, user_agent, label=LABEL):
 
 
 def status(config_path, home, user_agent, label=LABEL):
+    if sys.platform == 'linux':
+        from . import systemd
+        if user_agent:
+            print('FAIL --user-agent is macOS-only; Linux uses system services')
+            return 1
+        return systemd.status(config_path, label)
     where, down = domain(user_agent), False
     application, watcher, proxy = service_labels(label)
     for job_label in (application, watcher, proxy):
@@ -535,7 +553,7 @@ def backend(config_path, choice):
         print(f'ok   serving process {active.get("pid")}: {active.get("backend")} from {active.get("source")}, '
               f'started {active.get("started_at")}')
     if choice == 'rust' and active and active.get('source') == 'environment' and process_exists(active.get('pid')):
-        print(GUARD_STATES['override'])  # the launchd setting wins at the restart, so the file will not apply
+        print(GUARD_STATES['override'].replace('launchd', 'systemd' if sys.platform == 'linux' else 'launchd'))  # the launchd setting wins at the restart, so the file will not apply
     elif choice == 'rust':
         print('ok   watchdog guard: it checks this selection within 30 s of the API restart; run this again to confirm')
     else:
@@ -546,7 +564,7 @@ def backend(config_path, choice):
     if choice not in ('python', 'rust'):
         print(reads_line(data_dir))
     if choice in ('python', 'rust'):
-        print(f'Restart the API to apply it. A {progress_backend.SETTING} setting in the launchd job overrides this file.')
+        print(f'Restart the API to apply it. A {progress_backend.SETTING} setting in the {"systemd" if sys.platform == "linux" else "launchd"} job overrides this file.')
     return 0
 
 
@@ -658,7 +676,7 @@ def guard_line(record, config_path, now=None, selected=None, active=None):
     from .watchdog import GUARD_VERSION
     live = active is not None and process_exists(active.get('pid'))  # a record left by an earlier process is history
     if live and active.get('backend') == 'rust' and active.get('source') == 'environment':
-        return GUARD_STATES['override']
+        return GUARD_STATES['override'].replace('launchd', 'systemd' if sys.platform == 'linux' else 'launchd')
     try:
         info = progress_backend.selection_path(config_path).lstat()
         current = [info.st_ino, info.st_mtime_ns]
@@ -689,7 +707,8 @@ def guard_line(record, config_path, now=None, selected=None, active=None):
     state = record.get('state')
     if state == 'guarding':
         return f'ok   watchdog guard: {where}, guarding this selection'
-    return GUARD_STATES.get(state, f'FAIL watchdog guard: unknown state {state!r}') + f' ({where})'
+    return GUARD_STATES.get(state, f'FAIL watchdog guard: unknown state {state!r}').replace(
+        'launchd', 'systemd' if sys.platform == 'linux' else 'launchd') + f' ({where})'
 
 
 def main(argv=None):
@@ -702,8 +721,8 @@ def main(argv=None):
             action.add_argument('choice', nargs='?', default='show', choices=('show', 'python', 'rust'))
         if name not in ('run', 'backend'):
             action.add_argument('--label', default=LABEL, type=lambda value: service_labels(value)[0],
-                                help='launchd application label; existing hosts must pass their installed label')
-            action.add_argument('--user', default=None, help='the macOS account that owns the data (default $SUDO_USER or you)')
+                                help='service label; existing hosts must pass their installed label')
+            action.add_argument('--user', default=None, help='the account that owns the data (default $SUDO_USER or you)')
             action.add_argument('--user-agent', action='store_true',
                                 help='fallback: install a login-scoped LaunchAgent instead of the boot LaunchDaemon')
     install_action = actions.choices['install']

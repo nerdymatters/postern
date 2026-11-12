@@ -1,0 +1,184 @@
+# Linux host installation, update and rollback
+
+Target a Debian or Ubuntu systemd host with CPython 3.13 and local persistent
+storage. The API, watchdog and Caddy proxy run as one dedicated, unprivileged
+account in separate **system** units, enabled at boot. No interactive login is
+required. The installer renders files as the owner and prints a root command;
+it never invokes sudo. Keep the service account's home on storage available at
+boot, without a login-unlocked encrypted home.
+
+Linux acceptance is still pending a real-host rehearsal. LX-01 supplies the
+bubblewrap converter and real sandbox preflight; do not start serving until
+that preflight passes. This host-layer change alone retains the macOS sandbox
+checks and therefore does not claim Linux conversion readiness.
+
+## Provision and install
+
+1. Provision an account such as `postern`, a persistent home and private config
+   and data directories (0700). Put configuration and credentials outside the
+   release tree, owned by that account, mode 0600. Start with
+   [config.example.json](../../ops/postern/config.example.json), the
+   [private content instructions](release.md#private-training-content), and
+   [branding](../branding.md). Preserve private training, question IDs,
+   agreement versions and certificate prefixes on an existing installation.
+2. Install CPython 3.13, venv support, poppler-utils, ffmpeg, bubblewrap, Caddy,
+   lsof, procps and curl. Record the exact distribution and package versions
+   (`dpkg-query -W`), install from your approved pinned repository snapshot,
+   and hold the reviewed versions until the next tested host update. There
+   is no universal Debian/Ubuntu package-version string. Do not silently
+   upgrade these packages with an application update. On Ubuntu 23.10 and
+   later, provision the LX-01 AppArmor policy and prove that bubblewrap works
+   under the service account; do not globally disable AppArmor.
+3. Verify the release's SHA256SUMS and extract to an owner-controlled versioned
+   directory, for example `/srv/postern/releases/VERSION`. Retain old releases.
+   Run the following **as the service account**, from the new release:
+
+   ```sh
+   uv venv --python 3.13 .venv
+   uv pip install --python .venv/bin/python --only-binary=:all: -r requirements-linux.lock
+   uv pip install --python .venv/bin/python --no-deps -e .
+   .venv/bin/python -P -m postern.serve install --check-only --config /home/postern/.config/postern/config.json
+   .venv/bin/python -P -m postern.serve install --config /home/postern/.config/postern/config.json --user postern --label org.nerdymatters.postern
+   ```
+
+   The Linux lock keeps every macOS pilot version unchanged. Cross-platform
+   resolution was checked for CPython 3.13 / Linux x86-64; installation and
+   native imports must still be verified on the selected distribution and
+   architecture. The optional Rust wheel must match the target architecture,
+   Python ABI and glibc baseline. Install an approved bundled wheel explicitly
+   with `uv pip install --python .venv/bin/python --no-deps wheels/EXACT_NAME.whl`.
+   Without it, Python remains the default.
+4. Review the rendered units and `install.sh` under the owner's
+   `~/.local/state/postern/install-*` directory. Run the **single root command
+   printed by install**. It installs the units into `/etc/systemd/system`,
+   reloads systemd, enables and restarts the three services. It refuses an
+   installed unit changed since rendering. Keep the stage until installation
+   is complete; it contains paths and unit definitions, not config contents.
+   Custom labels must be supplied consistently. `--user-agent` is macOS-only.
+5. Check services, private health, alerts and ingress:
+
+   ```sh
+   .venv/bin/python -P -m postern.serve status --config /home/postern/.config/postern/config.json --label org.nerdymatters.postern
+   .venv/bin/python -P -m postern.serve backend show --config /home/postern/.config/postern/config.json
+   journalctl -u org.nerdymatters.postern.service -u org.nerdymatters.postern.watchdog.service
+   ```
+
+   Journal access may require an operator account or root. Configure private
+   [watchdog SMTP settings](../../ops/postern/watchdog.example.json) beside
+   the config and run `postern.watchdog test --config ...` deliberately to
+   prove receipt. Without SMTP, alerts are local files, not external notices.
+   Follow the [proxy/HTTPS ingress contract](../../ops/postern/README.md#proxy-and-https-ingress):
+   Caddy listens on loopback port 18789 and requires PROXY protocol v2.
+   The ingress/tunnel is provisioned independently as a boot service.
+6. Schedule a real reboot. Before manually starting anything, run:
+
+   ```sh
+   sh ops/postern/reboot-check-linux.sh /home/postern/.config/postern/config.json org.nerdymatters.postern .venv/bin/python
+   ```
+
+   It requires **enabled and active** for all three units and probes local
+   health. Also check the public HTTPS URL, client-address policy and a
+   synthetic document conversion. An active API does not prove ingress works.
+
+## Update and restart
+
+Keep the installed label, account, configuration and data directory. Take the
+normal backups and record the old release path and unit files. Install the new
+release and its own venv exactly as above; never move a venv after creating it.
+Run preflight as the owner. Render install again with the same label. The old
+units differ in executable/working-directory paths: inspect the displayed diff,
+then re-run with `--force` only for those reviewed changes. Vendor units,
+symlinks/masks and drop-ins are refused even with `--force`; reconcile them
+explicitly instead of silently shadowing their settings. Run the newly printed
+root command, then status, private health and a synthetic conversion.
+
+For a restart without changing units, the operator runs:
+
+```sh
+sudo systemctl --system restart org.nerdymatters.postern.service
+```
+
+Restart the watchdog too when its code changes. Logs go to journald. Configure
+journal retention/persistence with the host policy. `Restart=always` and disabled
+start-rate limiting allow recovery from clean exits and crash loops; the
+watchdog is an independent unit and alerts when health keeps failing. Both
+units wait for `network-online.target`; configure the host's wait-online
+provider. This target is not a guarantee of Internet reachability.
+
+## Python fallback
+
+As the owner, select Python using the installed release:
+
+```sh
+.venv/bin/python -P -m postern.serve backend python --config /home/postern/.config/postern/config.json
+```
+
+Then run the API restart above and `backend show`. Confirm a new API PID,
+`python` from `progress-backend.json`, and healthy reads/writes. Do not remove
+staff data or overwrite the database. Automatic fallback writes and syncs the
+Python selection before signalling only the verified serving API with SIGTERM.
+Systemd restarts it even after a clean exit. The watchdog escalates a stuck
+process after 120 seconds; systemd's cgroup cleanup also covers converter
+sessions. An operator's `systemctl stop` intentionally stays stopped.
+
+Do not put `POSTERN_PROGRESS_BACKEND` in the unit, manager environment or a
+service environment file for a guarded rollout. Inspect `systemctl cat UNIT`
+and `systemctl show UNIT -p Environment -p EnvironmentFiles`; remove the
+backend override, run `sudo systemctl daemon-reload`, then restart. The API's
+startup record and the unit's merged Environment detect overrides. Environment
+files or a failed environment lookup conservatively make the guard alert-only,
+because their effective value cannot be proved by `systemctl show`. This is
+reported in the alert; restore inspectable configuration before relying on
+automatic fallback. The watchdog never edits root-owned unit configuration.
+
+Prove automatic fallback using synthetic data on a disposable Linux host:
+select an installed Rust wheel, induce the documented guard threshold, then
+observe a durable Python selection, the old API's exit, a new Python PID and
+one alert. Mocked systemctl tests alone do not establish that behavior.
+
+## Roll back or uninstall
+
+For a code rollback, first select Python and restart, then stop the API and
+watchdog during the change. From the retained previous **Linux-capable**
+release with its original venv, run preflight and render/install using the same
+config, account and label. Review and force only the expected unit path
+changes. The printed root command restarts the services. Confirm status,
+private health, backend and a document. Preserve the current database, WAL,
+private files and recorded staff activity; restoring an old database is disaster
+recovery, not code rollback. A macOS-only release is not a Linux rollback target.
+
+`postern.serve uninstall --label INSTALLED_LABEL` prints a root command to
+disable/stop and remove that unit family, then reload systemd. Data, config,
+other labels and any manually managed drop-ins remain untouched. Review any
+retained drop-ins before reinstalling.
+
+## Durability and releases
+
+SQLite uses WAL and `synchronous=FULL` on both platforms. On Linux the private
+health `sqlite` report has `fullfsync: 0` and `fullfsync_supported: false`;
+SQLite's Unix VFS supplies the normal sync operations. macOS retains
+`fullfsync: 1`. These guarantees require local storage that honors syncs;
+network filesystems and storage that lies about flush completion are not a
+supported durability substitute.
+
+Linux config and backend-selection replacements fsync the temporary file,
+rename it, then fsync its directory before reporting success. This prevents
+power loss from resurrecting the prior Rust selection after fallback. A sync
+failure prevents the watchdog from signalling the API. Diagnostic heartbeats
+and recoverable selfie caches do not need this durability; authoritative audit
+history remains in SQLite. Provision persistent parent directories before use.
+
+Build a Linux source/web bundle from a clean checkout:
+
+```sh
+.venv/bin/python scripts/package_release.py --platform linux --output .context/release-linux
+# If an approved CI wheel is available, add --native-wheel /path/to/EXACT_NAME.whl
+```
+
+The bundle contains `requirements-linux.lock`, the systemd template, reboot
+check and these instructions. Explicit native wheels are placed in `wheels/`
+and listed in RELEASE.json. Packaging rejects wrong-platform and non-Postern
+wheel names and symlink inputs. Python-only releases need no native wheel.
+At the LX-02 base commit, `rust-progress-linux` builds/tests the package but
+does not upload a wheel artifact. CI artifact publication and host compatibility
+validation remain release-owner work; no workflow is changed here.

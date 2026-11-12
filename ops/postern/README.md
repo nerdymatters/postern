@@ -1,12 +1,17 @@
-# Operating Postern on a Mac
+# Operating Postern
 
-Start with the [host runbook](../../docs/runbooks/pilot.md). Keep all filled
+For Debian/Ubuntu systemd hosts, use the [Linux install, update and rollback runbook](../../docs/runbooks/linux.md).
+Linux units use journald and start without a login. The Linux installer renders units and prints the root command.
+
+On macOS, start with the [host runbook](../../docs/runbooks/pilot.md). Keep all filled
 configuration files outside Git, owned by the service operator, with mode 0600.
 
 | File | Purpose |
 | --- | --- |
 | `config.example.json` | API configuration template. |
 | `watchdog.example.json` | Optional SMTP settings beside the API config; the server does not read the mail password. |
+| `systemd/service.in` | Linux API, watchdog and proxy unit template. |
+| `reboot-check-linux.sh` | Require all three Linux units enabled and active after a reboot, then probe health. |
 | `reboot-check.sh` | Verify local services after FileVault unlock and operator login. |
 | `status-heartbeat.example.json` | Private heartbeat endpoint, token and installed launchd targets. |
 | `status-heartbeat.py` | Send only process states; `--check` observes without sending. |

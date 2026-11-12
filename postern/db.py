@@ -8,6 +8,7 @@ from __future__ import annotations
 import concurrent.futures
 import queue
 import sqlite3
+import sys
 import threading
 import time
 import json
@@ -132,7 +133,7 @@ class Database:
             db = sqlite3.connect(self.path, timeout=1)
             self.path.chmod(0o600)
             db.row_factory = sqlite3.Row
-            for pragma in ['journal_mode=WAL', 'synchronous=FULL', 'fullfsync=ON', 'busy_timeout=1000', 'foreign_keys=ON']:
+            for pragma in ['journal_mode=WAL', 'synchronous=FULL', 'fullfsync=' + ('ON' if sys.platform == 'darwin' else 'OFF'), 'busy_timeout=1000', 'foreign_keys=ON']:
                 db.execute('PRAGMA ' + pragma)
             projection_complete = progress_store.complete(db)
             db.executescript(SCHEMA)
@@ -157,7 +158,12 @@ class Database:
                 db.commit()
             rebuild_pending = progress_store.pending(db)
             retry_delay, retry_at = 0.0, 0.0
-            self.ready.set_result({p: db.execute('PRAGMA '+p).fetchone()[0] for p in ['journal_mode','synchronous','fullfsync','busy_timeout']})
+            settings = {p: db.execute('PRAGMA '+p).fetchone()[0]
+                        for p in ['journal_mode','synchronous','fullfsync','busy_timeout']}
+            if sys.platform != 'darwin':
+                # fullfsync=ON is accepted elsewhere but does nothing; WAL/FULL uses the Unix VFS sync.
+                settings['fullfsync_supported'] = False
+            self.ready.set_result(settings)
             while True:
                 try:
                     wait = max(.1, retry_at - time.monotonic()) if rebuild_pending else None
