@@ -313,6 +313,10 @@ the remaining integration and deployment gates:
   [ownership transfer](../runbooks/ownership-transfer.md) are also verified in isolation.
   Complete legacy content/object adapters, outbox/cleanup scheduling and hosted connection-pool checks. The new
   migration uses opaque identities; the integer-ID experiment stays separate.
+- Catalog pages for a member who sees little of a space holding 10,000 or
+  100,000 resources granted to others now take 3–17 ms locally; they previously
+  exceeded the five-second deadline. See
+  [catalog listing at scale](../runbooks/service-integration.md#catalog-listing-at-scale).
 - Choose hosted PostgreSQL/object services, region, operational owner and budget;
   verify connection pooling, cold/warm latency, mixed reads/writes, contention,
   object size/transfer limits and recovery objectives at this workload. Local row

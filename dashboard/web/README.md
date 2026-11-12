@@ -44,8 +44,15 @@ privacy page explains publication, deletion and separately retained space data.
 
 Also set `VITE_POSTERN_SPACES_API` to the native resource API to enable the
 multi-space home. Both services must use the PostgreSQL adapters and migrations
-through `006`; the default D1 Worker does not expose these onboarding routes.
+through `008`; the default D1 Worker does not expose these onboarding routes.
 This path is verified locally with synthetic identities, not deployed.
+
+**Groups and sharing** opens `/s/{uuid}/sharing` for owners and administrators.
+Create flat audience groups, assign active members, share published resources,
+inspect effective access and revoke grants. Cleanup retires stale grants in
+audited batches while preserving their history. See the
+[sharing runbook](../../docs/runbooks/resource-sharing.md) for expiry, additive
+access and cleanup semantics. The sharing screen loads on demand.
 
 My Posterns lists memberships and operator-approved creation availability.
 **Create a Postern** opens `/spaces/new`. Owners/admins can issue and revoke

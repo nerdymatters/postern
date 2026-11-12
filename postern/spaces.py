@@ -14,6 +14,7 @@ import json
 import re
 import secrets
 import time
+import unicodedata
 import uuid
 
 import jwt
@@ -98,7 +99,8 @@ class SpaceService:
         allowed = {'exchange_session', 'resource_context', 'resource_catalog',
                    'resource_detail', 'resource_revoke', 'end_resource_session',
                    'create_invitation', 'list_invitations', 'revoke_invitation',
-                   'resource_members', 'resource_membership_change'}
+                   'resource_members', 'resource_membership_change',
+                   'resource_sharing', 'resource_sharing_change', 'resource_access'}
         if function not in allowed:
             raise ValueError('unknown operation')
         try:
@@ -116,6 +118,10 @@ class SpaceService:
                 raise SpaceError(409, 'invitation_conflict', 'The invitation conflicts with current membership or the pending invitation limit.') from None
             if exc.sqlstate == 'PT412':
                 raise SpaceError(409, 'membership_changed', 'Memberships changed. Reload the member list before trying again.') from None
+            if exc.sqlstate == 'PT413':
+                raise SpaceError(409, 'sharing_changed', 'Sharing or resource availability changed. Reload before trying again.') from None
+            if exc.sqlstate == 'PT422':
+                raise SpaceError(422, 'invalid_sharing', 'Check the group name, recipients, actions and future expiry.') from None
             if exc.sqlstate == '22023':
                 raise SpaceError(422, 'invalid_cursor', 'This list changed. Reload it before continuing.') from None
             if exc.sqlstate == 'P0001':
@@ -244,6 +250,61 @@ class SpaceService:
             separators=(',', ':')).encode()).hexdigest()
         return await self.call('resource_membership_change', (hashed, space, self.trust.audience, member, operation, fingerprint, expected, role))
 
+    async def sharing(self, hashed, space, kind, target, cursor):
+        after, expected = None, None
+        if cursor:
+            try:
+                data = jwt.decode(cursor, self.trust.cursor_key, algorithms=['HS256'], audience=self.trust.audience,
+                    options={'require': ['exp', 'aud', 'kind', 'target', 'context', 'after']})
+                if data['kind'] != kind or data['target'] != (target or '') or data['context']['space_id'] != space:
+                    raise ValueError('cursor scope')
+                after, expected = identifier(data['after']), data['context']
+            except (jwt.PyJWTError, KeyError, TypeError, ValueError):
+                raise SpaceError(422, 'invalid_cursor', 'Reload the sharing list.') from None
+        result = await self.call('resource_sharing', (hashed, space, self.trust.audience, kind, target, after,
+            Jsonb(expected) if expected is not None else None))
+        items, ctx, next_cursor = result['items'], result['context'], None
+        if len(items) > 50:
+            items = items[:50]
+            next_cursor = jwt.encode({'context': ctx, 'after': items[-1]['id'], 'kind': kind, 'target': target or '',
+                'aud': self.trust.audience, 'exp': int(time.time())+900}, self.trust.cursor_key, algorithm='HS256')
+        return {'items': items, 'next_cursor': next_cursor, 'policy_revision': ctx['policy_revision']}
+
+    async def change_sharing(self, hashed, space, action, target, value):
+        try:
+            operation, expected = identifier(value['operation_id']), value['expected_revision']
+            if type(expected) is not int or not 0 <= expected <= 9007199254740991:
+                raise ValueError('revision')
+            data = {k: v for k, v in value.items() if k not in ('operation_id', 'expected_revision')}
+            if action in ('audience.create', 'audience.rename'):
+                label = data['label']
+                if not isinstance(label, str):
+                    raise ValueError('label')
+                label = unicodedata.normalize('NFC', label).strip()
+                if not 1 <= len(label) <= 200 or any(ord(c) < 32 or 127 <= ord(c) <= 159 or 0xD800 <= ord(c) <= 0xDFFF for c in label):
+                    raise ValueError('label')
+                data['label'] = label
+            if action in ('audience.add', 'audience.remove'):
+                identifier(data['membership_id'])
+            if action == 'grant.create':
+                for key in ('membership_id', 'audience_id'):
+                    if data[key] is not None:
+                        identifier(data[key])
+                if type(data['all_members']) is not bool or sum((data['membership_id'] is not None, data['audience_id'] is not None, data['all_members'])) != 1:
+                    raise ValueError('recipient')
+                actions, expiry = data['actions'], data['expires_at']
+                if not isinstance(actions, list) or not actions or any(a not in ('discover', 'view') for a in actions) or len(set(actions)) != len(actions) or 'discover' not in actions:
+                    raise ValueError('actions')
+                data['actions'] = sorted(actions)
+                # Absolute seconds keep an uncertain retry from extending a grant.
+                if expiry is not None and (type(expiry) is not int or not 0 <= expiry <= 253402300799):
+                    raise ValueError('expiry')
+        except (KeyError, ValueError, TypeError, AttributeError):
+            raise SpaceError(422, 'invalid_sharing', 'Choose a group name, one recipient, supported actions and a valid expiry.') from None
+        fingerprint = hashlib.sha256(json.dumps([action, space, target, expected, data],
+            sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
+        return await self.call('resource_sharing_change', (hashed, space, self.trust.audience, operation, fingerprint, expected, action, target, Jsonb(data)))
+
 
 def router(service):
     api = APIRouter(prefix='/v1/spaces')
@@ -328,6 +389,55 @@ def router(service):
         s, i = valid(space), valid(invitation)
         fingerprint = hashlib.sha256(f'invitation.revoke:{s}:{i}'.encode()).hexdigest()
         return await service.call('revoke_invitation', (service.token_hash(request), s, service.trust.audience, i, key, fingerprint))
+
+    @api.get('/{space}/audiences')
+    async def audiences(space: str, request: Request, cursor: str = Query('', max_length=4096)):
+        return await service.sharing(service.token_hash(request), valid(space), 'audiences', None, cursor)
+
+    @api.post('/{space}/audiences')
+    async def create_audience(space: str, request: Request):
+        value = await body(request, ('operation_id', 'expected_revision', 'label'))
+        return await service.change_sharing(service.token_hash(request), valid(space), 'audience.create', None, value)
+
+    @api.get('/{space}/audiences/{audience}/members')
+    async def audience_members(space: str, audience: str, request: Request, cursor: str = Query('', max_length=4096)):
+        return await service.sharing(service.token_hash(request), valid(space), 'audience_members', valid(audience), cursor)
+
+    @api.post('/{space}/audiences/{audience}/{action}')
+    async def change_audience(space: str, audience: str, action: str, request: Request):
+        fields = {'rename': ('label',), 'archive': (), 'add': ('membership_id',), 'remove': ('membership_id',)}
+        if action not in fields:
+            raise SpaceError(404, 'not_found', 'This endpoint is not available.')
+        value = await body(request, ('operation_id', 'expected_revision', *fields[action]))
+        return await service.change_sharing(service.token_hash(request), valid(space), 'audience.'+action, valid(audience), value)
+
+    @api.get('/{space}/resources/{resource}/grants')
+    async def grants(space: str, resource: str, request: Request, cursor: str = Query('', max_length=4096)):
+        return await service.sharing(service.token_hash(request), valid(space), 'grants', valid(resource), cursor)
+
+    @api.post('/{space}/resources/{resource}/grants')
+    async def grant(space: str, resource: str, request: Request):
+        value = await body(request, ('operation_id', 'expected_revision', 'membership_id', 'audience_id', 'all_members', 'actions', 'expires_at'))
+        return await service.change_sharing(service.token_hash(request), valid(space), 'grant.create', valid(resource), value)
+
+    @api.post('/{space}/grants/{grant}/revoke')
+    async def revoke_grant(space: str, grant: str, request: Request):
+        value = await body(request, ('operation_id', 'expected_revision'))
+        return await service.change_sharing(service.token_hash(request), valid(space), 'grant.revoke', valid(grant), value)
+
+    @api.get('/{space}/grants/cleanup')
+    async def stale_grants(space: str, request: Request, cursor: str = Query('', max_length=4096)):
+        return await service.sharing(service.token_hash(request), valid(space), 'cleanup', None, cursor)
+
+    @api.post('/{space}/grants/cleanup')
+    async def cleanup_grants(space: str, request: Request):
+        value = await body(request, ('operation_id', 'expected_revision'))
+        return await service.change_sharing(service.token_hash(request), valid(space), 'grant.cleanup', None, value)
+
+    @api.get('/{space}/resources/{resource}/access/{membership}')
+    async def access(space: str, resource: str, membership: str, request: Request):
+        result = await service.call('resource_access', (service.token_hash(request), valid(space), service.trust.audience, valid(resource), valid(membership)))
+        return {**result, 'sources': result['sources'][:50], 'more_sources': len(result['sources']) > 50}
 
     @api.api_route('/{path:path}', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'])
     async def missing(path: str):

@@ -125,6 +125,32 @@ def test_cursor_binding_and_policy_revision(api):
     assert f.client.get(f.url+'/resources',headers=h,params={'cursor':cursor}).status_code==422
 
 
+def test_member_pages_follow_grants(api):
+    f=api; m=f.model
+    m.db.execute(f"INSERT INTO postern.resources(space_id,kind,title,state,adapter) SELECT '{m.s}','document','Shared '||n,'published','test' FROM generate_series(1,55) n;"
+                 f"INSERT INTO postern.grants(space_id,resource_id,all_members,actions) SELECT space_id,id,true,ARRAY['discover'] FROM postern.resources WHERE space_id='{m.s}' AND title LIKE 'Shared %';")
+    h=f.session(); first=f.client.get(f.url+'/resources',headers=h).json()
+    assert len(first['resources'])==50 and first['next_cursor']
+    second=f.client.get(f.url+'/resources',headers=h,params={'cursor':first['next_cursor']}).json()
+    titles=[r['title'] for r in first['resources']+second['resources']]
+    assert second['next_cursor'] is None and len(titles)==len(set(titles))==57
+    assert {'Visible คู่มือพนักงาน','Audience'}<=set(titles) and not {'Hidden คู่มือพนักงาน','Draft','Expired'}&set(titles)
+
+
+@pytest.mark.parametrize('decision',['false','NULL'])
+def test_catalog_fails_closed_when_policy_disagrees(api,decision):
+    f=api; m=f.model; h=f.session()
+    original=m.db.scalar("SELECT pg_get_functiondef('postern.can_resource(uuid,uuid,text)'::regprocedure);")
+    # Simulate a policy that no longer allows one listed row: refuse the page, never skip past it.
+    m.db.execute("CREATE OR REPLACE FUNCTION postern.can_resource(s uuid,r uuid,act text) RETURNS boolean LANGUAGE sql STABLE "
+                 f"SECURITY DEFINER SET search_path=pg_catalog,postern AS $$ SELECT CASE WHEN r='{m.r}'::uuid THEN {decision} ELSE true END $$;")
+    try:
+        refused=f.client.get(f.url+'/resources',headers=h)
+        assert refused.status_code==503 and 'Visible' not in refused.text and 'Audience' not in refused.text
+    finally: m.db.execute(original+';')
+    assert {r['title'] for r in f.client.get(f.url+'/resources',headers=h).json()['resources']}=={'Visible คู่มือพนักงาน','Audience'}
+
+
 def test_atomic_revoke_and_required_audit(api):
     f=api;m=f.model;owner=f.session('a');member=f.session();operation={'operation_id':str(uuid.uuid4())}
     path=f.url+'/memberships/'+m.mb+'/revoke'
