@@ -77,7 +77,7 @@ Terms validation and public profile disclosure reuse the existing account helper
 The production Worker still constructs its D1 store. The synthetic verifier is
 injected only by a separate rehearsal entrypoint.
 
-Apply core migrations in order (currently `001`–`007`), then private account
+Apply core migrations in order (currently `001`–`008`), then private account
 migrations in order (currently `001`–`006`), using the migration
 operator. Core `apply_schema` verifies each applied version's SHA-256, holds one
 installer lock/transaction and rejects unknown versions. Version 1 is unchanged.

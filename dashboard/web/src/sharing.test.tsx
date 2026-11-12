@@ -29,7 +29,9 @@ function fake() {
       if (call.path.endsWith('/revoke')) state.direct = false
       if (call.path.endsWith('/cleanup')) state.stale = 0
       if (call.path.endsWith('/audiences')) state.groupLabel = String(call.body.label)
-      return json({ action: call.path.endsWith('/cleanup') ? 'grant.cleanup' : call.path.endsWith('/audiences') ? 'audience.create' : 'grant.revoke', target: group, retired_count: 1 })
+      const verb = /\/audiences\/[^/]+\/(rename|archive|add|remove)$/.exec(call.path)?.[1]
+      const action = verb ? 'audience.'+verb : call.path.endsWith('/cleanup') ? 'grant.cleanup' : call.path.endsWith('/audiences') ? 'audience.create' : call.path.endsWith('/grants') ? 'grant.create' : 'grant.revoke'
+      return json({ action, target: group, retired_count: 1 })
     }
     if (call.path === '/session') return json({ title: 'Workshop', role: state.role, membership_id: 'owner', policy_revision: state.revision, can_leave: false })
     if (call.path === '/audiences') return json(page([{ id: group, label: state.groupLabel, member_count: 1 }]))
@@ -179,4 +181,81 @@ test('choosing a resource retains a group loaded from another page', async () =>
   expect(screen.getByRole('option', { name: 'Readers (1 members)' })).toHaveProperty('selected', true)
   fireEvent.click(screen.getByRole('button', { name: 'Review grant' }))
   await screen.findByText(/Share “Handbook” with Readers/)
+})
+
+test('group actions name the member and group, send their own paths and bodies, and Cancel sends nothing', async () => {
+  // Value: protects=add, remove, rename and archive each post to their own path with their own body after a
+  // confirmation that names the member and group, Cancel posts nothing, and archive clears the group selection;
+  // fails_when=a button posts to the wrong path or body, a confirmation drops the names, or archive keeps loading
+  // the archived group's members; why_new=the fake answered every POST as grant.revoke, so none of these ran;
+  // seam=none; no_claim=server behavior (fetch mocked)
+  const f = fake(); open(); await select('Audience group', group); await select('Member', member)
+  const posts = (path: string) => f.calls.filter(c => c.method === 'POST' && c.path === `/audiences/${group}/${path}`)
+  fireEvent.click(screen.getByRole('button', { name: 'Add selected member to group' }))
+  await screen.findByText(/Add account Riley to “Readers”/)
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+  expect(screen.queryByRole('heading', { name: 'Add to this group?' })).toBeNull()
+  expect(posts('add')).toHaveLength(0)
+  fireEvent.click(screen.getByRole('button', { name: 'Add selected member to group' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Confirm change' }))
+  await screen.findByText('Sharing updated. Current access is shown below.')
+  expect(posts('add').map(c => c.body.membership_id)).toEqual([member])
+  fireEvent.click(await screen.findByRole('button', { name: /^Remove/ }))
+  await screen.findByText(/Account Riley will lose access through “Readers”/)
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm change' }))
+  await waitFor(() => expect(posts('remove').map(c => c.body.membership_id)).toEqual([member]))
+  await waitFor(() => expect(screen.getByLabelText('Rename group')).toHaveProperty('disabled', false))
+  fireEvent.change(screen.getByLabelText('Rename group'), { target: { value: 'Editors' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Review rename' }))
+  await screen.findByText(/Rename “Readers” to “Editors”/)
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm change' }))
+  await waitFor(() => expect(posts('rename').map(c => c.body.label)).toEqual(['Editors']))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Archive group' })).toHaveProperty('disabled', false))
+  fireEvent.click(screen.getByRole('button', { name: 'Archive group' }))
+  await screen.findByText(/Remove everyone from “Readers” and revoke every grant to it/)
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm change' }))
+  await waitFor(() => expect(posts('archive')).toHaveLength(1))
+  await waitFor(() => expect(screen.getByLabelText('Audience group')).toHaveProperty('value', ''))
+  const archived = f.calls.findIndex(c => c.method === 'POST' && c.path.endsWith('/archive'))
+  expect(f.calls.slice(archived).some(c => c.path === `/audiences/${group}/members`)).toBe(false)
+  expect(screen.queryByRole('heading', { name: 'Group members' })).toBeNull()
+})
+
+test('an unpublished resource offers no grant form and a not-shareable refusal keeps the page', async () => {
+  // Value: protects=drafts and archives show why they cannot be shared instead of a form whose confirmation
+  // fails as a stale page, and a not_shareable refusal keeps the loaded page; fails_when=the form shows for
+  // drafts or the refusal clears the page; why_new=red-team#2 (QA capture 005 showed a 409 'reload' loop);
+  // seam=none; no_claim=server refusal (fetch mocked)
+  const draft = '66666666-6666-4666-8666-666666666666'
+  const f = fake(); let refuse = false
+  f.state.intercept = c => c.path === '/resources' ? json({ resources: [{ id: resource, title: 'Handbook', state: 'published', kind: 'document' }, { id: draft, title: 'Draft notes', state: 'draft', kind: 'document' }], next_cursor: null })
+    : c.path === `/resources/${draft}/grants` ? json({ items: [], next_cursor: null, policy_revision: f.state.revision })
+    : refuse && c.method === 'POST' && c.path.endsWith('/grants') ? json({ error: 'not_shareable', message: 'Only published resources can be shared, with actions they support.' }, 409) : undefined
+  open(); await select('Resource', draft)
+  await screen.findByText('Only published resources can receive new grants. This resource is draft.')
+  expect(screen.queryByRole('button', { name: 'Review grant' })).toBeNull()
+  await select('Resource', resource); await select('Audience group', group)
+  refuse = true
+  fireEvent.click(screen.getByRole('button', { name: 'Review grant' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Confirm change' }))
+  await screen.findByText('Only published resources can be shared, with actions they support.')
+  expect(screen.queryByRole('heading', { name: 'Share this resource?' })).toBeNull()
+  expect(screen.getByLabelText('Resource')).toHaveProperty('value', resource)
+})
+
+test('changing a selection keeps the page in place while the new lists load', async () => {
+  // Value: protects=a selection change keeps every section mounted (disabled while busy) instead of collapsing
+  // the page and dropping focus; fails_when=load clears the snapshot for a selection change; why_new=design
+  // review (Codex) found the page unmounted on every dropdown change; seam=none; no_claim=focus handling of
+  // real browsers when a control is disabled
+  const f = fake(); open(); await screen.findByLabelText('New group name')
+  const held = deferred<Response>()
+  f.state.intercept = c => c.path === `/audiences/${group}/members` ? held.promise : undefined
+  fireEvent.change(screen.getByLabelText('Audience group'), { target: { value: group } })
+  await waitFor(() => expect(screen.getByLabelText('Audience group')).toHaveProperty('disabled', true))
+  expect(screen.getByLabelText('New group name')).toBeTruthy()
+  expect(screen.getByRole('heading', { name: 'Stale grants' })).toBeTruthy()
+  await act(async () => held.resolve(json({ items: [], next_cursor: null, policy_revision: f.state.revision })))
+  await screen.findByText('This group has no members.')
+  expect(screen.getByLabelText('Audience group')).toHaveProperty('disabled', false)
 })

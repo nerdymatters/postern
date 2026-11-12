@@ -93,7 +93,9 @@ that the resulting grant is still active.
 ## Verification
 
 [`008_resource_sharing.sql`](../../postern/sql/008_resource_sharing.sql) is additive;
-older migrations keep their checksums. The runtime retains only function execution
+older migrations keep their checksums. Like `007`, it builds its grant index inside
+the migration transaction, so grant changes wait until it commits. Once spaces
+hold data, apply it in a quiet window. The runtime retains only function execution
 privileges, with no direct reads/writes of grants or audiences. The
 [real PostgreSQL tests](../../tests/storage/test_sharing.py) exercise additive
 access against `can_resource`, same-space targets, role restrictions,
