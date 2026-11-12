@@ -302,6 +302,10 @@ class Fallback:
     def supervisor(self):
         return 'systemd' if sys.platform == 'linux' else 'launchd'
 
+    def removal(self):
+        """Where the owner's runbook says how to remove the backend setting from the job."""
+        return "the Linux runbook's Python fallback section" if sys.platform == 'linux' else 'runbook step 3'
+
     def unit_override(self):
         """Read systemd's merged Environment, including drop-ins, even if the API failed to start.
         EnvironmentFile contents are not expanded by show; refuse automatic fallback when those
@@ -378,7 +382,7 @@ class Fallback:
                            if sys.platform == 'linux' else
                            'The launchd job sets POSTERN_PROGRESS_BACKEND, which the watchdog cannot change.')
         fallback = (f'Nothing returns Rust to Python while the {self.supervisor()} job sets POSTERN_PROGRESS_BACKEND; remove that '
-                    'setting (runbook step 3) so the watchdog can guard the selection file.' if forced
+                    f'setting ({self.removal()}) so the watchdog can guard the selection file.' if forced
                     else 'Failed health checks still return Rust to Python.')
         state = 'waiting'  # Rust is selected but the API has not started with it yet
         breach = []
@@ -521,7 +525,7 @@ class Fallback:
         outcome = 'The next API start uses Python.'
         if dropped_override:  # the last start was forced by launchd; the file decides only once that setting is gone
             outcome = ('Python is selected, but the last API start took its backend from POSTERN_PROGRESS_BACKEND in the '
-                       f'{self.supervisor()} job; while the job sets it, that setting decides the next start (runbook step 3 removes it).')
+                       f'{self.supervisor()} job; while the job sets it, that setting decides the next start ({self.removal()} removes it).')
         try:
             write_python(self.config_path.with_name(SELECTION), reasons, selection)
         except OSError as error:

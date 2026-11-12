@@ -564,7 +564,7 @@ def backend(config_path, choice):
         print(f'ok   serving process {active.get("pid")}: {active.get("backend")} from {active.get("source")}, '
               f'started {active.get("started_at")}')
     if choice == 'rust' and active and active.get('source') == 'environment' and process_exists(active.get('pid')):
-        print(GUARD_STATES['override'].replace('launchd', 'systemd' if sys.platform == 'linux' else 'launchd'))  # the launchd setting wins at the restart, so the file will not apply
+        print(host_words(GUARD_STATES['override']))  # the launchd setting wins at the restart, so the file will not apply
     elif choice == 'rust':
         print('ok   watchdog guard: it checks this selection within 30 s of the API restart; run this again to confirm')
     else:
@@ -678,6 +678,13 @@ GUARD_STATES = {
 }
 
 
+def host_words(text):
+    """The guard messages name launchd and the macOS runbook step; on Linux name systemd and its runbook."""
+    if sys.platform != 'linux':
+        return text
+    return text.replace('launchd', 'systemd').replace('runbook step 3', "the Linux runbook's Python fallback section")
+
+
 def guard_line(record, config_path, now=None, selected=None, active=None):
     """Judged by the current selection: a guard is needed only while Rust is selected, and is armed only if
     a current watchdog checked this selection within the last two minutes and verified the process serving it.
@@ -687,7 +694,7 @@ def guard_line(record, config_path, now=None, selected=None, active=None):
     from .watchdog import GUARD_VERSION
     live = active is not None and process_exists(active.get('pid'))  # a record left by an earlier process is history
     if live and active.get('backend') == 'rust' and active.get('source') == 'environment':
-        return GUARD_STATES['override'].replace('launchd', 'systemd' if sys.platform == 'linux' else 'launchd')
+        return host_words(GUARD_STATES['override'])
     try:
         info = progress_backend.selection_path(config_path).lstat()
         current = [info.st_ino, info.st_mtime_ns]
@@ -718,8 +725,7 @@ def guard_line(record, config_path, now=None, selected=None, active=None):
     state = record.get('state')
     if state == 'guarding':
         return f'ok   watchdog guard: {where}, guarding this selection'
-    return GUARD_STATES.get(state, f'FAIL watchdog guard: unknown state {state!r}').replace(
-        'launchd', 'systemd' if sys.platform == 'linux' else 'launchd') + f' ({where})'
+    return host_words(GUARD_STATES.get(state, f'FAIL watchdog guard: unknown state {state!r}')) + f' ({where})'
 
 
 def main(argv=None):
