@@ -4,11 +4,28 @@ import time
 import threading
 from types import SimpleNamespace
 
+import psutil
 import pytest
 
 from postern.auth import Refusal
 from postern import service as service_module
 from scripts import progress_fault_load as probe
+
+
+@pytest.fixture(autouse=True)
+def isolated_guard(monkeypatch):
+    """A real probe runs alone on a quiet host, and its guard protects that host. Here the probe shares pytest's
+    process and the CI runner: count only the memory it adds, and read the host as idle, unless a test sets
+    its own reading. The guard itself is unchanged."""
+    baseline = psutil.Process().memory_info().rss
+
+    class ProbeProcess(psutil.Process):
+        def memory_info(self):
+            info = super().memory_info()
+            return info._replace(rss=max(0, info.rss - baseline))
+
+    monkeypatch.setattr(probe.psutil, 'Process', ProbeProcess)
+    monkeypatch.setattr(probe.psutil, 'cpu_percent', lambda *args, **kwargs: 0.)
 
 
 @pytest.mark.parametrize('pending_summary', [False, True])
