@@ -124,3 +124,62 @@ def test_heartbeat_installer_refuses_a_duplicate_job_without_replacing_the_sende
         installer.main(['--config', str(config)])
     assert old_script.read_text() == 'retain this installed sender'
     assert sorted(path.name for path in old_job.parent.iterdir()) == [old_job.name]
+
+
+@pytest.mark.parametrize('code,out,expected', [
+    (0, 'active\n', 'operational'), (0, 'reloading\n', 'operational'),
+    (3, 'inactive\n', 'outage'), (3, 'failed\n', 'outage'), (3, 'activating\n', 'outage'),
+    (3, 'deactivating\n', 'outage'), (3, 'maintenance\n', 'outage'),
+    (4, 'unknown\n', 'unknown'), (1, '', 'unknown'), (1, 'active\n', 'unknown'),
+    (0, 'unexpected format\n', 'unknown'), (0, 'active\ninactive\n', 'unknown'),
+])
+def test_systemd_states_keep_the_worker_contract(code, out, expected):
+    calls = []
+    def run(args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(returncode=code, stdout=out, stderr='synthetic diagnostic')
+    assert heartbeat.process_state('systemd/room-api.service', run) == expected
+    assert calls == [(['systemctl', '--system', 'is-active', 'room-api.service'],
+                      {'capture_output': True, 'text': True, 'timeout': 5})]
+
+
+@pytest.mark.parametrize('error', [OSError('not installed'), subprocess.TimeoutExpired('systemctl', 5)])
+def test_systemd_observation_errors_are_unknown(error):
+    def run(*args, **kwargs):
+        raise error
+    assert heartbeat.process_state('systemd/room-api.service', run) == 'unknown'
+
+
+@pytest.mark.parametrize('target', ['systemd/../other.service', 'systemd/--user', 'systemd/api.service other.service',
+                                   'systemd/*.service', 'systemd/api.timer', 'systemd/api.service\n',
+                                   'systemd/api;true.service', 'systemd/api%h.service', 'systemd/api\\x20.service'])
+def test_systemd_targets_cannot_escape_the_allowlist(tmp_path, target):
+    agents = {**heartbeat.AGENTS, 'api-process': target}
+    with pytest.raises(ValueError, match='agent targets'):
+        heartbeat.load_settings(settings_file(tmp_path, agents=agents), sending=False)
+    assert heartbeat.process_state(target, lambda *args, **kwargs: pytest.fail('invalid unit reached systemctl')) == 'unknown'
+
+
+def test_linux_heartbeat_check_uses_configured_units_and_sends_no_private_fields(tmp_path, monkeypatch, capsys):
+    agents = {'api-process': 'systemd/org.example.room.service', 'proxy': 'systemd/org.example.room.proxy.service',
+              'watchdog': 'systemd/org.example.room.watchdog.service', 'tunnel': 'systemd/tunnel@postern.service'}
+    path = settings_file(tmp_path, agents=agents)
+    calls = []
+    def read(target, runner=None):
+        calls.append(target)
+        return 'outage' if target == agents['tunnel'] else 'operational'
+    monkeypatch.setattr(heartbeat, 'systemd_state', read)
+    monkeypatch.setattr(heartbeat.urllib.request, 'build_opener', lambda *args: pytest.fail('--check sent a request'))
+    assert heartbeat.main(['--config', str(path), '--check']) == 0
+    body = json.loads(capsys.readouterr().out)
+    assert calls == list(agents.values())
+    assert set(body) == {'sent_at', 'agents'} and type(body['sent_at']) is int
+    assert body['agents'] == {key: 'outage' if key == 'tunnel' else 'operational' for key in agents}
+    assert not any(value in json.dumps(body) for value in [str(path), 'org.example', 'test-only-token', 'systemd/'])
+
+
+def test_linux_heartbeat_cannot_add_or_omit_state_ids(tmp_path):
+    for agents in ({key: 'systemd/room.service' for key in heartbeat.AGENTS if key != 'tunnel'},
+                   {**heartbeat.AGENTS, 'extra': 'systemd/extra.service'}):
+        with pytest.raises(ValueError, match='agent targets'):
+            heartbeat.load_settings(settings_file(tmp_path, agents=agents), sending=False)
