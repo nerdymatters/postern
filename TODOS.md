@@ -206,6 +206,7 @@ operator's `which` can disagree about where a tool lives.
   after cleanup. Group and explicit-grant management also provide
   additive-access inspection. See [groups and sharing](docs/runbooks/resource-sharing.md).
   Native Posterns remain opt-in and no hosted cleanup scheduler is enabled.
+  Included in v0.28.0.
 
 - **2026-11-12 — Keep native catalog pages fast when a member can see little.**
   Built Oct 31. Member pages read only that member's all-member, direct and
@@ -217,6 +218,7 @@ operator's `which` can disagree about where a tool lives.
   hit the five-second deadline. Storage tests compare every page with
   `can_resource` and check that grant reads do not grow with resources granted
   to others. See [catalog listing at scale](docs/runbooks/service-integration.md#catalog-listing-at-scale).
+  Included in v0.28.0.
 
 - **2026-11-12 — Supervise, update and package the server on Linux (LX-02 host
   layer).** On Linux `postern.serve install`, `status` and `uninstall` manage

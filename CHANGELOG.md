@@ -6,12 +6,12 @@
 
 - Owners and administrators of a native Postern can now choose who sees each resource. A new Groups and sharing page creates audience groups, adds and removes members, renames groups and archives them, which removes their members and revokes every grant to them. A resource can be shared with a group, one member or all members, for discover only or discover and view, with an optional expiry. Every change is reviewed in a confirmation that names the member, group and resource before it is sent, and a lost response can be retried without applying the change twice.
 - See why a member can or cannot open a resource. Pick a member and a resource to see the member's effective access and every grant behind it, including access that comes from their role.
-- Retire stale grants in audited batches of up to 500: grants that expired, lack discover, point at a draft or archived resource, or belong to an ended membership or an archived group. The records and audit history stay. Finding them follows the stale grants themselves, so a space with 100,000 usable grants previews in about 45 ms.
+- Retire stale grants in audited batches of up to 500: grants that expired, lack discover, point at a draft or archived resource, or belong to an ended membership or an archived group. The records and audit history stay. Finding them follows the stale grants themselves, so a space with 100,000 usable grants previewed in about 45 ms in a local run.
 - Member catalog pages stay fast when a space holds many grants that never reach the member. A page now reads only the member's own grant paths instead of checking every resource.
 
 ### Changed
 
-- Grant expiry dates show in American format with Gregorian years on every device, including phones set to Thai.
+- Expiry dates on native Postern pages (invitations, ownership transfers and the new grants) show in American format with Gregorian years on every device. A phone set to Thai showed Thai month names and Buddhist-era years before.
 
 ### Upgrade
 
