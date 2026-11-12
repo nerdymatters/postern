@@ -7,10 +7,14 @@ required. The installer renders files as the owner and prints a root command;
 it never invokes sudo. Keep the service account's home on storage available at
 boot, without a login-unlocked encrypted home.
 
-Linux acceptance is still pending a real-host rehearsal. LX-01 supplies the
-bubblewrap converter and real sandbox preflight; do not start serving until
-that preflight passes. This host-layer change alone retains the macOS sandbox
-checks and therefore does not claim Linux conversion readiness.
+Conversions run under bubblewrap, and the install preflight runs the real
+sandbox and each conversion tool inside it; do not start serving until it
+passes. Install, a clean-exit restart, a boot, an update to a new release
+directory, uninstall and the watchdog's Rust-to-Python fallback were rehearsed
+with synthetic data in a disposable Debian 13 container running systemd 257 as
+PID 1 (Nov 12). A real host has not served yet: repeat these steps there,
+including a real reboot, journald retention, network wait-online and public
+ingress, before it serves staff.
 
 ## Provision and install
 
@@ -21,14 +25,21 @@ checks and therefore does not claim Linux conversion readiness.
    [private content instructions](release.md#private-training-content), and
    [branding](../branding.md). Preserve private training, question IDs,
    agreement versions and certificate prefixes on an existing installation.
-2. Install CPython 3.13, venv support, poppler-utils, ffmpeg, bubblewrap, Caddy,
-   lsof, procps and curl. Record the exact distribution and package versions
+2. Install CPython 3.13, venv support, poppler-utils, ffmpeg, bubblewrap, lsof,
+   procps and curl, and Caddy 2.8 or later from the
+   [Caddy project's Debian repository](https://caddyserver.com/docs/install#debian-ubuntu-raspbian).
+   Debian's own `caddy` is too old: 2.6 (Debian 13) has no PROXY protocol
+   listener, and 2.7 rejects the Caddyfile's `fallback_policy`; the preflight
+   reports Caddy's own reason. Disable the package's own site
+   (`sudo systemctl disable --now caddy`); Postern runs its own proxy unit. Record the exact distribution and package versions
    (`dpkg-query -W`), install from your approved pinned repository snapshot,
    and hold the reviewed versions until the next tested host update. There
    is no universal Debian/Ubuntu package-version string. Do not silently
    upgrade these packages with an application update. On Ubuntu 23.10 and
-   later, provision the LX-01 AppArmor policy and prove that bubblewrap works
-   under the service account; do not globally disable AppArmor.
+   later, install the AppArmor rule in
+   [`config/sandbox/`](../../config/sandbox/README.md#linux-derivebwrap) and
+   prove that bubblewrap works under the service account; do not globally
+   disable AppArmor.
 3. Verify the release's SHA256SUMS and extract to an owner-controlled versioned
    directory, for example `/srv/postern/releases/VERSION`. Retain old releases.
    Run the following **as the service account**, from the new release:
@@ -69,6 +80,9 @@ checks and therefore does not claim Linux conversion readiness.
    prove receipt. Without SMTP, alerts are local files, not external notices.
    Follow the [proxy/HTTPS ingress contract](../../ops/postern/README.md#proxy-and-https-ingress):
    Caddy listens on loopback port 18789 and requires PROXY protocol v2.
+   It keeps the macOS log layout: the aggregate traffic log is
+   `~/Library/Logs/postern/traffic/access-daily.log` in the service account's
+   home.
    The ingress/tunnel is provisioned independently as a boot service.
 6. Schedule a real reboot. Before manually starting anything, run:
 
@@ -134,7 +148,11 @@ automatic fallback. The watchdog never edits root-owned unit configuration.
 Prove automatic fallback using synthetic data on a disposable Linux host:
 select an installed Rust wheel, induce the documented guard threshold, then
 observe a durable Python selection, the old API's exit, a new Python PID and
-one alert. Mocked systemctl tests alone do not establish that behavior.
+the alerts. In the container rehearsal, freezing the Rust API with SIGSTOP
+gave a durable Python selection after three failed checks (about 90 s), SIGKILL
+after the 120 s SIGTERM wait, a systemd restart on Python 5 s later, and two
+alerts: the return to Python and the ordinary "not answering". Mocked systemctl
+tests alone do not establish that behavior.
 
 ## Roll back or uninstall
 
@@ -179,6 +197,6 @@ The bundle contains `requirements-linux.lock`, the systemd template, reboot
 check and these instructions. Explicit native wheels are placed in `wheels/`
 and listed in RELEASE.json. Packaging rejects wrong-platform and non-Postern
 wheel names and symlink inputs. Python-only releases need no native wheel.
-At the LX-02 base commit, `rust-progress-linux` builds/tests the package but
-does not upload a wheel artifact. CI artifact publication and host compatibility
-validation remain release-owner work; no workflow is changed here.
+CI's `rust-progress-linux` job builds and tests the native package but does
+not upload a wheel yet. Publishing one and checking it against the host remain
+release-owner work.
