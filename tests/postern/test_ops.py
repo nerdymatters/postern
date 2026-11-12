@@ -24,6 +24,7 @@ from postern import derive, serve, watchdog
 from postern.config import Config
 
 SEATBELT = pytest.mark.skipif(derive.LINUX, reason='macOS Seatbelt; test_sandbox.py covers bubblewrap')
+LAUNCHD = pytest.mark.skipif(sys.platform == 'linux', reason='launchd jobs; test_linux_host.py covers systemd')
 ATOM = re.compile(r'\((?:literal|subpath) "([^"]+)"\)')
 OWNER_CONFIG = Path('/Users/owner/.config/postern/config.json')
 
@@ -270,6 +271,7 @@ def test_preflight_refuses_a_quiz_bank_that_lost_its_dealing_rules(tmp_path, mon
     assert checks['quiz bank'] == (False, '9 chapter quiz(zes), 108 questions; chapters 3 cannot deal balanced, unguessable hands')
 
 
+@LAUNCHD
 def test_explicit_installed_label_controls_every_supervised_job_and_status(tmp_path, monkeypatch):
     label = 'org.example.existing-reading-room'
     jobs = serve.documents(OWNER_CONFIG, 'owner', tmp_path, label=label)
@@ -290,6 +292,7 @@ def test_invalid_service_labels_are_refused_before_any_launchctl_call(monkeypatc
         serve.main(['status', '--label=' + label])
 
 
+@LAUNCHD
 def test_install_refuses_a_second_label_for_existing_configuration_even_with_force(tmp_path, monkeypatch, capsys):
     config = write_config(tmp_path)
     root = tmp_path / 'jobs'
@@ -307,6 +310,7 @@ def test_install_refuses_a_second_label_for_existing_configuration_even_with_for
     assert not (tmp_path / 'Library').exists()
 
 
+@LAUNCHD
 def test_install_refuses_an_unowned_listening_port(tmp_path, monkeypatch, capsys):
     config = write_config(tmp_path)
     monkeypatch.setattr(serve, 'plist_path', lambda label, user_agent, home: tmp_path / 'none' / (label + '.plist'))
@@ -320,6 +324,7 @@ def test_install_refuses_an_unowned_listening_port(tmp_path, monkeypatch, capsys
     assert not (tmp_path / 'Library').exists()
 
 
+@LAUNCHD
 def test_uninstall_only_removes_the_explicit_label_family(tmp_path, monkeypatch):
     label = 'org.example.existing'
     monkeypatch.setattr(serve, 'plist_path', lambda job_label, user_agent, home: tmp_path / (job_label + '.plist'))
