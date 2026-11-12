@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.26.0 — Convert uploads on Linux inside bubblewrap (2026-11-12)
+
+### Added
+
+- Convert documents, photos, videos and selfies on Linux. Each conversion runs inside bubblewrap with the rules in `config/sandbox/derive.bwrap`, the counterpart of the macOS Seatbelt profile: no network, no view of the host's secrets or other files, and only its own job folder writable. The memory limit covers every process a conversion starts, a conversion killed by its own limit still counts against the upload, and a sandbox that cannot start is reported as a server fault, never charged to the upload.
+- Check a Linux host before installing. The preflight checks for bubblewrap 0.8 or later, runs the real sandbox and each conversion tool inside it with the conversion's own environment, and names the AppArmor rule Ubuntu 23.10 and later need (`config/sandbox/postern-bwrap.apparmor`) when the user-namespace restriction is what stops it. A host without bubblewrap gets failed rows instead of a crash.
+
+### Upgrade
+
+- Nothing changes on macOS, where conversions still run under `sandbox-exec` with the same profile. The database, Python dependencies, native wheel and watchdog are unchanged, so a rollback to 0.25.2 needs no restore. Linux service supervision and packaging come in a later release; until then Linux is not a supported production host.
+
 ## 0.25.2 — See why progress reads use the full event history (2026-11-09)
 
 ### Added
