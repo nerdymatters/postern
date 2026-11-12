@@ -145,20 +145,31 @@ def settings(config_path):
         return {}
 
 
+def front_proxy(caddy):
+    """The preflight row for Caddy and the checked-in Caddyfile."""
+    if not caddy:
+        return 'front proxy', False, ('caddy not found (install caddy 2.8 or later from the Caddy project\'s Debian '
+                                      'repository; Debian\'s own package is too old)' if derive.LINUX else
+                                      'caddy not found (brew install caddy)')
+    validated = subprocess.run([caddy, 'validate', '--config', str(CADDYFILE), '--adapter', 'caddyfile'],
+                               capture_output=True, text=True, errors='replace')
+    if validated.returncode == 0:
+        return 'front proxy', True, f'{caddy} with {CADDYFILE}'
+    # Caddy's last line names the cause; an old Caddy (Debian 13 ships 2.6) lacks the PROXY protocol listener.
+    reason = (validated.stderr.strip().splitlines() or ['no reason given'])[-1][:300]
+    return 'front proxy', False, f'{CADDYFILE} does not validate (Caddy 2.8 or later is required): {reason}'
+
+
 def preflight(config_path):
-    """Everything that has to be true before this Mac can serve. Returns (name, ok, detail) rows."""
+    """Everything that has to be true before this host can serve. Returns (name, ok, detail) rows."""
     checks = []
     checks.append(('python', sys.version_info >= (3, 11), f'{platform.python_version()} at {sys.executable}'))
 
     for tool in ('pdftoppm', 'pdfinfo', 'ffmpeg', 'ffprobe'):
         found = shutil.which(tool)
-        checks.append((tool, bool(found), f'{found} — {tool_version(found)}' if found else 'not found (brew install poppler ffmpeg)'))
+        checks.append((tool, bool(found), f'{found} — {tool_version(found)}' if found else f'not found ({"apt install poppler-utils" if derive.LINUX else "brew install poppler"} ffmpeg)'))
 
-    caddy = shutil.which('caddy')
-    valid = bool(caddy) and subprocess.run([caddy, 'validate', '--config', str(CADDYFILE), '--adapter', 'caddyfile'],
-                                           capture_output=True).returncode == 0
-    checks.append(('front proxy', valid, f'{caddy} with {CADDYFILE}' if valid else
-                   'caddy not found (brew install caddy)' if not caddy else f'{CADDYFILE} does not validate'))
+    checks.append(front_proxy(shutil.which('caddy')))
 
     try:
         import pillow_heif
