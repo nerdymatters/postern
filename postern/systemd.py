@@ -48,7 +48,10 @@ def path_value(value):
 
 
 # Root copies the reviewed install.sh into its own new directory, checks the digest the owner saw, then runs it.
-ROOT_RUN = ('set -eu; d=$(mktemp -d); trap "rm -rf -- \\"$d\\"" EXIT; cp -- "$1" "$d/install.sh"; cd "$d"; '
+# Reads from the owner's stage are bounded in size and time: a FIFO or /dev/zero there cannot hang or fill /tmp.
+READ = 'timeout 30 head -c 1048576 --'
+ROOT_RUN = ('set -eu; d=$(mktemp -d /tmp/postern-install.XXXXXXXX); trap "rm -rf -- \\"$d\\"" EXIT; '
+            f'{READ} "$1" > "$d/install.sh"; cd "$d"; '
             'echo "$2  install.sh" | sha256sum -c --strict --quiet; sh ./install.sh')
 
 
@@ -157,9 +160,9 @@ def install(config_path, user, home, check_only, force, label):
     commands = ['#!/bin/sh', 'set -eu', 'cd "$(dirname "$0")"']
     for key, (path, document) in jobs.items():
         source = stage / path.name
-        source.write_text(document)
+        source.write_bytes(document.encode())  # the bytes the digest covers, whatever the locale
         source.chmod(0o600)
-        commands += [shlex.join(['cp', '--', str(source), path.name]), check(digest(document.encode()), path.name)]
+        commands += [f'{READ} {shlex.quote(str(source))} > {shlex.quote(path.name)}', check(digest(document.encode()), path.name)]
         # Refuse a change made after the owner reviewed the install, before touching any unit.
         # One command per line: set -e ignores a failure that is not the last command of an && list.
         commands.append(f'test ! -L {shlex.quote(str(path))}')
@@ -175,7 +178,7 @@ def install(config_path, user, home, check_only, force, label):
                  shlex.join(['systemctl', '--system', 'restart', *units])]
     script = stage / 'install.sh'
     text = '\n'.join(commands) + '\n'
-    script.write_text(text)
+    script.write_bytes(text.encode())
     script.chmod(0o600)
     root = shlex.join(['sudo', '/bin/sh', '-c', ROOT_RUN, 'sh', str(script), digest(text.encode())])
     print(f'ok   rendered units in {stage}; review them, then run this root command, which runs only the\n'

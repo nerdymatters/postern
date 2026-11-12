@@ -209,6 +209,7 @@ class Fallback:
         self.handled = None  # the selection a breach already returned to Python
         self.retry = (None, 0)  # (fallback selection, restarts tried) for a restart the fallback could not finish
         self.unconfirmed = (None, 0, False)  # (fallback selection, checks the Rust process stayed unconfirmable, alerted)
+        self.known_override = None  # (answer,) from the last systemctl show that answered; Linux only
         self.reset()
 
     def reset(self):
@@ -308,8 +309,9 @@ class Fallback:
 
     def unit_override(self):
         """Read systemd's merged Environment, including drop-ins, even if the API failed to start.
-        EnvironmentFile contents are not expanded by show; refuse automatic fallback when those
-        could override the selection. The live API record also detects inherited overrides."""
+        EnvironmentFile contents are not expanded by show, so a unit with one is inconclusive: its next
+        start could take Rust whatever the file selects, and the guard can only alert. The live API record
+        also detects inherited overrides. observe() rides out a failed lookup on the last answer."""
         if sys.platform != 'linux':
             return None
         unit = os.environ.get('POSTERN_API_UNIT', 'org.nerdymatters.postern.service')
@@ -335,12 +337,13 @@ class Fallback:
         backend = selection.get('backend') if selection else None
         try:
             override = self.unit_override()
+            self.known_override = (override,)
         except (OSError, ValueError, subprocess.SubprocessError):
-            override = 'unknown (unit environment unreadable)'
+            # A lookup that fails now and then (a D-Bus hiccup, a slow systemctl) keeps the last answer, so it
+            # cannot flip the guard between modes and reset its counts. With no answer yet, stay inconclusive.
+            override = self.known_override[0] if self.known_override else 'unknown (unit environment unreadable)'
         unknown = (override or '').startswith('unknown')
-        # finish_fallback acts only on a process whose own record says it took Rust from the file, which an
-        # unprovable unit environment cannot have overridden; a unit that visibly sets the backend still stops it.
-        if backend == 'python' and selection.get('fallback') and (override is None or unknown):
+        if backend == 'python' and selection.get('fallback') and override is None:
             self.finish_fallback(selection)
         active, dropped = self.active(), False
         if (active is not None and active.get('source') == 'environment'
@@ -353,12 +356,6 @@ class Fallback:
                 active is not None and active.get('backend') == 'rust'):
             # Nothing selects or serves Rust, so an unprovable unit environment has nothing to breach; watching it
             # would raise a Rust breach alert on a Python-only host. A live API forced to Rust still reports it.
-            override = None
-        elif (unknown and active is not None and active.get('source') == SELECTION
-                and self.alive(active['pid']) is not False):
-            # The serving process took its backend from the file, so the unit did not override it. A failed or
-            # inconclusive lookup must not make this process's guard alert-only or reset its counts: a blip on
-            # every other tick would otherwise stall the fallback for good.
             override = None
         forced = override is not None or (active is not None and active.get('source') == 'environment')
         forced_rust = forced and (override not in (None, 'python') or (active and active.get('backend') == 'rust'))
