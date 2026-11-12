@@ -147,11 +147,15 @@ Do not put `POSTERN_PROGRESS_BACKEND` in the unit, manager environment or a
 service environment file for a guarded rollout. Inspect `systemctl cat UNIT`
 and `systemctl show UNIT -p Environment -p EnvironmentFiles`; remove the
 backend override, run `sudo systemctl daemon-reload`, then restart. The API's
-startup record and the unit's merged Environment detect overrides. Environment
-files or a failed environment lookup conservatively make the guard alert-only,
-because their effective value cannot be proved by `systemctl show`. This is
-reported in the alert; restore inspectable configuration before relying on
-automatic fallback. The watchdog never edits root-owned unit configuration.
+startup record and the unit's merged Environment detect overrides. An
+environment file on the API unit makes the guard alert-only while Rust is
+selected or serving, because `systemctl show` cannot tell what it sets and the
+next start could take Rust whatever the selection says. This is reported in the
+alert; restore inspectable configuration before relying on automatic fallback.
+A lookup that fails now and then keeps the watchdog's last answer; until the
+first lookup answers, the guard is alert-only too. On a host where nothing
+selects or serves Rust, neither case raises a Rust alert. The watchdog never
+edits root-owned unit configuration.
 
 Prove automatic fallback using synthetic data on a disposable Linux host:
 select an installed Rust wheel, induce the documented guard threshold, then

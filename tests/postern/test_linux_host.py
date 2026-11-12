@@ -132,7 +132,8 @@ GNU_SHA256SUM = shutil.which('sha256sum') and 'GNU' in subprocess.run(
 # why_new=other tests only read the script text and run sh -n; seam=none; no_claim=root ownership or real
 # systemctl (fake install and systemctl on PATH; real /bin/sh, mktemp, cp and GNU sha256sum)
 @pytest.mark.skipif(not GNU_SHA256SUM, reason='the root step uses GNU sha256sum -c, as Debian and Ubuntu have')
-@pytest.mark.parametrize('change', ['none', 'unit appeared', 'unit edited', 'staged unit edited', 'install.sh edited'])
+@pytest.mark.parametrize('change', ['none', 'unit appeared', 'unit edited', 'staged unit edited', 'install.sh edited',
+                                    'install.sh is /dev/zero', 'staged unit is /dev/zero'])
 def test_root_install_runs_only_what_the_owner_reviewed(linux, tmp_path, change, capsys):
     api = systemd.UNIT_DIR / 'org.example.room.service'
     if change == 'unit edited':
@@ -149,6 +150,10 @@ def test_root_install_runs_only_what_the_owner_reviewed(linux, tmp_path, change,
         staged.write_text(staged.read_text().replace('User=owner', 'User=root'))
     elif change == 'install.sh edited':
         (stage / 'install.sh').write_text('#!/bin/sh\ninstall evil /etc/systemd/system/evil.service\n')
+    elif change.endswith('is /dev/zero'):  # an endless source: root's bounded read stops it, the digest refuses it
+        target = stage / ('install.sh' if change.startswith('install.sh') else 'org.example.room.service')
+        target.unlink()
+        target.symlink_to('/dev/zero')
     binary, log = tmp_path / 'bin', tmp_path / 'root-commands.log'
     binary.mkdir()
     for name in ('install', 'systemctl'):
@@ -338,25 +343,46 @@ def test_linux_fallback_syncs_python_before_sigterm_and_names_systemd(linux, mon
 
 
 # Value: protects=a Rust API that took its backend from the file still falls back within `failures` checks when
-# some unit lookups fail; fails_when=a failed systemctl show makes its guard alert-only or resets its counts;
-# why_new=other rows have every lookup succeed or every one fail; seam=none; no_claim=real systemctl (fake answers)
-def test_failed_unit_lookups_do_not_stall_the_fallback_of_a_file_governed_rust_api(linux, monkeypatch):
+# some unit lookups fail, alive or crash-looping; fails_when=a failed systemctl show flips the guard between modes
+# and resets its counts; why_new=other rows have every lookup succeed or every one fail; seam=none;
+# no_claim=real systemctl (fake answers)
+@pytest.mark.parametrize('serving', ['live', 'crash-looping'])
+def test_failed_unit_lookups_do_not_stall_the_fallback_of_a_file_governed_rust_api(linux, monkeypatch, serving):
     progress_backend.write_selection(linux, 'rust')
     signals, lookups = [], []
     def run(args, **kwargs):
         if args[0] == 'systemctl':
-            lookups.append(args)
-            return result('', 1) if len(lookups) % 2 else result('Environment=\nEnvironmentFiles=\n')
+            lookups.append(args)  # the first lookup answers; after that every other one fails
+            return result('', 1) if len(lookups) % 2 == 0 else result('Environment=\nEnvironmentFiles=\n')
         return result('')
     guard, alerts = make_guard(linux, run, kill=lambda pid, sig: signals.append((pid, sig)), sleep=lambda seconds: None)
     monkeypatch.setattr(guard, 'serving', lambda active: (123, {'uid': os.getuid()}))
     monkeypatch.setattr(guard, 'active', lambda: {'pid': 123, 'backend': 'rust', 'source': watchdog.SELECTION})
     monkeypatch.setattr(guard, 'resources', lambda *args: [])
-    monkeypatch.setattr(guard, 'alive', lambda pid: not signals)
+    monkeypatch.setattr(guard, 'alive', (lambda pid: not signals) if serving == 'live' else (lambda pid: False))
     for _ in range(3):
         guard.observe(False, 'unhealthy')
     assert signals == [(123, signal.SIGTERM)] and len(lookups) >= 3
     assert json.loads(linux.with_name(watchdog.SELECTION).read_text())['backend'] == 'python'
+
+
+# Value: protects=a unit with an EnvironmentFile keeps a file-selected Rust API alert-only, because its next start
+# could take Rust whatever the file says; fails_when=a live record from the selection file clears that barrier and
+# the fallback restarts the API into Rust; why_new=the EnvironmentFile rows above have no serving record;
+# seam=none; no_claim=what the environment file holds (systemctl show does not expand it)
+def test_an_environment_file_keeps_a_file_selected_rust_api_alert_only(linux, monkeypatch):
+    progress_backend.write_selection(linux, 'rust')
+    before = linux.with_name(watchdog.SELECTION).read_bytes()
+    guard, alerts = make_guard(linux, lambda *args, **kwargs: result('Environment=\nEnvironmentFiles=/etc/postern.env (ignore_errors=no)\n'),
+                               kill=lambda *args: pytest.fail('an environment file could restart it into Rust; alert only'))
+    monkeypatch.setattr(guard, 'serving', lambda active: (123, {'uid': os.getuid()}))
+    monkeypatch.setattr(guard, 'active', lambda: {'pid': 123, 'backend': 'rust', 'source': watchdog.SELECTION})
+    monkeypatch.setattr(guard, 'resources', lambda *args: [])
+    monkeypatch.setattr(guard, 'alive', lambda pid: True)
+    for _ in range(4):
+        guard.observe(False, 'unhealthy')
+    assert len(alerts) == 1 and 'systemd override' in alerts[0][0]
+    assert linux.with_name(watchdog.SELECTION).read_bytes() == before
 
 
 def test_linux_lsof_path_and_unreadable_environment_are_safe(linux):
