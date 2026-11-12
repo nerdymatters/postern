@@ -10,6 +10,7 @@ from pathlib import Path
 import signal
 import sqlite3
 import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -19,6 +20,8 @@ from postern.db import SCHEMA
 
 SETTING_AT_IMPORT = os.environ.get(progress_backend.SETTING)
 
+
+JOB = 'systemd' if sys.platform == 'linux' else 'launchd'  # the supervisor the watchdog names
 
 @pytest.fixture
 def config_path(tmp_path, monkeypatch):
@@ -223,6 +226,8 @@ class Host:
             minutes, seconds = divmod(self.cpu, 60)
             line = f'{os.getuid()} {int(self.rss_mib*1024)} {int(minutes)}:{seconds:05.2f} {self.command}\n'
             return SimpleNamespace(returncode=0, stdout=line, stderr='')
+        if args[0] == 'systemctl':  # Linux reads the API unit's environment; this fake unit sets none
+            return SimpleNamespace(returncode=0, stdout='Environment=\nEnvironmentFiles=\n', stderr='')
         code = self.parity_codes.pop(0) if self.parity_codes else 0
         if isinstance(code, BaseException):
             raise code
@@ -361,7 +366,7 @@ def test_launchd_override_is_reported_once_and_never_changed(guard):
     serving(guard, backend='rust', source='environment')
     results = [guard.tick(healthy=False) for _ in range(6)]
     assert results == [None]*6 and guard.host.killed == [] and stored(guard)['backend'] == 'rust'
-    assert [subject for subject, _ in guard.sent] == ['Postern: Rust backend breach under a launchd override']
+    assert [subject for subject, _ in guard.sent] == [f'Postern: Rust backend breach under a {JOB} override']
     # A launchd job that forces Python makes the file moot: nothing to guard.
     serving(guard, backend='python', source='environment')
     select(guard.config, 'rust', note='again')
@@ -481,7 +486,7 @@ def test_launchd_override_with_a_down_api_is_never_changed(guard):
     guard.host.listening = False  # the forced-Rust API crashed: nothing verifies, the override still holds
     results = [guard.tick(healthy=False) for _ in range(4)]
     assert results == [None]*4 and stored(guard)['backend'] == 'rust' and guard.host.killed == []
-    assert [subject for subject, _ in guard.sent] == ['Postern: Rust backend breach under a launchd override']
+    assert [subject for subject, _ in guard.sent] == [f'Postern: Rust backend breach under a {JOB} override']
 
 
 def test_a_process_that_ignores_sigterm_is_killed_after_reverification(guard):
@@ -764,7 +769,7 @@ def test_the_heartbeat_records_what_the_guard_actually_ran(guard):
     assert beat(guard)['state'] == 'guarding'
     serving(guard, source='environment')
     guard.tick()
-    assert serve.guard_line(beat(guard), guard.config).startswith('FAIL watchdog guard: the launchd job')
+    assert serve.guard_line(beat(guard), guard.config).startswith(f'FAIL watchdog guard: the {JOB} job')
 
 
 def test_a_parity_breach_whose_write_failed_is_retried_on_the_next_check(guard, monkeypatch):
@@ -896,7 +901,7 @@ def test_a_breach_under_an_override_is_not_replayed_after_the_override_is_remove
     serving(guard, source='environment')
     guard.host.parity_codes = [3]
     results = [guard.tick() for _ in range(4)]
-    assert results == [None]*4 and [subject for subject, _ in guard.sent] == ['Postern: Rust backend breach under a launchd override']
+    assert results == [None]*4 and [subject for subject, _ in guard.sent] == [f'Postern: Rust backend breach under a {JOB} override']
     serving(guard)  # the override is gone; the API now serves Rust from the file
     assert guard.tick() is None and stored(guard)['backend'] == 'rust' and guard.host.killed == []
 
@@ -963,12 +968,12 @@ def test_a_converter_is_found_beside_a_command_line_that_is_not_utf8(guard):
 def test_rust_forced_by_launchd_is_reported_and_alerted_without_a_rust_file(guard, capsys):
     serving(guard, source='environment')  # the launchd job forces Rust; no selection file at all
     assert serve.main(['backend', '--config', str(guard.config)]) == 0
-    assert 'FAIL watchdog guard: the launchd job sets POSTERN_PROGRESS_BACKEND' in capsys.readouterr().out
+    assert f'FAIL watchdog guard: the {JOB} job sets POSTERN_PROGRESS_BACKEND' in capsys.readouterr().out
     guard.host.rss_mib = 2000
     results = [guard.tick() for _ in range(4)]
     assert results == [None]*4 and guard.host.killed == []
     assert not progress_backend.selection_path(guard.config).exists()
-    assert [subject for subject, _ in guard.sent] == ['Postern: Rust backend breach under a launchd override']
+    assert [subject for subject, _ in guard.sent] == [f'Postern: Rust backend breach under a {JOB} override']
     assert 'API memory 2000 MiB above 1536 MiB' in guard.sent[0][1]
 
 
@@ -976,7 +981,7 @@ def test_selecting_rust_under_a_launchd_override_says_the_file_will_not_apply(gu
     serving(guard, backend='python', source='environment')  # today's office state: the launchd job forces Python
     assert serve.main(['backend', 'rust', '--config', str(guard.config)]) == 0
     printed = capsys.readouterr().out
-    assert 'FAIL watchdog guard: the launchd job sets POSTERN_PROGRESS_BACKEND' in printed
+    assert f'FAIL watchdog guard: the {JOB} job sets POSTERN_PROGRESS_BACKEND' in printed
     assert 'checks this selection within 30 s' not in printed
     guard.host.alive = False  # that process has exited: its record is history, not an override
     assert serve.main(['backend', 'rust', '--config', str(guard.config)]) == 0
@@ -1011,7 +1016,7 @@ def test_alerts_under_a_launchd_override_never_promise_a_return_to_python(guard,
     assert [subject for subject, _ in guard.sent] == ['Postern: cannot verify the Rust API process',
                                                       'Postern: Rust backend guard error']
     for _, body in guard.sent:
-        assert 'Nothing returns Rust to Python while the launchd job sets POSTERN_PROGRESS_BACKEND' in body
+        assert f'Nothing returns Rust to Python while the {JOB} job sets POSTERN_PROGRESS_BACKEND' in body
         assert 'still return Rust to Python' not in body
     assert stored(guard)['backend'] == 'rust' and guard.host.killed == []
 
@@ -1117,7 +1122,7 @@ def test_an_in_process_breach_under_a_launchd_override_only_alerts(guard):
     serving(guard, source='environment')
     in_process(guard, mismatches=2)
     assert guard.tick() is None and stored(guard)['backend'] == 'rust' and guard.host.killed == []
-    assert [subject for subject, _ in guard.sent] == ['Postern: Rust backend breach under a launchd override']
+    assert [subject for subject, _ in guard.sent] == [f'Postern: Rust backend breach under a {JOB} override']
 
 
 @pytest.mark.parametrize('record,expected', [
