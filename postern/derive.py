@@ -5,6 +5,7 @@ from pathlib import Path
 import platform
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import sysconfig
@@ -196,7 +197,13 @@ class Deriver:
                 # Parser diagnostics may contain document text; keep them off user-facing responses.
                 raise DeriveError('The attachment could not be converted safely. Check its format, size and page count.')
             try:
-                manifest = json.loads((output/'manifest.json').read_text())
+                # Do not follow a converter-created link or wait for a FIFO writer. Check the opened
+                # descriptor too, so swapping a regular file for a FIFO cannot race a path-only check.
+                descriptor = os.open(output/'manifest.json', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                with os.fdopen(descriptor) as document:
+                    if not stat.S_ISREG(os.fstat(document.fileno()).st_mode):
+                        raise ValueError('manifest is not a regular file')
+                    manifest = json.load(document)
             except (OSError, ValueError) as error:
                 # A missing or unreadable manifest is the converter's fault, never the upload's.
                 raise DeriveFault('Unexpected converter output') from error

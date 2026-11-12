@@ -355,3 +355,49 @@ def test_a_real_namespace_refusal_names_the_apparmor_rule(tmp_path, monkeypatch)
     monkeypatch.setattr(derive, 'BWRAP', str(copy))
     compiles, detail = serve.profile_compiles()
     assert not compiles and 'postern-bwrap.apparmor' in detail, detail
+
+
+@pytest.mark.parametrize('kind', ['symlink', 'fifo'])
+def test_nonregular_manifest_is_a_converter_fault_before_reading(config, tmp_path, monkeypatch, kind):
+    # The fake child supplies real filesystem objects. Never let a regression block this test on a FIFO read.
+    config.validate()
+    original = Path.read_text
+    def read_text(path, *args, **kwargs):
+        if path.name == 'manifest.json':
+            pytest.fail('nonregular manifest reached a path-based read')
+        return original(path, *args, **kwargs)
+    monkeypatch.setattr(Path, 'read_text', read_text)
+    def convert(*args, cwd, **kwargs):
+        path = Path(cwd) / 'manifest.json'
+        if kind == 'symlink':
+            target = Path(cwd) / 'target.json'
+            target.write_text('{"pages":1,"bytes":1}')
+            path.symlink_to(target)
+        else:
+            os.mkfifo(path)
+        class Finished:
+            returncode = 0
+            def communicate(self, **kwargs):
+                return b'', b''
+        return Finished()
+    monkeypatch.setattr(derive.subprocess, 'Popen', convert)
+    monkeypatch.setattr(derive.json, 'load', lambda *args: pytest.fail('nonregular manifest reached JSON parsing'))
+    destination = config.data_dir / 'derived' / 'invalid-manifest'
+    with pytest.raises(derive.DeriveFault, match='Unexpected converter output'):
+        derive.Deriver(config).run(FIXTURES / 'photo.jpg', destination, 'photo')
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize('tool', ['true', 'pdftoppm', 'pdfinfo', 'ffmpeg', 'ffprobe'])
+def test_preflight_timeout_names_the_probe_tool(monkeypatch, tool):
+    monkeypatch.setattr(derive, 'LINUX', True)
+    monkeypatch.setattr(derive, 'poppler_dir', lambda: Path('/usr/bin'))
+    monkeypatch.setattr(derive, 'media_dir', lambda: Path('/usr/bin'))
+    monkeypatch.setattr(serve.shutil, 'which', lambda name: '/usr/bin/' + name)
+    monkeypatch.setattr(derive, 'sandbox_command', lambda source, output, program: ['/synthetic/bwrap', '--', *program])
+    def run(command, **kwargs):
+        if Path(command[2]).name == tool:
+            raise subprocess.TimeoutExpired(command, kwargs['timeout'])
+        return subprocess.CompletedProcess(command, 0, '', '')
+    monkeypatch.setattr(serve.subprocess, 'run', run)
+    assert serve.profile_compiles() == (False, f'/usr/bin/{tool} timed out after 60s inside the sandbox')
