@@ -85,6 +85,37 @@ test('lost-response retry preserves full grant including expiry and blocks a dou
   const changes = f.calls.filter(c => c.method === 'POST' && c.path.endsWith('/grants'))
   expect(changes).toHaveLength(2); expect(changes[0].body).toEqual(changes[1].body)
   expect(changes[0].body).toMatchObject({ audience_id: group, membership_id: null, all_members: false, actions: ['discover','view'], expected_revision: 7 })
+  // Value: protects=the local expiry reaches the grant as absolute seconds and the retry resends it; fails_when=the
+  // expiry input is dropped, made relative or recomputed on retry; why_new=equal bodies also pass when both omit it;
+  // seam=none; no_claim=server storage of the expiry (fetch mocked)
+  expect(changes[0].body.expires_at).toBe(Math.floor(new Date('2099-01-01T10:00').getTime() / 1000))
+})
+
+test('grant review refuses a past expiry or missing recipient and sends the chosen member or all-member terms', async () => {
+  // Value: protects=no grant is reviewed without a recipient or with a past expiry, and member/all/discover-only choices
+  // send exactly those terms; fails_when=a recipient or access mapping is swapped or a guard removed; why_new=other tests
+  // share only with a group for discover and view; seam=none; no_claim=server validation (fetch mocked)
+  const f = fake(); open(); await select('Resource', resource)
+  const review = () => fireEvent.click(screen.getByRole('button', { name: 'Review grant' }))
+  const posts = () => f.calls.filter(c => c.method === 'POST' && c.path === `/resources/${resource}/grants`)
+  review(); await screen.findByText('Choose the recipient group or member first.')
+  fireEvent.change(screen.getByLabelText('Share with'), { target: { value: 'all' } })
+  fireEvent.change(screen.getByLabelText('Expires at (optional)'), { target: { value: '2000-01-01T10:00' } })
+  review(); await screen.findByText('Choose a future expiry, or leave it empty.')
+  expect(screen.queryByRole('heading', { name: 'Share this resource?' })).toBeNull()
+  fireEvent.change(screen.getByLabelText('Expires at (optional)'), { target: { value: '' } })
+  fireEvent.change(screen.getByLabelText('Access'), { target: { value: 'discover' } })
+  review(); await screen.findByText(/Share “Handbook” with all current and future members\. Discover only\. No expiry\./)
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm change' }))
+  await screen.findByText('Sharing updated. Current access is shown below.')
+  await select('Member', member)
+  fireEvent.change(screen.getByLabelText('Share with'), { target: { value: 'member' } })
+  fireEvent.change(screen.getByLabelText('Access'), { target: { value: 'view' } })
+  review(); await screen.findByText(/Share “Handbook” with Riley\. Discover and view\./)
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm change' }))
+  await waitFor(() => expect(posts()).toHaveLength(2))
+  expect(posts()[0].body).toMatchObject({ membership_id: null, audience_id: null, all_members: true, actions: ['discover'], expires_at: null })
+  expect(posts()[1].body).toMatchObject({ membership_id: member, audience_id: null, all_members: false, actions: ['discover', 'view'], expires_at: null })
 })
 
 test('revoking direct access leaves and explains the group path', async () => {

@@ -252,4 +252,50 @@ def test_live_expiry_denies_before_cleanup_and_retry_does_not_extend_it(api):
     assert access(f)['actions']==[]
     assert okay(grant(f,all_members=True,expires=end,key=key,rev=rev))==first
     assert access(f)['actions']==[]
+    # Value: protects=stored grant terms cannot be extended or changed in place, even by the schema owner;
+    # fails_when=grant_guard stops comparing expires_at/actions or is dropped; why_new=only its
+    # revoked-to-active branch was tested; seam=none; no_claim=direct owner SQL stands in for a future writer
+    for term in ['expires_at=NULL',"actions=ARRAY['discover']"]:
+        result=f.model.db.execute(f"UPDATE postern.grants SET {term} WHERE id='{first['target']}';",check=False)
+        assert result.returncode and 'immutable' in result.stderr
+    assert access(f)['actions']==[]
     assert okay(change(f,'/grants/cleanup'))['retired_count']==2 # includes fixture's expired grant
+
+
+def test_sharing_writes_never_reach_another_space(api):
+    # Value: protects=an owner or admin cannot revoke, retire or inspect grants of another space by ID;
+    # fails_when=the space_id filter is dropped from grant.revoke, cleanup or resource_access;
+    # why_new=test_scoped_targets_and_publication covers grant/add/archive/list targets, not revoke,
+    # cleanup or access; seam=none; no_claim=none beyond protects
+    f=api;m=f.model;stale,usable=uid(),uid()
+    m.db.execute(f"INSERT INTO postern.grants(space_id,id,resource_id,all_members,actions,expires_at) VALUES('{m.t}','{stale}','{m.foreign}',true,ARRAY['discover'],now()-interval '1 second');"
+                 f"INSERT INTO postern.grants(space_id,id,resource_id,membership_id,actions) VALUES('{m.t}','{usable}','{m.foreign}','{m.mtb}',ARRAY['discover','view']);")
+    for actor in ['a','d']:
+        assert change(f,f'/grants/{usable}/revoke',actor=actor).status_code==404
+        assert get(f,f'/resources/{m.foreign}/access/{m.mb}',actor).status_code==404
+    assert okay(change(f,'/grants/cleanup'))['retired_count']==1 # this space's expired fixture grant only
+    assert m.db.scalar(f"SELECT count(*) FROM postern.grants WHERE space_id='{m.t}' AND state='active';")=='2'
+    audit=m.db.rows(f"SELECT detail FROM postern.activity WHERE action='grant.cleanup' AND space_id IN ('{m.s}','{m.t}')")
+    assert len(audit)==1 and stale not in json.dumps(audit)
+
+
+def test_cleanup_retires_ended_recipients_and_keeps_empty_groups(api):
+    # Value: protects=cleanup retires grants to ended memberships or archived groups and keeps grants to
+    # empty active groups for future members; fails_when=stale_grant_reason loses a recipient branch or
+    # treats an empty group as stale; why_new=the cleanup test only yields expired/no_discover/unpublished;
+    # seam=none; no_claim=ended recipients are written with direct SQL (sharing functions revoke these themselves)
+    f=api;m=f.model;old,archived,empty=uid(),uid(),uid();ended,dropped,kept=uid(),uid(),uid()
+    m.db.execute(f"INSERT INTO postern.memberships VALUES('{m.s}','{old}','{m.c}','member','revoked');"
+                 f"INSERT INTO postern.audiences(space_id,id,label,state) VALUES('{m.s}','{archived}','Old','archived'),('{m.s}','{empty}','Future','active');"
+                 f"INSERT INTO postern.grants(space_id,id,resource_id,membership_id,audience_id,actions) VALUES"
+                 f"('{m.s}','{ended}','{m.hidden}','{old}',NULL,ARRAY['discover']),('{m.s}','{dropped}','{m.hidden}',NULL,'{archived}',ARRAY['discover']),"
+                 f"('{m.s}','{kept}','{m.hidden}',NULL,'{empty}',ARRAY['discover']);")
+    preview={x['id']:x['reason'] for x in okay(get(f,'/grants/cleanup'))['items']}
+    assert preview[ended]=='membership_ended' and preview[dropped]=='audience_archived' and kept not in preview
+    assert {g['id']:g['stale_reason'] for g in okay(get(f,f'/resources/{m.hidden}/grants'))['items']}=={
+        ended:'membership_ended',dropped:'audience_archived',kept:None}
+    assert okay(change(f,'/grants/cleanup'))['retired_count']==3 # with the fixture's expired grant
+    assert [g['id'] for g in okay(get(f,f'/resources/{m.hidden}/grants'))['items']]==[kept]
+    assert access(f)['actions']==[]
+    okay(change(f,f'/audiences/{empty}/add',{'membership_id':m.mb}))
+    assert access(f)['actions']==['discover'] and [x['id'] for x in access(f)['sources']]==[kept]
