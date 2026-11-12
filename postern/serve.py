@@ -67,7 +67,9 @@ def profile_compiles():
                 # A host without the sandbox program gets this row, not a traceback out of install.
                 result = subprocess.run(command, capture_output=True, text=True, cwd=scratch,
                                         env=derive.job_env(scratch), timeout=60)
-            except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+            except subprocess.TimeoutExpired as error:
+                return False, f'{program[0]} timed out after {error.timeout}s inside the sandbox'
+            except (OSError, ValueError) as error:
                 return False, f'{derive.PROFILE} cannot be applied: {error}'
             if result.returncode:
                 break
