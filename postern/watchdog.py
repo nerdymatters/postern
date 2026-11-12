@@ -210,6 +210,7 @@ class Fallback:
         self.retry = (None, 0)  # (fallback selection, restarts tried) for a restart the fallback could not finish
         self.unconfirmed = (None, 0, False)  # (fallback selection, checks the Rust process stayed unconfirmable, alerted)
         self.known_override = None  # (answer,) from the last systemctl show that answered; Linux only
+        self.override_failures = 0
         self.reset()
 
     def reset(self):
@@ -307,6 +308,8 @@ class Fallback:
         """Where the owner's runbook says how to remove the backend setting from the job."""
         return "the Linux runbook's Python fallback section" if sys.platform == 'linux' else 'runbook step 3'
 
+    OVERRIDE_FAILURES = 10  # About five minutes at the default interval; one D-Bus blip keeps the last answer.
+
     def unit_override(self):
         """Read systemd's merged Environment, including drop-ins, even if the API failed to start.
         EnvironmentFile contents are not expanded by show, so a unit with one is inconclusive: its next
@@ -316,12 +319,17 @@ class Fallback:
             return None
         unit = os.environ.get('POSTERN_API_UNIT', 'org.nerdymatters.postern.service')
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{0,127}\.service', unit):
-            raise ValueError('invalid POSTERN_API_UNIT')
+            return 'unknown (invalid POSTERN_API_UNIT)'
         result = self.run(['systemctl', '--system', 'show', unit, '--property=Environment',
-                           '--property=EnvironmentFiles'], capture_output=True, text=True, timeout=10)
+                           '--property=EnvironmentFiles', '--property=LoadState'], capture_output=True, text=True, timeout=10)
+        properties = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+        state = properties.get('LoadState')
+        if state is not None and state != 'loaded':
+            return f'unknown (LoadState={state})'
         if result.returncode:
             raise OSError('cannot read systemd unit environment')
-        properties = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+        if state is None:
+            return 'unknown (LoadState=missing)'
         # EnvironmentFile values win over Environment, so even a visible Python override is
         # inconclusive when a file could replace it with Rust.
         if properties.get('EnvironmentFiles', '').strip():
@@ -331,17 +339,29 @@ class Fallback:
                 return value.split('=', 1)[1]
         return None
 
+    def checked_override(self):
+        """Expire a stale answer without letting a brief lookup failure reset the fallback's counters."""
+        try:
+            override = self.unit_override()
+        except (OSError, ValueError, subprocess.SubprocessError):
+            self.override_failures += 1
+            if self.override_failures >= self.OVERRIDE_FAILURES:
+                self.known_override = None
+                if self.override_failures == self.OVERRIDE_FAILURES:
+                    self.alert('Postern: API unit environment cannot be read',
+                               f'{self.override_failures} consecutive systemctl lookups failed, {self.interval}s apart. '
+                               'The last answer has expired; the Rust guard is alert-only until a lookup answers again. '
+                               'Check POSTERN_API_UNIT and systemctl access for the watchdog account.')
+            return self.known_override[0] if self.known_override else 'unknown (unit environment unreadable)'
+        self.override_failures = 0
+        self.known_override = (override,)
+        return override
+
     def observe(self, healthy, detail=''):
         """Called after every health check. Returns the reasons when this tick returned Rust to Python."""
         selection = self.selection()
         backend = selection.get('backend') if selection else None
-        try:
-            override = self.unit_override()
-            self.known_override = (override,)
-        except (OSError, ValueError, subprocess.SubprocessError):
-            # A lookup that fails now and then (a D-Bus hiccup, a slow systemctl) keeps the last answer, so it
-            # cannot flip the guard between modes and reset its counts. With no answer yet, stay inconclusive.
-            override = self.known_override[0] if self.known_override else 'unknown (unit environment unreadable)'
+        override = self.checked_override()
         unknown = (override or '').startswith('unknown')
         if backend == 'python' and selection.get('fallback') and override is None:
             self.finish_fallback(selection)
