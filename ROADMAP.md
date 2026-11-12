@@ -438,7 +438,10 @@ with chosen audiences.
   now adds scoped directory, role/removal confirmations, optimistic revision checks
   and retryable self-departure with last-owner protection. [Ownership transfer](docs/runbooks/ownership-transfer.md)
   now requires exact recipient acceptance and atomically changes responsibility
-  and roles, with cancellation, decline, expiry and retry/race checks. Hosted
+  and roles, with cancellation, decline, expiry and retry/race checks.
+  [Audience groups and resource grants](docs/runbooks/resource-sharing.md) now
+  add scoped group management, explicit sharing, effective-access inspection
+  and audited stale-grant cleanup in bounded batches. Hosted
   rollout remains; this task is not complete.
 - [ ] **M2-03** Adapt existing documents, videos and training to the resource
   catalog. Preserve existing links and historical attribution; handle legacy
@@ -463,6 +466,9 @@ with chosen audiences.
   imports and synthetic history/file preservation. The [isolated service integration](docs/runbooks/service-integration.md)
   now connects native account/profile/session operations and scoped resource
   metadata/search/revocation, including signed handoff and audit-before-disclosure.
+  On Oct 31, catalog pages for a member who sees little of a space holding 10,000
+  or 100,000 resources took 3–17 ms locally instead of exceeding the five-second
+  deadline ([catalog listing at scale](docs/runbooks/service-integration.md#catalog-listing-at-scale)).
   Legacy content/object adapters, provider/region/budget, real account-store cutover
   and complete hosted/object recovery verification remain; this task is not complete.
   On Nov 10 the owner settled tenancy: shared by default, a dedicated deployment

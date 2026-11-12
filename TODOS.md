@@ -176,22 +176,6 @@ definitions. Add an upgrade test that starts from the stored older definitions.
 **Priority:** P2
 **Depends on:** The next change to the projection schema
 
-### Verify concentrated native catalog workloads before production enablement
-
-**What:** Improve and benchmark resource listing when a member can see few or no
-resources in a large space, preserving authorization, audit and revocation checks.
-
-**Why:** The agreed synthetic pilot (100 spaces, 10,000 accounts, 100,000 resources)
-passed a no-visible-resource probe at about 0.8–0.9 seconds. Concentrating 10,000
-resources in one space exceeded the service's five-second deadline. An extra grant
-index alone did not resolve it. These are local probes, not customer quotas or a
-hosted capacity guarantee.
-
-**Effort:** M
-**Priority:** P1
-**Depends on:** Complete before enabling native Posterns in production; v0.19.0
-keeps that service disabled.
-
 ### Close the LX-01 sandbox review notes
 
 **What:** Tidy the bubblewrap follow-ups the LX-01 reviews left as notes.
@@ -211,6 +195,26 @@ operator's `which` can disagree about where a tool lives.
 **Depends on:** None
 
 ## Completed
+
+- **2026-11-12 — Retire grants that can no longer show anything.** Built
+  Nov 1. Owners and administrators can retire up to 500 stale grants per
+  audited, retryable batch under the space-lock/revision protocol. Expired
+  grants, grants without discover, unpublished resources and ended recipients
+  are covered; rows and audit history remain. Re-publication needs new grants
+  after cleanup. Group and explicit-grant management also provide
+  additive-access inspection. See [groups and sharing](docs/runbooks/resource-sharing.md).
+  Native Posterns remain opt-in and no hosted cleanup scheduler is enabled.
+
+- **2026-11-12 — Keep native catalog pages fast when a member can see little.**
+  Built Oct 31. Member pages read only that member's all-member, direct and
+  audience grant paths, each in resource order and stopping at 51 visible
+  resources. Owners and admins still page by ID. `can_resource` still decides
+  every returned row; a false or missing decision refuses the page instead of
+  skipping the row. With 10,000 or 100,000 resources granted to other members,
+  an empty member page takes 3–5 ms locally and reads no grant rows; before, it
+  hit the five-second deadline. Storage tests compare every page with
+  `can_resource` and check that grant reads do not grow with resources granted
+  to others. See [catalog listing at scale](docs/runbooks/service-integration.md#catalog-listing-at-scale).
 
 - **2026-11-12 — Supervise, update and package the server on Linux (LX-02 host
   layer).** On Linux `postern.serve install`, `status` and `uninstall` manage
