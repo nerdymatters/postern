@@ -87,6 +87,9 @@ both backends. RS-07 steps:
    parity breach. Shipped in v0.24.0 and hardened in v0.24.1 and v0.24.2 (see the
    [cutover runbook](docs/runbooks/rust-server.md#cutover-and-rollback)); the one
    launchd change (step 3) needs the owner.
+5. Make the piloted configuration the default. v0.30.0 (PR #34) has a fresh macOS
+   install select Rust under its running watchdog. By owner decision (Nov 13) it
+   merges on November 16 if a read-only check shows the pilot stayed clean.
 
 The [remaining migration checklist](ROADMAP.md#remaining-migration-checklist)
 lists RS-07–RS-09.
@@ -116,6 +119,12 @@ lists RS-07–RS-09.
     between the two reads can put both in one alert;
   - a dropped launchd-override record always gets the launchd wording, even when
     the owner already removed the setting and a failed start left the old record.
+- **v0.30.0's review left install notes (PR #34):** the wait for the watchdog's
+  check prints nothing first, and a Ctrl-C during it leaves the unconfirmed
+  selection; an API that restarts by itself during the wait reads it before the
+  install takes it back; deleting the file during the wait ends in a traceback;
+  the final API restart's result is not checked; and under sudo the module is
+  verified by root's import rather than the service account's.
 
 **Compatibility:** Preserve API responses, authorization/revocation, durable
 audit admission, single-writer/job ownership, training progress and certificate
