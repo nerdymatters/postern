@@ -226,8 +226,8 @@ class Host:
             minutes, seconds = divmod(self.cpu, 60)
             line = f'{os.getuid()} {int(self.rss_mib*1024)} {int(minutes)}:{seconds:05.2f} {self.command}\n'
             return SimpleNamespace(returncode=0, stdout=line, stderr='')
-        if args[0] == 'systemctl':  # Linux reads the API unit's environment; this fake unit sets none
-            return SimpleNamespace(returncode=0, stdout='Environment=\nEnvironmentFiles=\n', stderr='')
+        if args[0] == 'systemctl':  # Linux reads the API unit's environment; this fake unit is loaded and sets none
+            return SimpleNamespace(returncode=0, stdout='LoadState=loaded\nEnvironment=\nEnvironmentFiles=\n', stderr='')
         code = self.parity_codes.pop(0) if self.parity_codes else 0
         if isinstance(code, BaseException):
             raise code
