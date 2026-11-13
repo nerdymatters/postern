@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.29.0 — Install and watch the Linux services more safely, and show them on the status page (2026-11-12)
+
+### Added
+
+- Show a Linux host's services on the status page. The heartbeat sender now takes `systemd/UNIT.service` targets and reads each one with `systemctl --system is-active`: active or reloading is operational, inactive, failed or a transition is an outage, and a permission error, a timeout or an unfamiliar reply is unknown. Only the four state values and the send time leave the host, macOS launchd targets work as before, and the status page itself needs no change. `docs/runbooks/status.md` gives the Linux target map and a service and timer for the sender.
+
+### Changed
+
+- The installer refuses to install over drop-ins it can see on disk or over a unit systemd has not reloaded. A `<unit>.d` directory or symlink in any of the five unit directories, or `NeedDaemonReload=yes`, stops `postern.serve install`, `--force` included, and the printed root command checks for those drop-in directories again before it changes anything.
+- The watchdog's Rust guard treats an API unit that systemd has not loaded (missing, masked, or an invalid `POSTERN_API_UNIT`) as unknown and stays alert-only, where it used to read it as "no override". A failed `systemctl show` keeps the last answer for nine checks; the tenth expires it, sends one alert that the unit environment cannot be read, and keeps the guard alert-only until a lookup answers again.
+- The converter's `manifest.json` must be a regular file. A symlink or a pipe in its place is a converter fault, found without waiting on the pipe. A preflight probe that times out inside the sandbox now names the tool.
+- `docs/runbooks/linux.md` documents `POSTERN_API_UNIT` and Linux recovery (data, config and unit paths), and `docs/runbooks/release.md` shows a macOS `--native-wheel` example.
+
+### Upgrade
+
+- macOS services and the macOS sandbox behave as before, apart from the manifest check above. On Linux, drop-ins other than a unit's own `<unit>.d/` in the five checked directories (a type-wide `service.d/`, `system.control`, transient, generator or hyphen-prefix drop-ins) are refused only once systemd has loaded the unit, so a first install lists them before running the root command (`docs/runbooks/linux.md`, step 4), and `systemctl cat` confirms each unit afterwards. The database, the Python dependencies and the native wheel (0.2.0) are unchanged, so a rollback to 0.28.1 needs no restore.
+
 ## 0.28.1 — Check the staff list without signing in to Google every 30 seconds (2026-11-12)
 
 ### Changed
