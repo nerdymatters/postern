@@ -487,6 +487,86 @@ def test_a_job_that_swaps_its_output_directory_never_touches_the_target(config, 
     assert not destination.exists() and not any((config.data_dir / 'staging').iterdir())
 
 
+# Value: protects=removing a job's staging folder never deletes outside it, even when a leftover process swaps a parent
+#   folder for a link mid-cleanup; fails_when=cleanup goes by path (TemporaryDirectory's permission fallback chmods,
+#   unlinks and rmtrees '<job>/a/b' through the link); why_new=the swap tests above replace the job folder itself, not a
+#   folder inside it; seam=the swap runs inside tempfile's permission repair or the first chmod of 'b', whichever
+#   cleanup reaches; no_claim=a real process racing the cleanup (the swap is injected; unit only)
+def test_cleanup_never_follows_a_folder_swapped_for_a_link(config, tmp_path, monkeypatch):
+    config.validate()
+    elsewhere = tmp_path / 'elsewhere'
+    (elsewhere / 'b').mkdir(parents=True)
+    (elsewhere / 'b' / 'postern.sqlite3').write_text('synthetic database')
+    jobs = []
+    def convert(*args, cwd, **kwargs):
+        job = Path(cwd)
+        jobs.append(job)
+        (job / 'a' / 'b').mkdir(parents=True)
+        (job / 'a' / 'b' / 'page-1.jpg').write_bytes(b'x')
+        (job / 'a' / 'b').chmod(0)  # a folder cleanup cannot enter without repairing its mode first
+        class Failed:
+            returncode = 1
+            def communicate(self, **kwargs):
+                return b'', b''
+        return Failed()
+    swapped = []
+    def swap():
+        if not swapped:
+            swapped.append(True)
+            os.rename(jobs[0] / 'a', jobs[0] / 'a.moved')
+            os.symlink(elsewhere, jobs[0] / 'a', target_is_directory=True)
+    resetperms = derive.tempfile._resetperms
+    def swap_then_reset(path):
+        swap()
+        return resetperms(path)
+    chmod = os.chmod
+    def swap_then_chmod(path, mode, **kwargs):
+        if path == 'b' and 'dir_fd' in kwargs:
+            swap()
+        return chmod(path, mode, **kwargs)
+    monkeypatch.setattr(derive.subprocess, 'Popen', convert)
+    monkeypatch.setattr(derive.tempfile, '_resetperms', swap_then_reset)
+    monkeypatch.setattr(derive.os, 'chmod', swap_then_chmod)
+    with pytest.raises(Exception) as raised:
+        derive.Deriver(config).run(FIXTURES / 'photo.jpg', config.data_dir / 'derived' / 'swapped-folder', 'photo')
+    assert swapped, 'the cleanup never reached the unreadable folder'
+    assert (elsewhere / 'b' / 'postern.sqlite3').exists(), 'cleanup deleted a folder outside the job'
+    assert isinstance(raised.value, derive.DeriveError) and 'could not be converted safely' in str(raised.value)
+    assert not any((config.data_dir / 'staging').iterdir())
+
+
+# Value: protects=a job that leaves a link or file at its own path keeps the conversion's own error (charged or a
+#   fault) and leaves staging empty; fails_when=cleanup raises OSError over that error or skips the replacement;
+#   why_new=the swap test above covers a zero exit with a link only; seam=none; no_claim=a real leftover process (unit only)
+@pytest.mark.parametrize('returncode,replacement,error', [(1, 'link', 'could not be converted safely'),
+                                                         (0, 'file', 'Unexpected converter output')])
+def test_a_replaced_job_path_keeps_its_error_and_clears_staging(config, tmp_path, monkeypatch, returncode,
+                                                                 replacement, error):
+    config.validate()
+    elsewhere = tmp_path / 'elsewhere'
+    elsewhere.mkdir()
+    (elsewhere / 'postern.sqlite3').write_text('synthetic database')
+    def convert(*args, cwd, **kwargs):
+        job = Path(cwd)
+        (job / 'manifest.json').write_text('{"pages":1,"bytes":1}')
+        class Finished:
+            def communicate(self, **kwargs):
+                (job / 'manifest.json').unlink()
+                job.rmdir()
+                if replacement == 'link':
+                    job.symlink_to(elsewhere, target_is_directory=True)
+                else:
+                    job.write_bytes(b'left by the job')
+                return b'', b''
+        Finished.returncode = returncode
+        return Finished()
+    monkeypatch.setattr(derive.subprocess, 'Popen', convert)
+    with pytest.raises(derive.DeriveError, match=error):
+        derive.Deriver(config).run(FIXTURES / 'photo.jpg', config.data_dir / 'derived' / 'replaced', 'photo')
+    assert (elsewhere / 'postern.sqlite3').read_text() == 'synthetic database'
+    assert not any((config.data_dir / 'staging').iterdir())
+
+
 # Value: protects=a cached derivative that is a link reads as missing and is never followed; fails_when=read_path
 #   checks is_file() alone, which follows links; why_new=no test reads through a link; seam=none;
 #   no_claim=how a link could reach the cache (the run check above stops that; unit only)

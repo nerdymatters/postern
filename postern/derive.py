@@ -148,6 +148,56 @@ def job_env(output):
     return {'PATH': '/opt/homebrew/bin:/usr/bin:/bin', 'TMPDIR': str(output), 'LC_ALL': 'C', 'PYTHONDONTWRITEBYTECODE': '1'}
 
 
+def open_child(directory, name):
+    """Open one folder inside a held folder, never following a link, even one the job left unreadable (mode 000)."""
+    # On macOS a leftover job process could swap this name for a link at any moment, so the mode changes without
+    # following links. Linux has no such call, but there every job process has ended with bubblewrap's PID namespace.
+    os.chmod(name, 0o700, dir_fd=directory, follow_symlinks=os.chmod not in os.supports_follow_symlinks)
+    return os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+
+
+def clear(directory, depth=0):
+    """Empty a held folder entry by entry: each call names one entry relative to an open folder."""
+    for _ in range(3):  # another look catches entries a leftover process renamed during the last one
+        with os.scandir(directory) as entries:
+            names = [entry.name for entry in entries]
+        if not names:
+            return
+        for name in names:
+            with contextlib.suppress(OSError):
+                if not stat.S_ISDIR(os.stat(name, dir_fd=directory, follow_symlinks=False).st_mode):
+                    os.unlink(name, dir_fd=directory)  # a link goes, never its target
+                elif depth < 32:
+                    child = open_child(directory, name)
+                    try:
+                        clear(child, depth + 1)
+                    finally:
+                        os.close(child)
+                    os.rmdir(name, dir_fd=directory)
+
+
+def discard(staging, name, job):
+    """Remove a conversion's staging folder without ever resolving a path.
+
+    A converter process that outlives its job can relink, rename or lock anything at or below this folder, so path
+    cleanup such as TemporaryDirectory's permission fallback could reach another directory. This never raises: an entry
+    a leftover process keeps changing stays in staging rather than hiding the conversion's own result."""
+    with contextlib.suppress(OSError):
+        os.fchmod(job, 0o700)
+        clear(job)
+        here = os.stat(name, dir_fd=staging, follow_symlinks=False)
+        if not stat.S_ISDIR(here.st_mode):
+            os.unlink(name, dir_fd=staging)  # a link, file or FIFO left at the job's name
+            return
+        if not os.path.samestat(here, os.fstat(job)):
+            replacement = open_child(staging, name)
+            try:
+                clear(replacement)
+            finally:
+                os.close(replacement)
+        os.rmdir(name, dir_fd=staging)
+
+
 class Deriver:
     def __init__(self, config):
         self.config = config
@@ -167,12 +217,19 @@ class Deriver:
         # Room for this kind's output only: a small selfie must not be refused for a document's budget.
         if shutil.disk_usage(self.config.data_dir).free < self.config.free_floor + output_limit:
             raise DeriveCapacity('Not enough free disk space to prepare this attachment')
-        with tempfile.TemporaryDirectory(prefix='derive-',dir=self.config.data_dir/'staging') as tmp, contextlib.ExitStack() as held:
-            output = Path(tmp)
+        with contextlib.ExitStack() as held:
+            staging = os.open(self.config.data_dir/'staging', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            held.callback(os.close, staging)
+            output = Path(tempfile.mkdtemp(prefix='derive-', dir=self.config.data_dir/'staging'))
             # A converter process can outlive its job and replace this path, even with a link to another
-            # directory. After the job, everything reads, lists and renames through this descriptor instead.
-            job = os.open(output, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            # directory. After the job, everything reads, lists, renames and removes through these descriptors.
+            try:
+                job = os.open(output.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=staging)
+            except OSError:
+                os.rmdir(output.name, dir_fd=staging)
+                raise
             held.callback(os.close, job)
+            held.callback(discard, staging, output.name, job)  # runs first, on every exit
             try:
                 command = job_command(source, output, kind, self.config.max_pages,
                                       min(self.config.max_pixels, SELFIE_MAX_PIXELS) if kind == 'selfie' else self.config.max_pixels,
@@ -202,13 +259,11 @@ class Deriver:
                 # Parser diagnostics may contain document text; keep them off user-facing responses.
                 raise DeriveError('The attachment could not be converted safely. Check its format, size and page count.')
             try:
-                replaced = not os.path.samestat(os.fstat(job), os.lstat(output))
+                replaced = not os.path.samestat(os.fstat(job), os.stat(output.name, dir_fd=staging, follow_symlinks=False))
             except FileNotFoundError:
                 replaced = True
             if replaced:
-                if output.is_symlink():
-                    output.unlink()  # only the link: the temporary-directory cleanup must never reach its target
-                raise DeriveFault('Unexpected converter output')
+                raise DeriveFault('Unexpected converter output')  # discard removes whatever sits there, never its target
             try:
                 # Do not follow a converter-created link or wait for a FIFO writer. Check the opened
                 # descriptor too, so swapping a regular file for a FIFO cannot race a path-only check.
