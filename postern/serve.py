@@ -275,7 +275,16 @@ def preflight(config_path):
 
     compiles, detail = profile_compiles()
     checks.append(('sandbox profile', compiles, detail))
+    checks.append(rust_progress_check())
     return checks
+
+
+def rust_progress_check():
+    """Never a failure: a host without the wheel is valid and serves Python. This tells the owner what install selects."""
+    from . import progress_backend
+    usable, detail = progress_backend.native_available()
+    next_step = 'select it with postern.serve backend rust' if derive.LINUX else 'a fresh install selects rust'
+    return 'rust progress', True, f'{detail}; {next_step}' if usable else f'{detail}; Python serves'
 
 
 def report(checks):
@@ -450,10 +459,39 @@ def install(config_path, user, home, user_agent, check_only, force, label=LABEL)
             print(f'FAIL launchctl bootstrap {job_label}: {(result.stderr or result.stdout).strip()}')
             return 1
         launchctl('kickstart', '-k', f'{where}/{job_label}')
+    select_piloted_backend(config_path, user, where, label)
     print(f'ok   {label} and {watcher} installed in {where}\n'
           f'     {health_url(config_path)} · logs {logs}\n'
           f'     ENG-D8 is not satisfied until a real reboot proves it: run {ROOT}/ops/postern/reboot-check.sh')
     return 0
+
+
+def select_piloted_backend(config_path, user, where, label):
+    """After the API and its watchdog are both running, select Rust where its verified module is installed.
+
+    This is the configuration the RS-07 pilot proved: a rust selection file the watchdog guards. It is written only
+    when no selection exists (the owner's choice always wins) and only after both jobs bootstrapped, so Rust never
+    starts without its watchdog; then the API restarts onto it. Any failure leaves Python serving."""
+    from . import progress_backend
+    path = progress_backend.selection_path(config_path)
+    if path.exists() or path.is_symlink():
+        print('note progress-backend.json: already present; left unchanged')
+        return
+    usable, detail = progress_backend.native_available()
+    if not usable:
+        print(f'note progress-backend.json: not set; Python serves ({detail})')
+        return
+    owner = None
+    if os.geteuid() == 0:
+        entry = pwd.getpwnam(user)
+        owner = (entry.pw_uid, entry.pw_gid)
+    try:
+        progress_backend.write_selection(config_path, 'rust', owner=owner, set_by='install')
+    except OSError as error:
+        print(f'note progress-backend.json: not written ({type(error).__name__}); Python serves')
+        return
+    launchctl('kickstart', '-k', f'{where}/{label}')
+    print('ok   progress-backend.json: rust (verified native module; postern.serve backend python keeps Python)')
 
 
 def uninstall(user, home, user_agent, label=LABEL):

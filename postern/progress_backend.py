@@ -5,6 +5,7 @@ POSTERN_PROGRESS_BACKEND in the environment (the launchd job's override),
 then the owner's progress-backend.json beside the config file, then Python.
 The file lets the owner and the watchdog switch backends with an ordinary restart,
 without editing the root-owned launchd job; older releases ignore it and run Python.
+A fresh macOS install writes a rust selection when this module verifies (serve.select_piloted_backend).
 An explicitly requested but unavailable/incompatible Rust module fails startup;
 runtime faults never silently turn into successful or incomplete progress.
 """
@@ -47,9 +48,10 @@ def read_selection(config_path):
     return data
 
 
-def write_selection(config_path, backend, **detail):
+def write_selection(config_path, backend, *, owner=None, **detail):
     """Atomically replace the selection; readers never see a partial file. The owner's watchdog
-    `limits` carry over, so re-selecting a backend never silently resets them."""
+    `limits` carry over, so re-selecting a backend never silently resets them. `owner` is a (uid, gid)
+    pair for a writer running as root: the file must belong to the account the API runs as."""
     if backend not in ('python', 'rust'):
         raise ValueError('backend must be python or rust')
     path = selection_path(config_path)
@@ -60,11 +62,11 @@ def write_selection(config_path, backend, **detail):
         previous = None
     if isinstance(previous, dict) and isinstance(previous.get('limits'), dict) and 'limits' not in detail:
         data['limits'] = previous['limits']
-    _write_private(path, data, '.progress-backend-', indent=2)
+    _write_private(path, data, '.progress-backend-', indent=2, owner=owner)
     return data
 
 
-def _write_private(path, data, prefix, indent=None):
+def _write_private(path, data, prefix, indent=None, owner=None):
     """Atomically replace path with owner-only JSON; a failed write leaves no temporary file behind."""
     output = tempfile.NamedTemporaryFile('w', dir=path.parent, prefix=prefix, delete=False)
     try:
@@ -74,6 +76,9 @@ def _write_private(path, data, prefix, indent=None):
             output.write('\n')
             if path.name == SELECTION:
                 sync_file(output)
+        if owner is not None:
+            # Before the rename, so the final path never holds a root-owned file the API would refuse.
+            os.chown(output.name, *owner)
         os.replace(output.name, path)
         if path.name == SELECTION:
             sync_directory(path.parent)
@@ -197,6 +202,17 @@ def native():
             or not callable(getattr(module, 'reduce_incremental', None))):
         raise RuntimeError('Rust progress module has an incompatible API version')
     return module
+
+
+def native_available():
+    """(True, detail) when the verified Rust module imports and matches this release, else (False, why). Never raises."""
+    try:
+        native()
+    except RuntimeError as error:
+        return False, 'native module not installed' if isinstance(error.__cause__, ImportError) else str(error)
+    except Exception as error:  # a wheel that is present but broken at import must never stop an install
+        return False, f'native module failed to load ({type(error).__name__})'
+    return True, 'verified native module'
 
 
 def selected():
