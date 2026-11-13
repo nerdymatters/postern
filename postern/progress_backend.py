@@ -48,10 +48,11 @@ def read_selection(config_path):
     return data
 
 
-def write_selection(config_path, backend, *, owner=None, **detail):
+def write_selection(config_path, backend, *, owner=None, replace=True, **detail):
     """Atomically replace the selection; readers never see a partial file. The owner's watchdog
     `limits` carry over, so re-selecting a backend never silently resets them. `owner` is a (uid, gid)
-    pair for a writer running as root: the file must belong to the account the API runs as."""
+    pair for a writer running as root: the file must belong to the account the API runs as. With
+    replace=False an existing selection is never overwritten: FileExistsError, and nothing changes."""
     if backend not in ('python', 'rust'):
         raise ValueError('backend must be python or rust')
     path = selection_path(config_path)
@@ -62,11 +63,11 @@ def write_selection(config_path, backend, *, owner=None, **detail):
         previous = None
     if isinstance(previous, dict) and isinstance(previous.get('limits'), dict) and 'limits' not in detail:
         data['limits'] = previous['limits']
-    _write_private(path, data, '.progress-backend-', indent=2, owner=owner)
+    _write_private(path, data, '.progress-backend-', indent=2, owner=owner, replace=replace)
     return data
 
 
-def _write_private(path, data, prefix, indent=None, owner=None):
+def _write_private(path, data, prefix, indent=None, owner=None, replace=True):
     """Atomically replace path with owner-only JSON; a failed write leaves no temporary file behind."""
     output = tempfile.NamedTemporaryFile('w', dir=path.parent, prefix=prefix, delete=False)
     try:
@@ -79,7 +80,11 @@ def _write_private(path, data, prefix, indent=None, owner=None):
         if owner is not None:
             # Before the rename, so the final path never holds a root-owned file the API would refuse.
             os.chown(output.name, *owner)
-        os.replace(output.name, path)
+        if replace:
+            os.replace(output.name, path)
+        else:
+            os.link(output.name, path)  # fails if any file appeared at path since the caller looked
+            os.unlink(output.name)
         if path.name == SELECTION:
             sync_directory(path.parent)
     except BaseException:
