@@ -178,11 +178,12 @@ definitions. Add an upgrade test that starts from the stored older definitions.
 leaves a rule broader than it needs to be.
 
 **Context:** v0.29.0 made the manifest read refuse a symlink or FIFO and names
-the tool when a preflight probe times out. Still open: the AppArmor rule in
-`config/sandbox/postern-bwrap.apparmor` could be narrowed, but only after testing
-its interaction with Ubuntu's `bwrap-userns-restrict` on a real Ubuntu host;
-`namespace_refused` wording; the five 60 s probe waits could be shorter; the
-job's PATH and the operator's `which` can disagree about where a tool lives.
+the tool when a preflight probe times out, and v0.29.2 names Ubuntu's
+user-namespace restriction when it blocks the sandbox. Still open: the AppArmor
+rule in `config/sandbox/postern-bwrap.apparmor` could be narrowed, but only after
+testing its interaction with Ubuntu's `bwrap-userns-restrict` on a real Ubuntu
+host; the five 60 s probe waits could be shorter; the job's PATH and the
+operator's `which` can disagree about where a tool lives.
 
 **Effort:** S
 **Priority:** P3
@@ -224,7 +225,37 @@ and make the cleanup swap test exercise macOS's no-follow `chmod` (patching
 **Priority:** P2
 **Depends on:** None
 
+### Make the health trace's loop-stall test independent of thread timing
+
+**What:** Rework
+`tests/postern/test_health_trace.py::test_database_and_event_loop_stages_are_distinct[return_to_loop]`
+so the injected event-loop stall is guaranteed to run after the worker records
+`worker_finished`, then assert the gap.
+
+**Why:** The test schedules an 80 ms `time.sleep` on the loop from the worker
+thread and asserts the loop resumed at least 60 ms after `worker_finished`. On a
+slow runner the loop can run that stall before the descheduled worker records
+its own finish, so the gap reads about 0 ms and macOS CI fails. It failed once on
+PR #32's first CI attempt (1 failed, 1338 passed) and passed 10 of 10 serial
+local reruns.
+
+**Context:** The race is in the test, not in `postern/health_trace.py`. Schedule
+the stall from the loop side after the worker's finish mark (or record the mark
+before queuing the stall), and keep the stall visible in `loop_lag_max_ms`.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ## Completed
+
+- **2026-11-13 — Close the LX-03 review notes.** On Linux, an API unit the
+  watchdog cannot verify is recorded and printed as inconclusive with its lookup
+  reason, not as a backend setting; a live environment-sourced API still reads
+  as the setting; the status heartbeat counts `refreshing` as up and says
+  "Invalid agent targets" on every platform; the root-script matrix rejects a
+  dangling drop-in symlink; the preflight names Ubuntu's namespace restriction.
+  Rehearsed in a Debian 13 image and a systemd 257 container. Included in v0.29.2.
 
 - **2026-11-13 — Never serve converter output that links outside its job.**
   The deferred PR #31 finding: converted files that are links, hard links or not
