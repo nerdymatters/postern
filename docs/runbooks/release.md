@@ -11,7 +11,7 @@ the exact filename for the host's architecture and Python ABI):
 
 ```sh
 .venv/bin/python scripts/package_release.py --platform macos --output .context/release \
-  --native-wheel /path/to/postern_progress_native-0.2.0-cp313-cp313-macosx_11_0_arm64.whl
+  --native-wheel /path/to/postern_progress_native-0.2.0-cp311-abi3-macosx_11_0_arm64.whl
 ```
 
 The wheel is bundled under `wheels/` and recorded in RELEASE.json. Packaging

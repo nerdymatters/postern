@@ -13,9 +13,9 @@ configuration files outside Git, owned by the service operator, with mode 0600.
 | `systemd/service.in` | Linux API, watchdog and proxy unit template. |
 | `reboot-check-linux.sh` | Require all three Linux units enabled and active after a reboot, then probe health. |
 | `reboot-check.sh` | Verify local services after FileVault unlock and operator login. |
-| `status-heartbeat.example.json` | Private heartbeat endpoint, token and installed launchd targets. |
+| `status-heartbeat.example.json` | Private heartbeat endpoint, token and installed launchd targets; Linux uses `systemd/UNIT.service` targets instead. |
 | `status-heartbeat.py` | Send only process states; `--check` observes without sending. |
-| `install-status-heartbeat.py` | Install the optional sender outside the checkout. |
+| `install-status-heartbeat.py` | Install the optional sender outside the checkout as a macOS LaunchAgent. On Linux, follow the [Linux heartbeat steps](../../docs/runbooks/status.md#linux-heartbeat). |
 | `traffic-report.py` | Summarize private Caddy logs into UTC daily HTTP-body totals. |
 
 ## Install on macOS
