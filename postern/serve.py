@@ -275,16 +275,30 @@ def preflight(config_path):
 
     compiles, detail = profile_compiles()
     checks.append(('sandbox profile', compiles, detail))
-    checks.append(rust_progress_check())
+    checks.append(rust_progress_check(config_path))
     return checks
 
 
-def rust_progress_check():
-    """Never a failure: a host without the wheel is valid and serves Python. This tells the owner what install selects."""
+def rust_progress_check(config_path):
+    """What the next API start serves and what install selects. A host without the wheel is valid and serves Python;
+    only a selection the next start would refuse fails, so the rollout's check-only run stops before a restart."""
     from . import progress_backend
     usable, detail = progress_backend.native_available()
-    next_step = 'select it with postern.serve backend rust' if derive.LINUX else 'a fresh install selects rust'
-    return 'rust progress', True, f'{detail}; {next_step}' if usable else f'{detail}; Python serves'
+    path = progress_backend.selection_path(config_path)
+    if not (path.exists() or path.is_symlink()):
+        next_step = 'select it with postern.serve backend rust' if derive.LINUX else 'a fresh install selects rust'
+        return 'rust progress', True, f'{detail}; {next_step}' if usable else f'{detail}; Python serves'
+    try:
+        backend = None if path.is_symlink() else json.loads(path.read_text()).get('backend')
+    except (OSError, ValueError, AttributeError):
+        backend = None
+    if backend not in ('python', 'rust'):
+        return ('rust progress', False, f'{path.name} is unreadable or names no backend; the API will refuse to start '
+                '(run postern.serve backend python or rust)')
+    if backend == 'rust' and not usable:
+        return ('rust progress', False, f'{path.name} selects rust but {detail}; the API will refuse to start '
+                '(reinstall the wheel or run postern.serve backend python)')
+    return 'rust progress', True, f'{path.name} selects {backend}, which install keeps; {detail}'
 
 
 def report(checks):
@@ -485,6 +499,12 @@ def select_piloted_backend(config_path, user, where, label):
     if os.geteuid() == 0:
         entry = pwd.getpwnam(user)
         owner = (entry.pw_uid, entry.pw_gid)
+        folder = path.parent.stat()
+        if folder.st_uid != entry.pw_uid or not folder.st_mode & stat.S_IWUSR:
+            # Root could write here, but the watchdog and postern.serve backend python, running as the owner, could not.
+            print(f'note progress-backend.json: not set; {path.parent} is not writable by {user}, so the watchdog could '
+                  'not return the API to Python; Python serves')
+            return
     try:
         progress_backend.write_selection(config_path, 'rust', owner=owner, set_by='install')
     except OSError as error:
@@ -494,7 +514,8 @@ def select_piloted_backend(config_path, user, where, label):
         # Renamed into place but its folder not synced: it applies at the next start anyway, so start it now,
         # while its watchdog is running, rather than at some later restart.
     launchctl('kickstart', '-k', f'{where}/{label}')
-    print('ok   progress-backend.json: rust (verified native module; postern.serve backend python keeps Python)')
+    print('ok   progress-backend.json: rust (verified native module; postern.serve backend python keeps Python)\n'
+          '     the watchdog checks this selection within 30 s; run postern.serve backend to confirm it is guarding')
 
 
 def uninstall(user, home, user_agent, label=LABEL):

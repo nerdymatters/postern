@@ -369,14 +369,19 @@ def test_namespace_refusal_hint_names_the_restriction_and_rule(tmp_path, monkeyp
 
 @pytest.fixture
 def native_module(monkeypatch):
-    """Fake importing the Rust wheel: 'ok', 'missing', 'old' (another API version), 'broken' (raises while loading)
-    or 'panic' (a Rust panic, which PyO3 raises as a BaseException)."""
+    """Fake importing the Rust wheel: 'ok', 'missing', 'old' (another API version), 'broken' (an installed extension
+    that cannot load, which CPython raises as ImportError), 'partial' (the package without its extension module),
+    'oserror' (any other load fault) or 'panic' (a Rust panic, which PyO3 raises as a BaseException)."""
     def use(kind):
         def import_module(name):
             assert name == 'postern_progress_native'
             if kind == 'missing':
-                raise ModuleNotFoundError(name)
+                raise ModuleNotFoundError(f"No module named '{name}'", name=name)
             if kind == 'broken':
+                raise ImportError('dlopen(postern_progress_native.abi3.so): incompatible architecture')
+            if kind == 'partial':
+                raise ModuleNotFoundError('no extension module', name=name + '.' + name)
+            if kind == 'oserror':
                 raise OSError('dlopen failed')
             if kind == 'panic':
                 raise type('PanicException', (BaseException,), {})('panicked while loading')  # PyO3's Rust panic
@@ -388,19 +393,45 @@ def native_module(monkeypatch):
 
 
 NATIVE_DETAIL = {'missing': 'native module not installed', 'old': 'Rust progress module has an incompatible API version',
-                 'broken': 'native module failed to load (OSError)', 'panic': 'native module failed to load (PanicException)'}
+                 'broken': 'native module failed to load (ImportError)',
+                 'partial': 'native module failed to load (ModuleNotFoundError)',
+                 'oserror': 'native module failed to load (OSError)', 'panic': 'native module failed to load (PanicException)'}
 
 
-@pytest.mark.parametrize('kind', ['ok', 'missing', 'old', 'broken', 'panic'])
-def test_preflight_says_which_progress_backend_install_selects_and_never_fails(native_module, kind):
+@pytest.mark.parametrize('kind', ['ok', 'missing', 'old', 'broken', 'partial', 'oserror', 'panic'])
+def test_preflight_says_which_progress_backend_install_selects_and_never_fails(tmp_path, native_module, kind):
     native_module(kind)
-    name, ok, detail = serve.rust_progress_check()
+    name, ok, detail = serve.rust_progress_check(tmp_path / 'config.json')
     assert name == 'rust progress' and ok is True
     if kind == 'ok':
         assert detail == 'verified native module; ' + (
             'select it with postern.serve backend rust' if derive.LINUX else 'a fresh install selects rust')
     else:
         assert detail == NATIVE_DETAIL[kind] + '; Python serves'
+
+
+@pytest.mark.parametrize('existing,kind,ok,detail', [
+    ('rust', 'ok', True, 'progress-backend.json selects rust, which install keeps; verified native module'),
+    ('rust', 'missing', False, 'progress-backend.json selects rust but native module not installed; the API will refuse to '
+                               'start (reinstall the wheel or run postern.serve backend python)'),
+    ('python', 'missing', True, 'progress-backend.json selects python, which install keeps; native module not installed'),
+    ('unreadable', 'ok', False, 'progress-backend.json is unreadable or names no backend; the API will refuse to start '
+                                '(run postern.serve backend python or rust)'),
+    ('symlink', 'ok', False, 'progress-backend.json is unreadable or names no backend; the API will refuse to start '
+                             '(run postern.serve backend python or rust)'),
+])
+def test_preflight_fails_a_selection_the_next_api_start_would_refuse(tmp_path, native_module, existing, kind, ok, detail):
+    # Value: protects=install --check-only, the rollout's pre-restart gate, fails when a rust selection cannot start;
+    #   fails_when=the row ignores the existing file and says ok, Python serves; why_new=the other rows have no file;
+    #   seam=none; no_claim=the rollout helper's own handling of a FAIL row
+    native_module(kind)
+    config = tmp_path / 'config.json'
+    selection = progress_backend.selection_path(config)
+    if existing == 'symlink':
+        selection.symlink_to(tmp_path / 'elsewhere.json')
+    else:
+        selection.write_text('{not json' if existing == 'unreadable' else json.dumps({'backend': existing}))
+    assert serve.rust_progress_check(config) == ('rust progress', ok, detail)
 
 
 def launchd_install(tmp_path, monkeypatch, fail=None):
@@ -448,12 +479,13 @@ def test_a_fresh_install_with_the_verified_module_selects_rust_after_its_watchdo
     info = selection.stat()
     assert info.st_mode & 0o777 == 0o600 and info.st_uid == os.getuid()
     assert progress_backend.read_selection(config) == data  # the API accepts it
-    assert ('ok   progress-backend.json: rust (verified native module; postern.serve backend python keeps Python)'
+    assert ('ok   progress-backend.json: rust (verified native module; postern.serve backend python keeps Python)\n'
+            '     the watchdog checks this selection within 30 s; run postern.serve backend to confirm it is guarding\n'
             in capsys.readouterr().out)
 
 
 @LAUNCHD
-@pytest.mark.parametrize('kind', ['missing', 'old', 'broken', 'panic'])
+@pytest.mark.parametrize('kind', ['missing', 'old', 'broken', 'partial', 'oserror', 'panic'])
 def test_install_leaves_python_when_the_native_module_is_not_verified(tmp_path, monkeypatch, capsys, native_module, kind):
     native_module(kind)
     config, selection, calls = launchd_install(tmp_path, monkeypatch)
@@ -507,7 +539,7 @@ def test_the_root_rerun_writes_a_selection_the_service_account_owns(tmp_path, mo
     native_module('ok')
     config, selection, calls = launchd_install(tmp_path, monkeypatch)
     monkeypatch.setattr(os, 'geteuid', lambda: 0)  # the second phase of a macOS install runs under sudo
-    accounts = {'owner': SimpleNamespace(pw_uid=4321, pw_gid=20)}  # any other name is a KeyError, as for an unknown user
+    accounts = {'owner': SimpleNamespace(pw_uid=os.getuid(), pw_gid=20)}  # any other name is a KeyError, as for an unknown user
     monkeypatch.setattr(serve, 'pwd', SimpleNamespace(getpwnam=lambda user: accounts[user]))
     owners = []
 
@@ -521,7 +553,7 @@ def test_the_root_rerun_writes_a_selection_the_service_account_owns(tmp_path, mo
     # A selection failure is a note, never a failed install: the jobs are already running on Python.
     assert serve.install(config, 'owner', tmp_path, False, False, False) == 0
     # The temporary file changed owner before the rename: the final path never held a root-owned selection.
-    assert owners == [(config.parent, True, 4321, 20, False)]
+    assert owners == [(config.parent, True, os.getuid(), 20, False)]
     output = capsys.readouterr().out
     if chown_fails:
         assert not selection.exists() and calls == started(tmp_path)
@@ -530,6 +562,30 @@ def test_the_root_rerun_writes_a_selection_the_service_account_owns(tmp_path, mo
     else:
         assert json.loads(selection.read_text())['backend'] == 'rust'
         assert calls == started(tmp_path) + [(('kickstart', '-k', 'system/' + serve.LABEL), True)]
+
+
+@LAUNCHD
+@pytest.mark.parametrize('folder', ['foreign', 'read-only'])
+def test_the_root_rerun_selects_nothing_in_a_folder_the_service_account_cannot_write(tmp_path, monkeypatch, capsys,
+                                                                                      native_module, folder):
+    # Value: protects=as root, install never writes a rust selection that the owner's watchdog could not replace with
+    #   python; fails_when=the folder owner or mode check is dropped; why_new=root writes succeed anywhere; seam=none;
+    #   no_claim=a real root-owned folder
+    native_module('ok')
+    config, selection, calls = launchd_install(tmp_path, monkeypatch)
+    monkeypatch.setattr(os, 'geteuid', lambda: 0)
+    uid = os.getuid() + (1 if folder == 'foreign' else 0)
+    monkeypatch.setattr(serve, 'pwd', SimpleNamespace(getpwnam=lambda user: SimpleNamespace(pw_uid=uid, pw_gid=20)))
+    monkeypatch.setattr(os, 'chown', lambda *args: None)
+    if folder == 'read-only':
+        config.parent.chmod(0o500)
+    try:
+        assert serve.select_piloted_backend(config, 'owner', 'system', serve.LABEL) is None
+    finally:
+        config.parent.chmod(0o700)
+    assert not selection.exists() and calls == []
+    assert (f'note progress-backend.json: not set; {config.parent} is not writable by owner, so the watchdog could not '
+            'return the API to Python; Python serves') in capsys.readouterr().out
 
 
 @LAUNCHD
