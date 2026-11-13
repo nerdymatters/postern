@@ -157,23 +157,23 @@ def open_child(directory, name):
 
 
 def clear(directory, depth=0):
-    """Empty a held folder entry by entry: each call names one entry relative to an open folder."""
-    for _ in range(3):  # another look catches entries a leftover process renamed during the last one
-        with os.scandir(directory) as entries:
-            names = [entry.name for entry in entries]
-        if not names:
-            return
-        for name in names:
-            with contextlib.suppress(OSError):
-                if not stat.S_ISDIR(os.stat(name, dir_fd=directory, follow_symlinks=False).st_mode):
-                    os.unlink(name, dir_fd=directory)  # a link goes, never its target
-                elif depth < 32:
-                    child = open_child(directory, name)
-                    try:
-                        clear(child, depth + 1)
-                    finally:
-                        os.close(child)
-                    os.rmdir(name, dir_fd=directory)
+    """Empty a held folder in one pass, each call naming one entry relative to an open folder.
+
+    Every folder is visited once, so the work stays linear in what the job left however deep it is; an entry that
+    cannot go (a leftover process, a file flag, folders past the depth cap) stays in staging with its parents."""
+    with os.scandir(directory) as entries:
+        names = [entry.name for entry in entries]
+    for name in names:
+        with contextlib.suppress(OSError):
+            if not stat.S_ISDIR(os.stat(name, dir_fd=directory, follow_symlinks=False).st_mode):
+                os.unlink(name, dir_fd=directory)  # a link goes, never its target
+            elif depth < 64:
+                child = open_child(directory, name)
+                try:
+                    clear(child, depth + 1)
+                finally:
+                    os.close(child)
+                os.rmdir(name, dir_fd=directory)
 
 
 def discard(staging, name, job):
@@ -184,7 +184,8 @@ def discard(staging, name, job):
     a leftover process keeps changing stays in staging rather than hiding the conversion's own result."""
     with contextlib.suppress(OSError):
         os.fchmod(job, 0o700)
-        clear(job)
+        for _ in range(2):  # a second look catches entries a leftover process renamed during the first
+            clear(job)
         here = os.stat(name, dir_fd=staging, follow_symlinks=False)
         if not stat.S_ISDIR(here.st_mode):
             os.unlink(name, dir_fd=staging)  # a link, file or FIFO left at the job's name
