@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.29.2 — See why the Linux backend guard cannot check the API service (2026-11-13)
+
+### Fixed
+
+- See the real reason when the Linux watchdog cannot verify the API service's environment. `postern.serve backend` now says the unit environment cannot be verified and why (the service is not loaded or is masked, `POSTERN_API_UNIT` names an invalid unit, the unit reads an `EnvironmentFile`, or `systemctl show` failed), and gives the `systemctl show` command to check it. It used to report a backend setting the operator never made. The guard stays alert-only, as before, and a live API whose own record says its backend came from the environment is still reported as that setting.
+- Count a systemd service that is `refreshing` as up in the status heartbeat, like `active` and `reloading`.
+- Say "Invalid agent targets" on every platform when the heartbeat's agents map is wrong; it used to say "launchd" on Linux too.
+- Name Ubuntu's user-namespace restriction when it blocks the sandbox in the install preflight, and say to load the checked-in AppArmor rule.
+
+### Upgrade
+
+- Restart the watchdog with the API so the guard writes the new state; until then a record from the older watchdog still shows as a backend setting. macOS output and behavior are unchanged. The database, the Python dependencies and the native wheel (0.2.0) are unchanged, so a rollback to 0.29.1 needs no restore.
+
 ## 0.29.1 — Never serve a converted file that points outside its conversion job (2026-11-13)
 
 ### Fixed
