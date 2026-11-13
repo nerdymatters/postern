@@ -38,12 +38,18 @@ compiles cleanly and then denies every write — the job fails inside pdftoppm w
   `/System/Library`, `/usr/lib`, `/usr/share` for the system frameworks. `/opt/homebrew/Cellar` and
   `/opt/homebrew/opt` are where Poppler, libheif, FFmpeg, and their dylibs live; `/opt/homebrew/bin` holds only
   symlinks into `Cellar`, so it does not need a rule of its own.
-- `(subpath (param "OUTPUT"))` — the only writable place. The directory is created per job and deleted
-  after, so a job cannot leave anything behind or see another job's pages.
+- `(subpath (param "OUTPUT"))` — the only writable place. The directory is created per job, so a job never
+  sees another job's pages. The rule covers the directory's own entry too, so a job can remove or replace it;
+  the server holds the directory open, refuses a job that does, and reads, moves and finally removes the
+  output through descriptors, never by path, so it never follows a link the job leaves. A job that
+  deliberately leaves entries the server cannot remove (file flags, folders nested more than 64 deep) leaves
+  its directory in staging.
 - `/dev/null`, `/dev/urandom`, `/dev/random` — subprocess plumbing and Python's hash seed.
 
 Not reachable, by construction and by test: `~/.config/postern/`, the staging directory as a whole, the
-derivatives cache, the audit database, and the network.
+derivatives cache, the audit database, and the network. The server moves a job's checked output into the
+cache by rename. On macOS a process the job leaves running could keep writing a file it opened before that
+move; ending those processes is an open item in `TODOS.md`.
 
 Selfie jobs run the bundled YuNet face detector on the oriented, square-cropped
 portrait before saving. Only the specific pinned model is newly readable, not its
@@ -74,7 +80,12 @@ jobs load the file. On Linux, `tests/postern/test_sandbox.py` pins `derive.bwrap
 platforms), and runs the real bwrap to prove the secrets, writes outside the job, the network and new user
 namespaces are refused, that a sandbox bwrap cannot build is a host fault, and that the memory bound stops a
 job's whole process tree; the face-detector twins in `test_selfie_faces.py` drive a capture under a copy of
-`derive.bwrap` without the model. CI's `pytest-linux` job runs the full suite on Ubuntu.
+`derive.bwrap` without the model. On both platforms, `test_sandbox.py` also replaces the converter with a
+stand-in that acts like a process outliving its job (unit tests, not a real leftover process) and proves the
+output handling described above: output linked or hard-linked outside the job leaves nothing in the cache, a
+job directory swapped for a link leaves the other directory untouched, a failed move into the cache leaves no
+partial derivative, cleanup never deletes outside the job, and a link in the cache never reaches a reader.
+CI's `pytest-linux` job runs the full suite on Ubuntu.
 
 ## Linux: `derive.bwrap`
 
