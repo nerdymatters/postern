@@ -8,10 +8,13 @@ compatibility contracts, build/test commands, acceptance targets and rollback.
 The separate wheel is opt-in: ordinary Postern installs use Python and do not
 build Rust. Selecting `rust` (the owner's `progress-backend.json`, or
 `POSTERN_PROGRESS_BACKEND` in the job's environment) requires a matching installed
-wheel; `python` is the default and rollback setting. The native API is internal and
-versioned independently of the Python package through `API_VERSION` and
-`CHECKPOINT_VERSION`. Wheel 0.2.0 adds the bounded incremental evidence interface;
-the matching application refuses an older wheel before starting its writer.
+wheel; `python` is the code default and rollback setting. From v0.30.0 a fresh
+macOS install with this wheel installed selects `rust` under its watchdog; see
+[cutover and rollback](../../docs/runbooks/rust-server.md#cutover-and-rollback).
+The native API is internal and versioned independently of the Python package
+through `API_VERSION` and `CHECKPOINT_VERSION`. Wheel 0.2.0 adds the bounded
+incremental evidence interface; the matching application refuses an older wheel
+before starting its writer.
 
 Keep `Cargo.lock` and `rust-toolchain.toml` with releases. Build with the pinned
 toolchain and locked dependency graph. Do not distribute `target/`, developer

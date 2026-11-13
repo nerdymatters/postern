@@ -11,14 +11,14 @@ Owner decision D1 A (November 13, 2026): on Monday, November 16, make Rust the s
 
 ## Decision: make the piloted configuration the default
 
-Engineering review (November 13, decision 5b04ce49, under the owner's standing approval): the default is the configuration the pilot proved, a `rust` selection file guarded by the watchdog, written at install. The code default stays Python. The rejected alternative, a Rust code default with no file, needs a new guarded state, a guard-version bump and new status text that the pilot never exercised, and deleting the file would silently move a host to Rust.
+Engineering review (November 13, under the owner's standing approval): the default is the configuration the pilot proved, a `rust` selection file guarded by the watchdog, written at install. The code default stays Python. The rejected alternative, a Rust code default with no file, needs a new guarded state, a guard-version bump and new status text that the pilot never exercised, and deleting the file would silently move a host to Rust.
 
 ## Changes
 
-1. **macOS install writes the selection** (`postern/serve.py`, `install`): when `progress-backend.json` does not exist and `progress_backend.native()` succeeds, the install bootstraps the API and the watchdog as today (the API starts on Python, since no file exists), and only after both jobs bootstrap writes `rust` with `set_by: install` and restarts the API with `launchctl kickstart -k`, so Rust starts with its watchdog already running. Any failure before that point, including a watchdog bootstrap failure, leaves no file and the API on Python. Print `ok   progress-backend.json: rust (verified native module; postern.serve backend python keeps Python)`, or with the module missing, incompatible or raising during import, write nothing and print `note progress-backend.json: not set; Python serves (native module not installed)`. An existing selection, `python`, `rust` or unreadable, is never changed, `--force` included. `--check-only`, which the office rollout helper runs, writes nothing.
+1. **macOS install writes the selection** (`postern/serve.py`, `install`): when `progress-backend.json` does not exist and `progress_backend.native()` succeeds, the install bootstraps the API and the watchdog as today (the API starts on Python, since no file exists), and only after both jobs bootstrap writes `rust` with `set_by: install` and restarts the API with `launchctl kickstart -k`, so Rust starts with its watchdog already running. Any failure before that point, including a watchdog bootstrap failure, leaves no file and the API on Python. Before the restart, the install waits up to 75 seconds (`GUARD_WAIT`) for the running watchdog's heartbeat to name the new file; without one it removes the file it wrote and Python keeps serving. Print `ok   progress-backend.json: rust, checked by the running watchdog before the API restarted onto it`, then `(postern.serve backend python keeps Python)` on the next line, or with the module missing, incompatible or raising during import, write nothing and print `note progress-backend.json: not set; Python serves (<reason>)`, for example `(native module not installed)`. An existing selection, `python`, `rust` or unreadable, is never changed, `--force` included. `--check-only`, which the office rollout helper runs, writes nothing.
 2. **Owner-owned write** (`postern/progress_backend.py`, `write_selection`): an optional owner argument changes the temporary file's owner before the rename, because the macOS rerun under sudo runs as root and the API refuses a root-owned selection. No root-owned file ever exists at the final path. `postern.serve backend` keeps writing without it.
-3. **Preflight line**: the install preflight reports whether the native module is importable and compatible, so the owner sees which backend the install will select before anything is written.
-4. **Linux is unchanged** (engineering review F1): `systemd.install` only renders units for a later root command, so a selection written there would apply even if that command never ran, and the Linux bundle ships no native wheel. A Linux owner who installs the wheel selects Rust with `postern.serve backend rust`, as today.
+3. **Preflight line** (`rust progress`): the install preflight reports whether the native module is importable and compatible, so the owner sees which backend the install will select before anything is written. It fails only when an existing selection would stop the next API start (a `rust` file without a loadable wheel, or a file the API refuses), so the rollout's `install --check-only` stops before a restart.
+4. **Linux is unchanged** (engineering review OV1): `systemd.install` only renders units for a later root command, so a selection written there would apply even if that command never ran, and the Linux bundle ships no native wheel. A Linux owner who installs the wheel selects Rust with `postern.serve backend rust`, as today.
 5. **Docs**: `docs/runbooks/rust-server.md` (cutover and rollback: a fresh macOS install with the wheel selects Rust under its watchdog; `postern.serve backend python` keeps Python; the code default stays Python), `docs/runbooks/linux.md` (Linux stays on Python until the owner installs the wheel and selects Rust), and ROADMAP's RS-07 item.
 
 ## Upgrade and rollback
@@ -36,8 +36,8 @@ Engineering review (November 13, decision 5b04ce49, under the owner's standing a
 
 ## Monday check (before merge)
 
-Current status alone cannot prove the pilot stayed on Rust, because the in-process counters reset at each start and re-selecting Rust overwrites a fallback note (engineering review F3). On November 16, read only:
-- `postern.serve backend` (as im, never sudo): Rust serving from `progress-backend.json`, the watchdog guarding this selection, the in-process check matching with no native errors;
+Current status alone cannot prove the pilot stayed on Rust, because the in-process counters reset at each start and re-selecting Rust overwrites a fallback note (engineering review OV3). On November 16, read only:
+- `postern.serve backend` (as the service account, never sudo): Rust serving from `progress-backend.json`, the watchdog guarding this selection, the in-process check matching with no native errors;
 - `progress-backend.json`: `backend: rust` with no `fallback` field;
 - `~/Library/Logs/postern/postern.log`: every `postern: progress backend ...` start line since November 9, 11:10 AM EST reads `rust (progress-backend.json)`, and none reads `python`.
 If any of these fails, hold the merge and report; otherwise merge, release v0.30.0 and roll it out with v0.29.1 and v0.29.2 under the usual quiet-minute procedure.
@@ -48,11 +48,11 @@ Changing the code default, Linux automatic selection, RS-08 and RS-09, D7's watc
 
 ## Engineering review (November 13, 2026)
 
-Reviewed by `/plan-eng-review` with a Codex outside voice. Decisions below were taken under the owner's standing advance approval (a-1759af8047f8), each at the review's recommendation; the owner can reverse any of them.
+Reviewed by `/plan-eng-review` with a Codex outside voice. Decisions below were taken under the owner's standing advance approval, each at the review's recommendation; the owner can reverse any of them.
 
 ### Decision ledger
 
-- **S1 scope (approved, decision 5b04ce49):** make the piloted configuration (a `rust` selection file guarded by the watchdog) the default at install, instead of a Rust code default. The code default stays Python.
+- **S1 scope (approved):** make the piloted configuration (a `rust` selection file guarded by the watchdog) the default at install, instead of a Rust code default. The code default stays Python.
 - **S2 structure (approved):** the original arrangement, with the owner-owned write as an option on the existing `write_selection` rather than a new helper, once Linux dropped out (one caller).
 - **R1 (approved):** [CRITICAL] (confidence: 8/10) `postern/serve.py:442` — the macOS install's second phase runs as root under sudo, so a plain `write_selection` would leave a root-owned selection the API refuses at startup. Remedy: chown the temporary file before the rename; test the call order.
 - **R2 (approved):** [INFORMATIONAL] (confidence: 7/10) `postern/progress_backend.py:190` — `native()` converts only `ImportError`; any other import-time exception would crash the install. Remedy: any exception means "not verified", Python stays.
@@ -61,7 +61,7 @@ Reviewed by `/plan-eng-review` with a Codex outside voice. Decisions below were 
 - **OV3 (approved, Codex Medium):** `postern/progress_backend.py:134` counters reset at each start and re-selecting Rust overwrites fallback notes, so current status alone cannot prove the pilot. Remedy: the Monday check also reads the selection file's fallback fields and the `postern.log` start lines since November 9.
 - **T1 TODO (approved, A):** extend the existing Linux host TODO: select Rust at Linux install once the Linux bundle ships the native wheel.
 
-Approval readiness: PASS (S1, S2, R1, R2, OV1, OV2, OV3, T1; each an authorized auto-decision under a-1759af8047f8).
+Approval readiness: PASS (S1, S2, R1, R2, OV1, OV2, OV3, T1; each an authorized auto-decision under the owner's standing approval).
 
 ### What already exists
 
@@ -87,7 +87,6 @@ Failure modes: 0 critical gaps flagged (the one critical finding is remedied in 
 4. A Linux regression row: `systemd.install` writes no selection.
 5. Docs: `rust-server.md`, `linux.md`, ROADMAP RS-07; TODOS line (T1).
 
-Test plan: `~/.gstack/projects/chirayukong-postern/im-rs07-rust-default-eng-review-test-plan-20261113-135625.md`.
 
 ### Completion summary
 

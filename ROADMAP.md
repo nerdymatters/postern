@@ -170,7 +170,7 @@ server in `postern/`; M4 remains a separate Rust folder client.
 
 The released Rust code is currently a native training-history reducer called by
 Python. A successful reducer pilot is not a replacement of the HTTP server or
-its background workers. Python remains the production default.
+its background workers. Python remains the code default.
 
 - [x] Implement and release the first reducer with Python/Rust parity tests.
 - [x] Meet the reducer CPU/time targets and rehearse actual-document cutover and
@@ -233,7 +233,8 @@ its background workers. Python remains the production default.
   the watchdog guarding, and a staff document check on a phone passed. v0.25.0 adds
   the in-process check that changing the default needs; sustained observation
   continues before the default changes. v0.30.0 makes the piloted configuration
-  the default for fresh macOS installs. With the verified wheel, the install
+  the default for fresh macOS installs ([plan](docs/designs/rs07-rust-default.md)).
+  With the verified wheel, the install
   writes a `rust` selection the watchdog guards, after the watchdog starts.
   The code default and Linux installs stay on Python. By owner decision on
   November 13, it merges on November 16 if a read-only check shows the pilot
