@@ -438,7 +438,9 @@ class Fallback:
         else:
             self.pending = breach or self.pending
             reasons += self.pending
-        if forced and unknown:
+        if forced and unknown and not (active is not None and active.get('source') == 'environment'):
+            # Inconclusive only while nothing confirms a setting: a live API whose record says its backend came from
+            # the environment is a confirmed override, whatever the unit lookup could not prove.
             self.heartbeat(identity, 'inconclusive', reason=override)
         else:
             self.heartbeat(identity, 'override' if forced else state)
