@@ -188,7 +188,51 @@ job's PATH and the operator's `which` can disagree about where a tool lives.
 **Priority:** P3
 **Depends on:** None
 
+### Stop macOS converter processes from outliving their job
+
+**What:** On macOS, end every process a conversion job started once the job
+exits, and stop the job from writing its own output folder entry. Split the
+`config/sandbox/derive.sb` write rule so the job can write inside `OUTPUT` but
+not `OUTPUT` itself, kill the job's process group after every exit (waiting
+without reaping first, so the group id cannot be reused), and copy each checked
+file into the cache through descriptors instead of renaming the inode the
+sandbox wrote. Sweep `derive-*` folders a hostile job leaves in staging.
+
+**Why:** v0.29.1 refuses output that links outside the job, reads and moves the
+output through the folder it created, and removes that folder only through
+descriptors. A converter process that calls `setsid` can still outlive the job:
+it can recreate a staging folder after cleanup, or keep writing a cached file it
+opened earlier, outside the derivative budget and the free-space floor. Folders
+it locks with file flags (`uchg`), keeps renaming, or nests past 64 levels stay
+in staging, and nothing removes them. Each case needs code execution inside a
+converter (a decoder exploit). Linux is not affected (bind-mounted output, PID
+namespace, `--die-with-parent`).
+
+**Context:** v0.29.1 (PR #32) review notes: the Red Team's `derive.sb:41` and
+`derive.py:241` notes, the Step 11 note on leftover processes, and the
+fix-check notes on file flags, a replaced job folder getting one cleanup look,
+and the descriptors a 64-deep cleanup holds. The Red Team checked the split
+rule in a scratch profile: page writes and `TMPDIR` folders still work, and
+removing or changing the job folder fails with EPERM. Add a preflight row that
+proves the job cannot remove its own folder. Smaller notes from the same
+review: open the cache folder inside the `try` that removes a partial
+derivative; add a test that swaps the folder just after the identity check;
+and make the cleanup swap test exercise macOS's no-follow `chmod` (patching
+`os.chmod` currently sends it down the Linux branch).
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
 ## Completed
+
+- **2026-11-13 — Never serve converter output that links outside its job.**
+  The deferred PR #31 finding: converted files that are links, hard links or not
+  regular files fail the conversion; output moves into the cache by rename and is
+  checked after the move; the server reads, lists and moves output through the
+  job folder's descriptor, so a macOS job that swaps its folder for a link never
+  reaches the target; the job folder is removed only through descriptors, so
+  cleanup never follows a link; serving refuses a cached link. Included in v0.29.1.
 
 - **2026-11-12 — Close the LX-02 review notes.** The watchdog expires a unit
   lookup after ten failures with one alert and treats an unloaded or invalid API

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.29.1 — Never serve a converted file that points outside its conversion job (2026-11-13)
+
+### Fixed
+
+- Never cache or serve a converted file that points outside its conversion job. A converted page, thumbnail or video that is a symlink, a hard link or anything other than a regular file now fails the conversion, and the cache keeps nothing from it. Converted files are moved into the cache, never copied, and checked again after the move. Serving a cached file also refuses a symlink.
+- Refuse a macOS conversion whose job replaced its own output folder, for example with a link to another folder. The server now reads, lists and moves the output through the folder it created, so the other folder is never read, moved or deleted.
+- Clean up after every conversion without ever following a link. The conversion's working folder used to be removed by path, and when the job left a folder it could not enter, that cleanup could follow a link swapped in on macOS and delete files in another folder. It is now removed one entry at a time through the folders the server holds open. Whatever the job leaves behind, the conversion keeps its own result or error.
+
+### Upgrade
+
+- Restart the API to apply. Conversions that write ordinary files behave as before. The data folder's `staging` and `derived` folders must be real folders on one volume, as they are by default. A link at `staging` now makes every conversion fail, and a move between volumes is a conversion fault. A conversion job that deliberately leaves folders the server cannot remove (for example with macOS file flags, or nested more than 64 deep) leaves its working folder in `staging`. The database, the Python dependencies and the native wheel (0.2.0) are unchanged, so a rollback to 0.29.0 needs no restore.
+
 ## 0.29.0 — Install and watch the Linux services more safely, and show them on the status page (2026-11-12)
 
 ### Added
