@@ -76,7 +76,7 @@ def test_configured_agent_labels_are_used_without_exposing_them_in_the_payload(t
 def test_invalid_agent_targets_and_readable_config_are_refused(tmp_path):
     agents = {**heartbeat.AGENTS, 'tunnel': 'system/../../not-a-label'}
     path = settings_file(tmp_path, agents=agents)
-    with pytest.raises(ValueError, match='agent targets'):
+    with pytest.raises(ValueError, match='^Invalid agent targets$'):
         heartbeat.load_settings(path)
     path = settings_file(tmp_path)
     path.chmod(0o644)
@@ -127,7 +127,7 @@ def test_heartbeat_installer_refuses_a_duplicate_job_without_replacing_the_sende
 
 
 @pytest.mark.parametrize('code,out,expected', [
-    (0, 'active\n', 'operational'), (0, 'reloading\n', 'operational'),
+    (0, 'active\n', 'operational'), (0, 'reloading\n', 'operational'), (0, 'refreshing\n', 'operational'),
     (3, 'inactive\n', 'outage'), (3, 'failed\n', 'outage'), (3, 'activating\n', 'outage'),
     (3, 'deactivating\n', 'outage'), (3, 'maintenance\n', 'outage'),
     (4, 'unknown\n', 'unknown'), (1, '', 'unknown'), (1, 'active\n', 'unknown'),
@@ -155,7 +155,7 @@ def test_systemd_observation_errors_are_unknown(error):
                                    'systemd/api;true.service', 'systemd/api%h.service', 'systemd/api\\x20.service'])
 def test_systemd_targets_cannot_escape_the_allowlist(tmp_path, target):
     agents = {**heartbeat.AGENTS, 'api-process': target}
-    with pytest.raises(ValueError, match='agent targets'):
+    with pytest.raises(ValueError, match='^Invalid agent targets$'):
         heartbeat.load_settings(settings_file(tmp_path, agents=agents), sending=False)
     assert heartbeat.process_state(target, lambda *args, **kwargs: pytest.fail('invalid unit reached systemctl')) == 'unknown'
 
@@ -181,5 +181,5 @@ def test_linux_heartbeat_check_uses_configured_units_and_sends_no_private_fields
 def test_linux_heartbeat_cannot_add_or_omit_state_ids(tmp_path):
     for agents in ({key: 'systemd/room.service' for key in heartbeat.AGENTS if key != 'tunnel'},
                    {**heartbeat.AGENTS, 'extra': 'systemd/extra.service'}):
-        with pytest.raises(ValueError, match='agent targets'):
+        with pytest.raises(ValueError, match='^Invalid agent targets$'):
             heartbeat.load_settings(settings_file(tmp_path, agents=agents), sending=False)

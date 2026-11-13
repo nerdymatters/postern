@@ -131,10 +131,14 @@ no extra IDs are accepted. The prefix is explicit: `system/...` and `gui/...`
 continue to use launchd, even when checked from another OS. The defaults remain
 macOS targets, so always supply a configured `agents` map on Linux.
 
-`active` and `reloading` report operational; known inactive, failed or
-transitioning states report outage. Command/permission failures, timeouts and
-unrecognized replies report unknown. Only state values and `sent_at` leave the
-host; unit names, command output, PIDs, paths and credentials do not.
+`active`, `reloading` and systemd 256+'s `refreshing` report operational; known
+inactive, failed or transitioning states report outage. Command/permission
+failures, timeouts and unrecognized replies report unknown. A nonexistent unit
+reads as unknown on systemd 257 (exit 4), but as an outage on releases that
+print `inactive` with exit 3. Check each configured target name with
+`systemctl status UNIT` when setting up the map. Only state values and
+`sent_at` leave the host; unit names, command output, PIDs, paths and
+credentials do not.
 
 Install a copy outside the release directory so an update or rollback cannot
 remove the sender. As the service account, for example `postern`:
