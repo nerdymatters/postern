@@ -225,9 +225,13 @@ class Deriver:
                         moved = os.lstat(destination/path.name)
                         if not stat.S_ISREG(moved.st_mode) or moved.st_nlink != 1:
                             raise DeriveFault('Unexpected converter output')
-                except DeriveFault:
+                except (DeriveFault, OSError) as error:
+                    # A rename that fails (across filesystems, or a file removed after the check) leaves no
+                    # partial derivative behind and, like any other bad output, is the converter's fault.
                     shutil.rmtree(destination, ignore_errors=True)
-                    raise
+                    if isinstance(error, DeriveFault):
+                        raise
+                    raise DeriveFault('Unexpected converter output') from error
                 # A selfie adds nothing to the derivative cache, so the cache's state must not refuse it.
                 if kind != 'selfie':
                     self.trim(exclude=destination)
