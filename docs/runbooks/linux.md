@@ -113,9 +113,13 @@ then re-run with `--force` only for those reviewed changes. Vendor units,
 symlinks/masks and drop-ins are refused even with `--force`; reconcile them
 explicitly instead of silently shadowing their settings. A pending
 `NeedDaemonReload=yes` also stops installation: review the disk changes, reload
-the manager deliberately, then render again. Install checks all unit search
-directories for `<unit>.d/`, including drop-ins the manager has not loaded yet;
-the printed root script checks for those directories again before any install.
+the manager deliberately, then render again. Install checks `/etc/systemd/system`,
+`/run/systemd/system`, `/usr/local/lib/systemd/system`, `/usr/lib/systemd/system`
+and `/lib/systemd/system` for `<unit>.d/`, including drop-ins the manager has not
+loaded yet; the printed root script checks those directories again before any
+install. Other drop-in locations (`system.control`, transient and generator
+directories, a type-wide `service.d/`) are refused only once systemd has loaded
+them, so check `systemctl cat` for each unit after installing.
 Run the newly printed root command, then status, private health and a synthetic
 conversion.
 
