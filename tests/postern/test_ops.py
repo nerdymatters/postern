@@ -8,6 +8,7 @@ from __future__ import annotations
 import shutil
 import dataclasses
 import json
+import os
 import plistlib
 import re
 import socket
@@ -20,7 +21,7 @@ import pytest
 
 from conftest import Clock
 
-from postern import derive, serve, watchdog
+from postern import derive, progress_backend, serve, watchdog
 from postern.config import Config
 
 SEATBELT = pytest.mark.skipif(derive.LINUX, reason='macOS Seatbelt; test_sandbox.py covers bubblewrap')
@@ -81,7 +82,8 @@ def test_install_refuses_to_clobber_a_plist_it_did_not_write(tmp_path):
 def test_preflight_checks_every_prerequisite(tmp_path):
     checks = {name: (ok, detail) for name, ok, detail in serve.preflight(write_config(tmp_path))}
     assert set(checks) == {'python', 'pdftoppm', 'pdfinfo', 'ffmpeg', 'ffprobe', 'front proxy', 'pillow-heif', 'quiz bank', 'final exam and subtitles',
-                           'sandbox-exec', 'selfie face detector', 'config file', 'data directory', 'sandbox profile', 'organization settings'}
+                           'sandbox-exec', 'selfie face detector', 'config file', 'data directory', 'sandbox profile', 'organization settings',
+                           'rust progress'}
     assert checks['quiz bank'] == (True, '9 chapter quiz(zes), 108 questions')
     # Caddy is an office-Mac prerequisite, not a test-runner one; where it is absent the check must say so.
     required = {name for name in checks if name != 'front proxy' or shutil.which('caddy')}
@@ -362,3 +364,149 @@ def test_namespace_refusal_hint_names_the_restriction_and_rule(tmp_path, monkeyp
         assert 'load the checked-in AppArmor rule ' + str(profile.with_name('postern-bwrap.apparmor')) in detail
     else:
         assert detail == diagnostic
+
+
+@pytest.fixture
+def native_module(monkeypatch):
+    """Fake importing the Rust wheel: 'ok', 'missing', 'old' (another API version) or 'broken' (raises while loading)."""
+    def use(kind):
+        def import_module(name):
+            assert name == 'postern_progress_native'
+            if kind == 'missing':
+                raise ModuleNotFoundError(name)
+            if kind == 'broken':
+                raise OSError('dlopen failed')
+            return SimpleNamespace(API_VERSION=1 if kind == 'ok' else 2, CHECKPOINT_VERSION=1, reduce_incremental=lambda *args: None)
+        monkeypatch.setattr(progress_backend, 'importlib', SimpleNamespace(import_module=import_module))
+        progress_backend.native.cache_clear()
+    yield use
+    progress_backend.native.cache_clear()
+
+
+NATIVE_DETAIL = {'missing': 'native module not installed', 'old': 'Rust progress module has an incompatible API version',
+                 'broken': 'native module failed to load (OSError)'}
+
+
+@pytest.mark.parametrize('kind', ['ok', 'missing', 'old', 'broken'])
+def test_preflight_says_which_progress_backend_install_selects_and_never_fails(native_module, kind):
+    native_module(kind)
+    name, ok, detail = serve.rust_progress_check()
+    assert name == 'rust progress' and ok is True
+    if kind == 'ok':
+        assert detail == 'verified native module; ' + (
+            'select it with postern.serve backend rust' if derive.LINUX else 'a fresh install selects rust')
+    else:
+        assert detail == NATIVE_DETAIL[kind] + '; Python serves'
+
+
+def launchd_install(tmp_path, monkeypatch, fail=None):
+    """A macOS install against throwaway plist paths. Each launchctl call records whether a selection existed then."""
+    config = write_config(tmp_path)
+    monkeypatch.setattr(serve, 'plist_path', lambda label, user_agent, home: tmp_path / 'jobs' / (label + '.plist'))
+    monkeypatch.setattr(serve, 'preflight', lambda path: [('fixture prerequisites', True, 'ok')])
+    monkeypatch.setattr(serve, 'listening', lambda port: False)
+    monkeypatch.setattr(serve, 'tool_version', lambda path: None)
+    selection = progress_backend.selection_path(config)
+    calls = []
+
+    def launchctl(*args):
+        calls.append((args, selection.exists()))
+        failed = args[0] == 'bootstrap' and fail and args[2].endswith(fail + '.plist')
+        return SimpleNamespace(returncode=int(bool(failed)), stdout='', stderr='bootstrap failed' if failed else '')
+    monkeypatch.setattr(serve, 'launchctl', launchctl)
+    return config, selection, calls
+
+
+def started(tmp_path):
+    """launchctl calls for bootstrapping every job, before any selection exists."""
+    return [call for label in serve.service_labels(serve.LABEL) for call in (
+        (('bootstrap', 'system', str(tmp_path / 'jobs' / (label + '.plist'))), False),
+        (('kickstart', '-k', 'system/' + label), False))]
+
+
+@LAUNCHD
+def test_a_fresh_install_with_the_verified_module_selects_rust_after_its_watchdog_starts(tmp_path, monkeypatch, capsys, native_module):
+    native_module('ok')
+    config, selection, calls = launchd_install(tmp_path, monkeypatch)
+    assert serve.install(config, 'owner', tmp_path, False, False, False) == 0
+    # Every job, the watchdog included, started on Python; only then was rust written and the API restarted onto it.
+    assert calls == started(tmp_path) + [(('kickstart', '-k', 'system/' + serve.LABEL), True)]
+    data = json.loads(selection.read_text())
+    assert data['backend'] == 'rust' and data['set_by'] == 'install'
+    info = selection.stat()
+    assert info.st_mode & 0o777 == 0o600 and info.st_uid == os.getuid()
+    assert progress_backend.read_selection(config) == data  # the API accepts it
+    assert ('ok   progress-backend.json: rust (verified native module; postern.serve backend python keeps Python)'
+            in capsys.readouterr().out)
+
+
+@LAUNCHD
+@pytest.mark.parametrize('kind', ['missing', 'old', 'broken'])
+def test_install_leaves_python_when_the_native_module_is_not_verified(tmp_path, monkeypatch, capsys, native_module, kind):
+    native_module(kind)
+    config, selection, calls = launchd_install(tmp_path, monkeypatch)
+    assert serve.install(config, 'owner', tmp_path, False, False, False) == 0
+    assert calls == started(tmp_path) and not selection.exists()
+    assert f'note progress-backend.json: not set; Python serves ({NATIVE_DETAIL[kind]})' in capsys.readouterr().out
+
+
+@LAUNCHD
+def test_a_watchdog_that_fails_to_start_leaves_the_api_on_python(tmp_path, monkeypatch, capsys, native_module):
+    native_module('ok')
+    config, selection, calls = launchd_install(tmp_path, monkeypatch, fail=serve.WATCHDOG)
+    assert serve.install(config, 'owner', tmp_path, False, False, False) == 1
+    assert calls == started(tmp_path)[:3] and not selection.exists()
+    assert 'FAIL launchctl bootstrap ' + serve.WATCHDOG in capsys.readouterr().out
+
+
+@LAUNCHD
+@pytest.mark.parametrize('existing', ['python', 'rust', 'unreadable', 'symlink'])
+def test_install_never_replaces_an_existing_selection_even_with_force(tmp_path, monkeypatch, capsys, native_module, existing):
+    native_module('ok')
+    config, selection, calls = launchd_install(tmp_path, monkeypatch)
+    if existing == 'symlink':
+        selection.symlink_to(tmp_path / 'elsewhere.json')
+    else:
+        selection.write_text('{not json' if existing == 'unreadable' else json.dumps({'backend': existing, 'set_by': 'owner'}))
+        selection.chmod(0o600)
+    before = os.readlink(selection) if existing == 'symlink' else selection.read_bytes()
+    assert serve.install(config, 'owner', tmp_path, False, False, True) == 0
+    assert (os.readlink(selection) if existing == 'symlink' else selection.read_bytes()) == before
+    assert [args for args, _ in calls] == [args for args, _ in started(tmp_path)]
+    assert 'note progress-backend.json: already present; left unchanged' in capsys.readouterr().out
+
+
+@LAUNCHD
+def test_install_check_only_writes_no_selection(tmp_path, monkeypatch, native_module):
+    native_module('ok')
+    config, selection, calls = launchd_install(tmp_path, monkeypatch)
+    assert serve.install(config, 'owner', tmp_path, False, True, False) == 0
+    assert calls == [] and not selection.exists()
+
+
+@LAUNCHD
+@pytest.mark.parametrize('chown_fails', [False, True])
+def test_the_root_rerun_writes_a_selection_the_service_account_owns(tmp_path, monkeypatch, capsys, native_module, chown_fails):
+    native_module('ok')
+    config, selection, calls = launchd_install(tmp_path, monkeypatch)
+    monkeypatch.setattr(os, 'geteuid', lambda: 0)  # the second phase of a macOS install runs under sudo
+    monkeypatch.setattr(serve, 'pwd', SimpleNamespace(getpwnam=lambda user: SimpleNamespace(pw_uid=4321, pw_gid=20)))
+    owners = []
+
+    def chown(path, uid, gid):
+        owners.append((Path(path).parent, Path(path).name.startswith('.progress-backend-'), uid, gid, selection.exists()))
+        if chown_fails:
+            raise PermissionError('chown refused')
+    monkeypatch.setattr(os, 'chown', chown)
+    serve.select_piloted_backend(config, 'owner', 'system', serve.LABEL)
+    # The temporary file changed owner before the rename: the final path never held a root-owned selection.
+    assert owners == [(config.parent, True, 4321, 20, False)]
+    output = capsys.readouterr().out
+    if chown_fails:
+        assert not selection.exists() and calls == []
+        assert not list(config.parent.glob('.progress-backend-*'))
+        assert 'note progress-backend.json: not written (PermissionError); Python serves' in output
+    else:
+        assert json.loads(selection.read_text())['backend'] == 'rust'
+        assert calls == [(('kickstart', '-k', 'system/' + serve.LABEL), True)]
+

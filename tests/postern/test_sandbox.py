@@ -255,7 +255,7 @@ def test_linux_preflight_checks_bubblewrap_and_the_real_sandbox(tmp_path):
     checks = {name: (ok, detail) for name, ok, detail in serve.preflight(write_config(tmp_path))}
     assert set(checks) == {'python', 'pdftoppm', 'pdfinfo', 'ffmpeg', 'ffprobe', 'front proxy', 'pillow-heif', 'quiz bank',
                            'final exam and subtitles', 'bubblewrap', 'selfie face detector', 'config file',
-                           'data directory', 'sandbox profile', 'organization settings', 'lsof', 'ps'}
+                           'data directory', 'sandbox profile', 'organization settings', 'lsof', 'ps', 'rust progress'}
     # Caddy and lsof are host prerequisites, not test-runner ones; where one is absent its row must say so.
     absent = {'front proxy': not shutil.which('caddy'), 'lsof': not os.access('/usr/bin/lsof', os.X_OK)}
     assert all(checks[name][0] for name in checks if not absent.get(name)), checks

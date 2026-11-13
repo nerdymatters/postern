@@ -1,8 +1,9 @@
 # First Rust server slice: training history reduction
 
 The optional Rust reducer accelerates the history replay used by the reading
-room, quiz completion checks and staff progress report. Python remains the
-default. This is an incremental server migration; production cutover and the
+room, quiz completion checks and staff progress report. Python remains the code
+default; from v0.30.0 a fresh macOS install with the verified wheel selects Rust
+under its watchdog (see [cutover and rollback](#cutover-and-rollback)). This is an incremental server migration; production cutover and the
 rest of the server remain open in the [remaining migration checklist](../../ROADMAP.md#remaining-migration-checklist).
 
 With the Rust backend selected (see [cutover and rollback](#cutover-and-rollback)), reading-room, quiz-completion and staff-report
@@ -567,7 +568,7 @@ the guarded live burst check must pass before closing RS-05.
 
 ## Cutover and rollback
 
-Python is the default. At each API start the backend comes from, in order:
+Python is the code default. At each API start the backend comes from, in order:
 `POSTERN_PROGRESS_BACKEND` in the launchd job's environment, then the owner's
 `progress-backend.json` beside the config file, then Python. Selecting `rust`
 requires an installed module with API version 1 and checkpoint version 1. A
@@ -589,6 +590,23 @@ watchdog reads it and how to remove the setting.
     .venv/bin/python -m postern.serve backend          # show the selection and the serving process
     .venv/bin/python -m postern.serve backend rust     # select Rust for the next start
     .venv/bin/python -m postern.serve backend python   # select Python for the next start
+
+From v0.30.0 (RS-07), a fresh macOS install selects Rust where the verified
+native wheel imports. That is the configuration the office Mac piloted from
+November 9: a `rust` selection file guarded by the watchdog. `postern.serve
+install` bootstraps the API and its watchdog on Python first. Then, only when
+no `progress-backend.json` exists, it writes `rust` (`set_by: install`, owned by
+the account the API runs as, even when the install reruns under sudo) and
+restarts the API onto it, so Rust never starts without its watchdog. The
+preflight's `rust progress` line says beforehand which backend the install
+will select. Without the wheel, or when it fails verification or raises while
+loading, the install writes nothing and Python serves. An existing selection,
+`python`, `rust` or unreadable, is never changed, `--force` included, and
+`--check-only` writes nothing. Deleting the file returns a host to Python at
+its next start. To keep Python, run `postern.serve backend python` and
+restart. A Linux install never selects a backend; see
+[the Linux runbook](linux.md#provision-and-install). Upgrading an existing
+host does not rerun the install, so its selection stays as it is.
 
 At startup the API records its process, backend and the setting's source in
 `progress-backend-active.json` in the data directory, and writes

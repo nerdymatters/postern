@@ -147,7 +147,10 @@ heartbeat) and rehearsed them in a systemd 257 container. Still open: root trust
 a digest the service account's renderer prints, so a root-owned release tree
 would close that gap; CI's `rust-progress-linux` builds the native package but
 uploads no wheel, and adding that artifact is a workflow change the owner
-approves.
+approves. Once the Linux bundle ships the wheel, a Linux install should select
+Rust as a macOS install does from v0.30.0 (RS-07). The selection then belongs
+in the root `install.sh`, after the watchdog unit starts, because the owner's
+install only renders the units.
 
 **Effort:** M
 **Priority:** P1

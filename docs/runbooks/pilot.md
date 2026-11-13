@@ -44,6 +44,8 @@ Every prerequisite must pass: native tools, proxy/profile, training, branding, m
 
 The installer renders API, watchdog and proxy LaunchDaemons for the service owner and prints the specific privileged command if root access is needed. New installations use `org.nerdymatters.postern` and its suffixes. An existing installation must supply its current prefix with `--label YOUR_EXISTING_LABEL` to install, inspect or uninstall; do not rename active services during an ordinary upgrade. Never use `--force` without reading the reported differences.
 
+Where the verified Rust progress wheel is installed, a fresh install also selects Rust once its watchdog is running. The preflight's `rust progress` line says which backend it will select, an existing `progress-backend.json` is never changed, and `postern.serve backend python` keeps Python (see [cutover and rollback](rust-server.md#cutover-and-rollback)).
+
 `--user-agent` is a login-scoped fallback, not boot-time availability. FileVault still requires disk unlock after reboot. Rehearse an actual reboot and check all services and your ingress before claiming unattended recovery.
 
 ## 3. HTTPS and web

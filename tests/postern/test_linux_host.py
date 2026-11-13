@@ -60,6 +60,15 @@ def test_linux_units_and_owner_install_render_without_mutating_services(linux, t
     assert subprocess.run(['/bin/sh', '-n', str(stage / 'install.sh')]).returncode == 0
 
 
+def test_a_linux_install_never_selects_a_progress_backend(linux, tmp_path, monkeypatch, capsys):
+    # The units are only rendered for a later root command, so a selection written now would apply even if that
+    # command never ran and no watchdog guarded it. A Linux owner selects Rust with postern.serve backend rust.
+    monkeypatch.setattr(progress_backend, 'native_available', lambda: (True, 'verified native module'))
+    monkeypatch.setattr(serve, 'select_piloted_backend', lambda *args: pytest.fail('a Linux install selected a backend'))
+    assert serve.install(linux, 'owner', tmp_path, False, False, False) == 0
+    assert not progress_backend.selection_path(linux).exists() and not progress_backend.selection_path(linux).is_symlink()
+    assert 'progress-backend.json' not in capsys.readouterr().out
+
 def test_check_only_and_failed_preflight_write_nothing(linux, tmp_path, monkeypatch):
     monkeypatch.setattr(systemd, 'systemctl', lambda *args: pytest.fail('check-only queried units'))
     assert serve.install(linux, 'owner', tmp_path, False, True, False) == 0
