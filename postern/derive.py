@@ -214,10 +214,20 @@ class Deriver:
                 if destination.exists():
                     shutil.rmtree(destination)
                 destination.mkdir(parents=True,mode=0o700)
-                for path in output.iterdir():
-                    if path.is_symlink() or not path.is_file():
-                        raise DeriveFault('Unexpected converter output')
-                    shutil.move(str(path),destination/path.name)
+                try:
+                    for path in output.iterdir():
+                        if path.is_symlink() or not path.is_file():
+                            raise DeriveFault('Unexpected converter output')
+                        # A converter process that outlived the job could swap a checked file for a link before
+                        # this rename. Staging and the cache share data_dir, so rename never falls back to a copy
+                        # that follows a link; the sandbox cannot write the cache, so the check after it holds.
+                        os.rename(path, destination/path.name)
+                        moved = os.lstat(destination/path.name)
+                        if not stat.S_ISREG(moved.st_mode) or moved.st_nlink != 1:
+                            raise DeriveFault('Unexpected converter output')
+                except DeriveFault:
+                    shutil.rmtree(destination, ignore_errors=True)
+                    raise
                 # A selfie adds nothing to the derivative cache, so the cache's state must not refuse it.
                 if kind != 'selfie':
                     self.trim(exclude=destination)
@@ -262,7 +272,8 @@ class Deriver:
             self.leases[directory] = self.leases.get(directory,0)+1
         try:
             path=directory/filename
-            if not path.is_file():raise FileNotFoundError(path)
+            # A cached derivative is always a regular file; never follow a link out of the cache.
+            if path.is_symlink() or not path.is_file():raise FileNotFoundError(path)
             result=render(path)
             os.utime(directory,None)
             return result
