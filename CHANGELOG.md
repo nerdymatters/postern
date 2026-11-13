@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.30.0 — Start a fresh macOS install on the Rust progress backend, under its watchdog (2026-11-13)
+
+### Added
+
+- A fresh macOS install now selects the Rust progress backend when its verified native wheel is installed, the configuration production has run since November 9. `postern.serve install` starts the API and its watchdog on Python, writes `progress-backend.json` with `rust` (owned by the account the API runs as, also under sudo) and waits up to 75 seconds for the running watchdog to check that file. Only then does it restart the API onto Rust. Without that check it removes the file and Python keeps serving. Without the wheel, or when the wheel does not load, nothing is written and Python serves. `postern.serve backend python` keeps Python, and the code default stays Python.
+- See which backend an install will select in its preflight's `rust progress` line. The line fails when an existing selection would stop the next API start, such as a `rust` file without a loadable wheel or a file the API refuses, so the rollout's `install --check-only` stops before the restart.
+- An install never changes an existing `progress-backend.json`, `--force` included, and keeps a selection the owner makes while it runs. Under sudo it selects nothing in a config folder the service account cannot write. A Linux install never selects a backend; select Rust there with `postern.serve backend rust` once the wheel is installed.
+
+### Upgrade
+
+- An upgrade does not rerun the install, so every host keeps its current selection, and a host already on Rust stays on Rust. The new preflight line runs in the rollout's `install --check-only` and fails only on a selection the API would refuse at its next start anyway. The database, the Python dependencies and the native wheel (0.2.0) are unchanged, so a rollback to 0.29.2 needs no restore and keeps any selection file an install wrote.
+
 ## 0.29.2 — See why the Linux backend guard cannot check the API service (2026-11-13)
 
 ### Fixed
