@@ -80,7 +80,7 @@ def profile_compiles():
     if result.returncode and program[0] != '/usr/bin/true':
         return False, f'{program[0]} cannot run inside the sandbox: {detail.splitlines()[0] if detail else "no output"}'
     if result.returncode and derive.LINUX and userns_restricted() and namespace_refused(detail):
-        detail += ('; this host restricts unprivileged user namespaces, so bubblewrap needs the AppArmor rule '
+        detail += ("; Ubuntu's user-namespace restriction blocked the sandbox; load the checked-in AppArmor rule "
                    f'{derive.PROFILE.with_name("postern-bwrap.apparmor")} (see {derive.PROFILE.with_name("README.md")})')
     return result.returncode == 0, detail or f'{derive.PROFILE} compiles and applies'
 
