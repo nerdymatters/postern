@@ -388,6 +388,55 @@ def test_nonregular_manifest_is_a_converter_fault_before_reading(config, tmp_pat
     assert not destination.exists()
 
 
+# Value: protects=converter output swapped for a link after the output check, or hard-linked to a file outside the
+#   job, never reaches the cache; fails_when=the move follows or keeps a link, or a hard link passes as a regular file;
+#   why_new=the manifest test covers manifest.json only; seam=none;
+#   no_claim=a real process outliving the sandboxed job (the swap is simulated at the rename; unit only)
+@pytest.mark.parametrize('kind', ['link swapped in before the move', 'hard link'])
+def test_converter_output_that_links_outside_never_reaches_the_cache(config, tmp_path, monkeypatch, kind):
+    config.validate()
+    secret = tmp_path / 'secret.json'
+    secret.write_text('{"token": "synthetic"}')
+    def convert(*args, cwd, **kwargs):
+        (Path(cwd) / 'manifest.json').write_text('{"pages":1,"bytes":1}')
+        page = Path(cwd) / 'page-1.jpg'
+        if kind == 'hard link':
+            os.link(secret, page)
+        else:
+            page.write_bytes(b'x')
+        class Finished:
+            returncode = 0
+            def communicate(self, **kwargs):
+                return b'', b''
+        return Finished()
+    monkeypatch.setattr(derive.subprocess, 'Popen', convert)
+    rename = os.rename
+    def swap_then_rename(source, target):
+        if kind != 'hard link' and Path(source).name == 'page-1.jpg':
+            Path(source).unlink()  # what a converter process that outlived the job could do after the check
+            Path(source).symlink_to(secret)
+        return rename(source, target)
+    monkeypatch.setattr(derive.os, 'rename', swap_then_rename)
+    destination = config.data_dir / 'derived' / 'linked-output'
+    with pytest.raises(derive.DeriveFault, match='Unexpected converter output'):
+        derive.Deriver(config).run(FIXTURES / 'photo.jpg', destination, 'photo')
+    assert not destination.exists() and secret.read_text() == '{"token": "synthetic"}'
+
+
+# Value: protects=a cached derivative that is a link reads as missing and is never followed; fails_when=read_path
+#   checks is_file() alone, which follows links; why_new=no test reads through a link; seam=none;
+#   no_claim=how a link could reach the cache (the run check above stops that; unit only)
+def test_cached_derivative_link_is_never_followed(config, tmp_path):
+    config.validate()
+    secret = tmp_path / 'secret.txt'
+    secret.write_text('synthetic')
+    directory = config.data_dir / 'derived' / 'item'
+    directory.mkdir(parents=True)
+    (directory / 'video.mp4').symlink_to(secret)
+    with pytest.raises(FileNotFoundError):
+        derive.Deriver(config).read_path('item', 'video.mp4', lambda path: pytest.fail('a link reached the reader'))
+
+
 @pytest.mark.parametrize('tool', ['true', 'pdftoppm', 'pdfinfo', 'ffmpeg', 'ffprobe'])
 def test_preflight_timeout_names_the_probe_tool(monkeypatch, tool):
     monkeypatch.setattr(derive, 'LINUX', True)
