@@ -134,26 +134,20 @@ security fixes still take precedence.
 
 **What:** Run docs/runbooks/linux.md end to end on the first real Debian or
 Ubuntu host (a hardware reboot, journald retention, network wait-online, public
-ingress and a synthetic conversion), then close the LX-02 review notes below.
+ingress and a synthetic conversion), then close the remaining notes below.
 
 **Why:** v0.27.0's install, restart, boot, update, uninstall and Rust-to-Python
 fallback were rehearsed only in a disposable Debian 13 systemd container, and
 the reviews left edge cases that only matter on a long-lived host.
 
-**Context:** Review notes on PR #28: the watchdog keeps its last unit lookup
-forever, so a lookup that never recovers should alert after N failures in a row;
-`unit_override` should ask for `LoadState` so a mistyped `POSTERN_API_UNIT` is
-inconclusive, not "no override"; install should refuse a drop-in written since
-the last `daemon-reload` (`NeedDaemonReload`); root trusts a digest the service
-account's renderer prints, so a root-owned release tree would close that gap;
-test rows for an unchanged unit on `--force`, `finish_fallback` after an
-inconclusive lookup and GNU `sha256sum` outside `/usr/bin:/bin`. CI's
-`rust-progress-linux` builds the native package but uploads no wheel; adding
-that artifact is a workflow change the owner approves. Docs debt from the
-v0.27.0 audit: document `POSTERN_API_UNIT` (rendered into the watchdog unit),
-`--native-wheel` for macOS bundles in docs/runbooks/release.md, and the Linux
-install trust boundary in docs/architecture.md (whose sandbox line still says
-macOS only); the status heartbeat sender checks launchd only.
+**Context:** v0.29.0 closed the code and docs notes from PR #28 (lookup expiry,
+`LoadState`, `NeedDaemonReload`, the test rows, `POSTERN_API_UNIT`, macOS
+`--native-wheel`, the architecture trust boundary and a systemd status
+heartbeat) and rehearsed them in a systemd 257 container. Still open: root trusts
+a digest the service account's renderer prints, so a root-owned release tree
+would close that gap; CI's `rust-progress-linux` builds the native package but
+uploads no wheel, and adding that artifact is a workflow change the owner
+approves.
 
 **Effort:** M
 **Priority:** P1
@@ -183,18 +177,26 @@ definitions. Add an upgrade test that starts from the stored older definitions.
 **Why:** None blocks a conversion, but each makes a failure harder to read or
 leaves a rule broader than it needs to be.
 
-**Context:** The manifest read in `postern/derive.py` should refuse a symlink or
-FIFO; the AppArmor rule in `config/sandbox/postern-bwrap.apparmor` could be
-narrowed and its interaction with Ubuntu's `bwrap-userns-restrict` tested;
-`namespace_refused` wording; a preflight probe timeout should name the tool that
-timed out and the five 60 s waits could be shorter; the job's PATH and the
-operator's `which` can disagree about where a tool lives.
+**Context:** v0.29.0 made the manifest read refuse a symlink or FIFO and names
+the tool when a preflight probe times out. Still open: the AppArmor rule in
+`config/sandbox/postern-bwrap.apparmor` could be narrowed, but only after testing
+its interaction with Ubuntu's `bwrap-userns-restrict` on a real Ubuntu host;
+`namespace_refused` wording; the five 60 s probe waits could be shorter; the
+job's PATH and the operator's `which` can disagree about where a tool lives.
 
 **Effort:** S
 **Priority:** P3
 **Depends on:** None
 
 ## Completed
+
+- **2026-11-12 — Close the LX-02 review notes.** The watchdog expires a unit
+  lookup after ten failures with one alert and treats an unloaded or invalid API
+  unit as unknown; install refuses on-disk drop-ins and `NeedDaemonReload=yes`,
+  and the root command re-checks the drop-in directories; the status heartbeat
+  reports systemd services; the LX-01 manifest and probe-timeout notes are closed
+  too. Rehearsed in a systemd 257 container; the real-host run stays open above.
+  Included in v0.29.0.
 
 - **2026-11-12 — Retire grants that can no longer show anything.** Built
   Nov 1. Owners and administrators can retire up to 500 stale grants per
