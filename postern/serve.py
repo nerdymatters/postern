@@ -275,7 +275,42 @@ def preflight(config_path):
 
     compiles, detail = profile_compiles()
     checks.append(('sandbox profile', compiles, detail))
+    checks.append(rust_progress_check(config_path))
     return checks
+
+
+def rust_progress_check(config_path):
+    """What the next API start serves and what install selects. A host without the wheel is valid and serves Python;
+    only a selection the next start would refuse fails, so the rollout's check-only run stops before a restart."""
+    from . import progress_backend
+    usable, detail = progress_backend.native_available()
+    path = progress_backend.selection_path(config_path)
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        next_step = 'select it with postern.serve backend rust' if derive.LINUX else 'a fresh install selects rust'
+        return 'rust progress', True, f'{detail}; {next_step}' if usable else f'{detail}; Python serves'
+    except OSError:
+        info = None
+    try:
+        account = Path(config_path).expanduser().stat().st_uid  # the API's account, also under sudo
+    except OSError:
+        account = os.getuid()
+    backend = None
+    # The checks the API makes at startup (progress_backend.read_selection), for the account the API runs as.
+    if info is not None and stat.S_ISREG(info.st_mode) and info.st_uid == account and not info.st_mode & 0o022:
+        try:
+            data = json.loads(path.read_text())
+            backend = data.get('backend') if isinstance(data, dict) else None
+        except (OSError, ValueError):
+            backend = None
+    if backend not in ('python', 'rust'):
+        return ('rust progress', False, f'{path.name} is not a private regular file of the API account naming python or '
+                'rust; the API will refuse to start (run postern.serve backend python or rust as that account)')
+    if backend == 'rust' and not usable:
+        return ('rust progress', False, f'{path.name} selects rust but {detail}; the API will refuse to start '
+                '(reinstall the wheel or run postern.serve backend python)')
+    return 'rust progress', True, f'{path.name} selects {backend}, which install keeps; {detail}'
 
 
 def report(checks):
@@ -450,10 +485,82 @@ def install(config_path, user, home, user_agent, check_only, force, label=LABEL)
             print(f'FAIL launchctl bootstrap {job_label}: {(result.stderr or result.stdout).strip()}')
             return 1
         launchctl('kickstart', '-k', f'{where}/{job_label}')
+    select_piloted_backend(config_path, user, where, label)
     print(f'ok   {label} and {watcher} installed in {where}\n'
           f'     {health_url(config_path)} · logs {logs}\n'
           f'     ENG-D8 is not satisfied until a real reboot proves it: run {ROOT}/ops/postern/reboot-check.sh')
     return 0
+
+
+def select_piloted_backend(config_path, user, where, label):
+    """After the API and its watchdog are both running, select Rust where its verified module is installed.
+
+    This is the configuration the RS-07 pilot proved: a rust selection file the watchdog guards. It is written only
+    when no selection exists (the owner's choice always wins) and only after both jobs bootstrapped, so Rust never
+    starts without its watchdog; then the API restarts onto it. Any failure leaves Python serving."""
+    from . import progress_backend
+    path = progress_backend.selection_path(config_path)
+    if path.exists() or path.is_symlink():
+        print('note progress-backend.json: already present; left unchanged')
+        return
+    usable, detail = progress_backend.native_available()
+    if not usable:
+        print(f'note progress-backend.json: not set; Python serves ({detail})')
+        return
+    owner = None
+    if os.geteuid() == 0:
+        entry = pwd.getpwnam(user)
+        owner = (entry.pw_uid, entry.pw_gid)
+        folder = path.parent.stat()
+        if folder.st_uid != entry.pw_uid or not folder.st_mode & stat.S_IWUSR:
+            # Root could write here, but the watchdog and postern.serve backend python, running as the owner, could not.
+            print(f'note progress-backend.json: not set; {path.parent} is not writable by {user}, so the watchdog could '
+                  'not return the API to Python; Python serves')
+            return
+    try:
+        progress_backend.write_selection(config_path, 'rust', owner=owner, replace=False, set_by='install')
+    except FileExistsError:
+        print('note progress-backend.json: already present; left unchanged')  # the owner selected while we checked
+        return
+    except OSError as error:
+        if not path.is_file():
+            print(f'note progress-backend.json: not written ({type(error).__name__}); Python serves')
+            return
+        # In place but its folder not synced: it would apply at the next start anyway, so guard it now.
+    written = path.lstat()
+    if not watchdog_saw(config_path, written):
+        # The API still serves Python: it reads the selection only at start. Take back only the file this install wrote.
+        current = path.lstat()
+        if (current.st_ino, current.st_mtime_ns) == (written.st_ino, written.st_mtime_ns):
+            path.unlink()
+        print(f'note progress-backend.json: not set; no running watchdog checked it within {GUARD_WAIT} s, so Python '
+              'serves; check the watchdog log, then select Rust with postern.serve backend rust')
+        return
+    launchctl('kickstart', '-k', f'{where}/{label}')
+    print('ok   progress-backend.json: rust, checked by the running watchdog before the API restarted onto it\n'
+          '     (postern.serve backend python keeps Python)')
+
+
+GUARD_WAIT = 75  # seconds; the watchdog checks the selection every 30 s
+
+
+def watchdog_saw(config_path, written):
+    """True once the running watchdog's heartbeat names this selection (inode, mtime): it is guarding it."""
+    from .watchdog import GUARD
+    data_dir = settings(config_path).get('data_dir')
+    if not isinstance(data_dir, str) or not data_dir:
+        return False
+    heartbeat = Path(data_dir).expanduser() / GUARD
+    deadline = time.monotonic() + GUARD_WAIT
+    while True:
+        try:
+            if json.loads(heartbeat.read_text()).get('selection') == [written.st_ino, written.st_mtime_ns]:
+                return True
+        except (OSError, ValueError, AttributeError):
+            pass
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(1)
 
 
 def uninstall(user, home, user_agent, label=LABEL):

@@ -58,7 +58,11 @@ ingress, before it serves staff.
    architecture. The optional Rust wheel must match the target architecture,
    Python ABI and glibc baseline. Install an approved bundled wheel explicitly
    with `uv pip install --python .venv/bin/python --no-deps wheels/EXACT_NAME.whl`.
-   Without it, Python remains the default.
+   Without it, Python remains the default. A Linux install never selects a
+   backend, even with the wheel installed, because it only renders units for
+   the later root command. The preflight's `rust progress` line says whether
+   the wheel verified; select Rust afterwards with `postern.serve backend rust`
+   and the API restart below, once the watchdog unit is running.
 4. Review the rendered units and `install.sh` under the owner's
    `~/.local/state/postern/install-*` directory. On a first install systemd has
    not loaded these units yet, so install can refuse only each unit's own
