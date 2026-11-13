@@ -1,4 +1,5 @@
 from __future__ import annotations
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -166,8 +167,12 @@ class Deriver:
         # Room for this kind's output only: a small selfie must not be refused for a document's budget.
         if shutil.disk_usage(self.config.data_dir).free < self.config.free_floor + output_limit:
             raise DeriveCapacity('Not enough free disk space to prepare this attachment')
-        with tempfile.TemporaryDirectory(prefix='derive-',dir=self.config.data_dir/'staging') as tmp:
+        with tempfile.TemporaryDirectory(prefix='derive-',dir=self.config.data_dir/'staging') as tmp, contextlib.ExitStack() as held:
             output = Path(tmp)
+            # A converter process can outlive its job and replace this path, even with a link to another
+            # directory. After the job, everything reads, lists and renames through this descriptor instead.
+            job = os.open(output, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            held.callback(os.close, job)
             try:
                 command = job_command(source, output, kind, self.config.max_pages,
                                       min(self.config.max_pixels, SELFIE_MAX_PIXELS) if kind == 'selfie' else self.config.max_pixels,
@@ -197,9 +202,17 @@ class Deriver:
                 # Parser diagnostics may contain document text; keep them off user-facing responses.
                 raise DeriveError('The attachment could not be converted safely. Check its format, size and page count.')
             try:
+                replaced = not os.path.samestat(os.fstat(job), os.lstat(output))
+            except FileNotFoundError:
+                replaced = True
+            if replaced:
+                if output.is_symlink():
+                    output.unlink()  # only the link: the temporary-directory cleanup must never reach its target
+                raise DeriveFault('Unexpected converter output')
+            try:
                 # Do not follow a converter-created link or wait for a FIFO writer. Check the opened
                 # descriptor too, so swapping a regular file for a FIFO cannot race a path-only check.
-                descriptor = os.open(output/'manifest.json', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                descriptor = os.open('manifest.json', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=job)
                 with os.fdopen(descriptor) as document:
                     if not stat.S_ISREG(os.fstat(document.fileno()).st_mode):
                         raise ValueError('manifest is not a regular file')
@@ -214,15 +227,19 @@ class Deriver:
                 if destination.exists():
                     shutil.rmtree(destination)
                 destination.mkdir(parents=True,mode=0o700)
+                cache = os.open(destination, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
                 try:
-                    for path in output.iterdir():
-                        if path.is_symlink() or not path.is_file():
+                    with os.scandir(job) as entries:
+                        listing = [(entry.name, entry.is_symlink() or not entry.is_file(follow_symlinks=False))
+                                   for entry in entries]
+                    for name, unexpected in listing:
+                        if unexpected:
                             raise DeriveFault('Unexpected converter output')
                         # A converter process that outlived the job could swap a checked file for a link before
                         # this rename. Staging and the cache share data_dir, so rename never falls back to a copy
                         # that follows a link; the sandbox cannot write the cache, so the check after it holds.
-                        os.rename(path, destination/path.name)
-                        moved = os.lstat(destination/path.name)
+                        os.rename(name, name, src_dir_fd=job, dst_dir_fd=cache)
+                        moved = os.stat(name, dir_fd=cache, follow_symlinks=False)
                         if not stat.S_ISREG(moved.st_mode) or moved.st_nlink != 1:
                             raise DeriveFault('Unexpected converter output')
                 except (DeriveFault, OSError) as error:
@@ -232,6 +249,8 @@ class Deriver:
                     if isinstance(error, DeriveFault):
                         raise
                     raise DeriveFault('Unexpected converter output') from error
+                finally:
+                    os.close(cache)
                 # A selfie adds nothing to the derivative cache, so the cache's state must not refuse it.
                 if kind != 'selfie':
                     self.trim(exclude=destination)

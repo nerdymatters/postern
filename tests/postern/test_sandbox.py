@@ -412,11 +412,12 @@ def test_converter_output_that_links_outside_never_reaches_the_cache(config, tmp
         return Finished()
     monkeypatch.setattr(derive.subprocess, 'Popen', convert)
     rename = os.rename
-    def swap_then_rename(source, target):
+    def swap_then_rename(source, target, **kwargs):
         if kind != 'hard link' and Path(source).name == 'page-1.jpg':
-            Path(source).unlink()  # what a converter process that outlived the job could do after the check
-            Path(source).symlink_to(secret)
-        return rename(source, target)
+            # What a converter process that outlived the job could do after the check.
+            os.unlink(source, dir_fd=kwargs['src_dir_fd'])
+            os.symlink(secret, source, dir_fd=kwargs['src_dir_fd'])
+        return rename(source, target, **kwargs)
     monkeypatch.setattr(derive.os, 'rename', swap_then_rename)
     destination = config.data_dir / 'derived' / 'linked-output'
     with pytest.raises(derive.DeriveFault, match='Unexpected converter output'):
@@ -442,15 +443,48 @@ def test_converter_output_is_renamed_into_the_cache_never_copied(config, monkeyp
         return Finished()
     monkeypatch.setattr(derive.subprocess, 'Popen', convert)
     rename = os.rename
-    def across_filesystems(source, target):
+    def across_filesystems(source, target, **kwargs):
         if Path(source).name == 'page-1.jpg':
             raise OSError(errno.EXDEV, os.strerror(errno.EXDEV), str(source))
-        return rename(source, target)
+        return rename(source, target, **kwargs)
     monkeypatch.setattr(derive.os, 'rename', across_filesystems)
     destination = config.data_dir / 'derived' / 'other-filesystem'
     with pytest.raises(derive.DeriveFault, match='Unexpected converter output'):
         derive.Deriver(config).run(FIXTURES / 'photo.jpg', destination, 'photo')
     assert not destination.exists()
+
+
+# Value: protects=a job that replaces its own output directory with a link to another directory never moves, caches or
+#   deletes that directory's files; fails_when=the manifest read, listing or rename goes by path instead of the descriptor
+#   held since before the job; why_new=the tests above swap single files only; seam=none;
+#   no_claim=a real process outliving the sandboxed job (the swap happens in the fake child's exit; unit only)
+def test_a_job_that_swaps_its_output_directory_never_touches_the_target(config, tmp_path, monkeypatch):
+    config.validate()
+    elsewhere = tmp_path / 'elsewhere'
+    elsewhere.mkdir()
+    (elsewhere / 'manifest.json').write_text('{"pages":1,"bytes":1}')
+    (elsewhere / 'postern.sqlite3').write_text('synthetic database')
+    def convert(*args, cwd, **kwargs):
+        job = Path(cwd)
+        (job / 'manifest.json').write_text('{"pages":1,"bytes":1}')
+        (job / 'page-1.jpg').write_bytes(b'x')
+        class Finished:
+            returncode = 0
+            def communicate(self, **kwargs):
+                # A process that outlived the job empties its directory and links the path elsewhere.
+                for child in job.iterdir():
+                    child.unlink()
+                job.rmdir()
+                job.symlink_to(elsewhere, target_is_directory=True)
+                return b'', b''
+        return Finished()
+    monkeypatch.setattr(derive.subprocess, 'Popen', convert)
+    destination = config.data_dir / 'derived' / 'swapped-directory'
+    with pytest.raises(derive.DeriveFault, match='Unexpected converter output'):
+        derive.Deriver(config).run(FIXTURES / 'photo.jpg', destination, 'photo')
+    assert sorted(path.name for path in elsewhere.iterdir()) == ['manifest.json', 'postern.sqlite3']
+    assert (elsewhere / 'postern.sqlite3').read_text() == 'synthetic database'
+    assert not destination.exists() and not any((config.data_dir / 'staging').iterdir())
 
 
 # Value: protects=a cached derivative that is a link reads as missing and is never followed; fails_when=read_path
