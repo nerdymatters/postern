@@ -210,7 +210,10 @@ def native_available():
         native()
     except RuntimeError as error:
         return False, 'native module not installed' if isinstance(error.__cause__, ImportError) else str(error)
-    except Exception as error:  # a wheel that is present but broken at import must never stop an install
+    except BaseException as error:
+        # A wheel that is present but broken at import, a Rust panic included, must never stop an install.
+        if not recoverable(error):
+            raise
         return False, f'native module failed to load ({type(error).__name__})'
     return True, 'verified native module'
 

@@ -488,8 +488,11 @@ def select_piloted_backend(config_path, user, where, label):
     try:
         progress_backend.write_selection(config_path, 'rust', owner=owner, set_by='install')
     except OSError as error:
-        print(f'note progress-backend.json: not written ({type(error).__name__}); Python serves')
-        return
+        if not path.is_file():
+            print(f'note progress-backend.json: not written ({type(error).__name__}); Python serves')
+            return
+        # Renamed into place but its folder not synced: it applies at the next start anyway, so start it now,
+        # while its watchdog is running, rather than at some later restart.
     launchctl('kickstart', '-k', f'{where}/{label}')
     print('ok   progress-backend.json: rust (verified native module; postern.serve backend python keeps Python)')
 
