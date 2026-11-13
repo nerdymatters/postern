@@ -134,7 +134,7 @@ GNU_SHA256SUM = SHA256SUM and 'GNU' in subprocess.run(
 # why_new=other tests only read the script text and run sh -n; seam=none; no_claim=root ownership or real
 # systemctl (fake install and systemctl on PATH; real /bin/sh, mktemp, timeout, head and GNU sha256sum)
 @pytest.mark.skipif(not GNU_SHA256SUM, reason='the root step uses GNU sha256sum -c, as Debian and Ubuntu have')
-@pytest.mark.parametrize('change', ['none', 'force unchanged', 'unit appeared', 'unit edited', 'drop-in appeared', 'staged unit edited', 'install.sh edited',
+@pytest.mark.parametrize('change', ['none', 'force unchanged', 'unit appeared', 'unit edited', 'drop-in appeared', 'dangling drop-in appeared', 'staged unit edited', 'install.sh edited',
                                     'install.sh is /dev/zero', 'staged unit is /dev/zero'])
 def test_root_install_runs_only_what_the_owner_reviewed(linux, tmp_path, change, capsys):
     api = systemd.UNIT_DIR / 'org.example.room.service'
@@ -149,6 +149,10 @@ def test_root_install_runs_only_what_the_owner_reviewed(linux, tmp_path, change,
         api.write_text('[Service]\nUser=edited-after-review\n')
     elif change == 'drop-in appeared':
         (systemd.UNIT_DIR / 'org.example.room.watchdog.service.d').mkdir()
+    elif change == 'dangling drop-in appeared':
+        dropin = systemd.UNIT_DIR / 'org.example.room.watchdog.service.d'
+        dropin.symlink_to(tmp_path / 'missing-dropins')
+        assert dropin.is_symlink() and not dropin.exists()  # Only test ! -L can stop this root step.
     elif change == 'staged unit edited':  # the service account owns the stage; the API runs as that account
         staged = stage / 'org.example.room.service'
         staged.write_text(staged.read_text().replace('User=owner', 'User=root'))
