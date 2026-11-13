@@ -209,7 +209,11 @@ def native_available():
     try:
         native()
     except RuntimeError as error:
-        return False, 'native module not installed' if isinstance(error.__cause__, ImportError) else str(error)
+        cause = error.__cause__
+        if isinstance(cause, ModuleNotFoundError) and cause.name == 'postern_progress_native':
+            return False, 'native module not installed'
+        # An installed wheel whose extension cannot load (another architecture or ABI) is an ImportError too.
+        return False, f'native module failed to load ({type(cause).__name__})' if isinstance(cause, ImportError) else str(error)
     except BaseException as error:
         # A wheel that is present but broken at import, a Rust panic included, must never stop an install.
         if not recoverable(error):

@@ -597,10 +597,16 @@ November 9: a `rust` selection file guarded by the watchdog. `postern.serve
 install` bootstraps the API and its watchdog on Python first. Then, only when
 no `progress-backend.json` exists, it writes `rust` (`set_by: install`, owned by
 the account the API runs as, even when the install reruns under sudo) and
-restarts the API onto it, so Rust never starts without its watchdog. The
-preflight's `rust progress` line says beforehand which backend the install
-will select. Without the wheel, or when it fails verification or raises while
-loading, the install writes nothing and Python serves. An existing selection,
+restarts the API onto it, so Rust never starts without its watchdog. Run
+`postern.serve backend` afterwards to confirm the watchdog is guarding the
+selection. Under sudo the install selects nothing when the config folder is not
+writable by that account, because the watchdog could not then return the API to
+Python. The preflight's `rust progress` line says beforehand which backend the
+install will select. It fails when an existing selection would stop the next
+API start: a `rust` file without a loadable wheel, or an unreadable file. The
+rollout's `install --check-only` then stops before the restart. Without the
+wheel, or when it fails verification or raises while loading, the install
+writes nothing and Python serves. An existing selection,
 `python`, `rust` or unreadable, is never changed, `--force` included, and
 `--check-only` writes nothing. Deleting the file returns a host to Python at
 its next start. To keep Python, run `postern.serve backend python` and
