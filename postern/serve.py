@@ -285,16 +285,28 @@ def rust_progress_check(config_path):
     from . import progress_backend
     usable, detail = progress_backend.native_available()
     path = progress_backend.selection_path(config_path)
-    if not (path.exists() or path.is_symlink()):
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
         next_step = 'select it with postern.serve backend rust' if derive.LINUX else 'a fresh install selects rust'
         return 'rust progress', True, f'{detail}; {next_step}' if usable else f'{detail}; Python serves'
+    except OSError:
+        info = None
     try:
-        backend = None if path.is_symlink() else json.loads(path.read_text()).get('backend')
-    except (OSError, ValueError, AttributeError):
-        backend = None
+        account = Path(config_path).expanduser().stat().st_uid  # the API's account, also under sudo
+    except OSError:
+        account = os.getuid()
+    backend = None
+    # The checks the API makes at startup (progress_backend.read_selection), for the account the API runs as.
+    if info is not None and stat.S_ISREG(info.st_mode) and info.st_uid == account and not info.st_mode & 0o022:
+        try:
+            data = json.loads(path.read_text())
+            backend = data.get('backend') if isinstance(data, dict) else None
+        except (OSError, ValueError):
+            backend = None
     if backend not in ('python', 'rust'):
-        return ('rust progress', False, f'{path.name} is unreadable or names no backend; the API will refuse to start '
-                '(run postern.serve backend python or rust)')
+        return ('rust progress', False, f'{path.name} is not a private regular file of the API account naming python or '
+                'rust; the API will refuse to start (run postern.serve backend python or rust as that account)')
     if backend == 'rust' and not usable:
         return ('rust progress', False, f'{path.name} selects rust but {detail}; the API will refuse to start '
                 '(reinstall the wheel or run postern.serve backend python)')
@@ -506,16 +518,49 @@ def select_piloted_backend(config_path, user, where, label):
                   'not return the API to Python; Python serves')
             return
     try:
-        progress_backend.write_selection(config_path, 'rust', owner=owner, set_by='install')
+        progress_backend.write_selection(config_path, 'rust', owner=owner, replace=False, set_by='install')
+    except FileExistsError:
+        print('note progress-backend.json: already present; left unchanged')  # the owner selected while we checked
+        return
     except OSError as error:
         if not path.is_file():
             print(f'note progress-backend.json: not written ({type(error).__name__}); Python serves')
             return
-        # Renamed into place but its folder not synced: it applies at the next start anyway, so start it now,
-        # while its watchdog is running, rather than at some later restart.
+        # In place but its folder not synced: it would apply at the next start anyway, so guard it now.
+    written = path.lstat()
+    if not watchdog_saw(config_path, written):
+        # The API still serves Python: it reads the selection only at start. Take back only the file this install wrote.
+        current = path.lstat()
+        if (current.st_ino, current.st_mtime_ns) == (written.st_ino, written.st_mtime_ns):
+            path.unlink()
+        print(f'note progress-backend.json: not set; no running watchdog checked it within {GUARD_WAIT} s, so Python '
+              'serves; check the watchdog log, then select Rust with postern.serve backend rust')
+        return
     launchctl('kickstart', '-k', f'{where}/{label}')
-    print('ok   progress-backend.json: rust (verified native module; postern.serve backend python keeps Python)\n'
-          '     the watchdog checks this selection within 30 s; run postern.serve backend to confirm it is guarding')
+    print('ok   progress-backend.json: rust, checked by the running watchdog before the API restarted onto it\n'
+          '     (postern.serve backend python keeps Python)')
+
+
+GUARD_WAIT = 75  # seconds; the watchdog checks the selection every 30 s
+
+
+def watchdog_saw(config_path, written):
+    """True once the running watchdog's heartbeat names this selection (inode, mtime): it is guarding it."""
+    from .watchdog import GUARD
+    data_dir = settings(config_path).get('data_dir')
+    if not isinstance(data_dir, str) or not data_dir:
+        return False
+    heartbeat = Path(data_dir).expanduser() / GUARD
+    deadline = time.monotonic() + GUARD_WAIT
+    while True:
+        try:
+            if json.loads(heartbeat.read_text()).get('selection') == [written.st_ino, written.st_mtime_ns]:
+                return True
+        except (OSError, ValueError, AttributeError):
+            pass
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(1)
 
 
 def uninstall(user, home, user_agent, label=LABEL):

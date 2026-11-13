@@ -410,15 +410,19 @@ def test_preflight_says_which_progress_backend_install_selects_and_never_fails(t
         assert detail == NATIVE_DETAIL[kind] + '; Python serves'
 
 
+REFUSED = ('progress-backend.json is not a private regular file of the API account naming python or rust; the API '
+           'will refuse to start (run postern.serve backend python or rust as that account)')
+
+
 @pytest.mark.parametrize('existing,kind,ok,detail', [
     ('rust', 'ok', True, 'progress-backend.json selects rust, which install keeps; verified native module'),
     ('rust', 'missing', False, 'progress-backend.json selects rust but native module not installed; the API will refuse to '
                                'start (reinstall the wheel or run postern.serve backend python)'),
     ('python', 'missing', True, 'progress-backend.json selects python, which install keeps; native module not installed'),
-    ('unreadable', 'ok', False, 'progress-backend.json is unreadable or names no backend; the API will refuse to start '
-                                '(run postern.serve backend python or rust)'),
-    ('symlink', 'ok', False, 'progress-backend.json is unreadable or names no backend; the API will refuse to start '
-                             '(run postern.serve backend python or rust)'),
+    ('unreadable', 'ok', False, REFUSED),
+    ('symlink', 'ok', False, REFUSED),
+    ('shared', 'ok', False, REFUSED),  # group-writable: the API refuses it
+    ('fifo', 'ok', False, REFUSED),  # never opened, so the preflight cannot hang on it
 ])
 def test_preflight_fails_a_selection_the_next_api_start_would_refuse(tmp_path, native_module, existing, kind, ok, detail):
     # Value: protects=install --check-only, the rollout's pre-restart gate, fails when a rust selection cannot start;
@@ -429,14 +433,25 @@ def test_preflight_fails_a_selection_the_next_api_start_would_refuse(tmp_path, n
     selection = progress_backend.selection_path(config)
     if existing == 'symlink':
         selection.symlink_to(tmp_path / 'elsewhere.json')
+    elif existing == 'fifo':
+        os.mkfifo(selection, 0o600)
     else:
         selection.write_text('{not json' if existing == 'unreadable' else json.dumps({'backend': existing}))
+        selection.chmod(0o664 if existing == 'shared' else 0o600)
     assert serve.rust_progress_check(config) == ('rust progress', ok, detail)
+    if existing in ('rust', 'python', 'shared'):  # the file checks agree with the API's own
+        try:
+            accepted = progress_backend.read_selection(config) is not None
+        except RuntimeError:
+            accepted = False
+        assert accepted is (existing != 'shared')
 
 
-def launchd_install(tmp_path, monkeypatch, fail=None):
-    """A macOS install against throwaway plist paths. Each launchctl call records whether a selection existed then."""
+def launchd_install(tmp_path, monkeypatch, fail=None, guarded=True):
+    """A macOS install against throwaway plist paths. Each launchctl call records whether a selection existed then;
+    `guarded` is whether the running watchdog's heartbeat names the new selection."""
     config = write_config(tmp_path)
+    monkeypatch.setattr(serve, 'watchdog_saw', lambda config_path, written: guarded)
     monkeypatch.setattr(serve, 'plist_path', lambda label, user_agent, home: tmp_path / 'jobs' / (label + '.plist'))
     monkeypatch.setattr(serve, 'preflight', lambda path: [('fixture prerequisites', True, 'ok')])
     monkeypatch.setattr(serve, 'listening', lambda port: False)
@@ -479,9 +494,8 @@ def test_a_fresh_install_with_the_verified_module_selects_rust_after_its_watchdo
     info = selection.stat()
     assert info.st_mode & 0o777 == 0o600 and info.st_uid == os.getuid()
     assert progress_backend.read_selection(config) == data  # the API accepts it
-    assert ('ok   progress-backend.json: rust (verified native module; postern.serve backend python keeps Python)\n'
-            '     the watchdog checks this selection within 30 s; run postern.serve backend to confirm it is guarding\n'
-            in capsys.readouterr().out)
+    assert ('ok   progress-backend.json: rust, checked by the running watchdog before the API restarted onto it\n'
+            '     (postern.serve backend python keeps Python)\n' in capsys.readouterr().out)
 
 
 @LAUNCHD
@@ -638,3 +652,69 @@ def test_a_selection_renamed_into_place_but_not_synced_still_starts_under_its_wa
     assert json.loads(selection.read_text())['backend'] == 'rust'
     assert calls == started(tmp_path) + [(('kickstart', '-k', 'system/' + serve.LABEL), True)]
     assert 'ok   progress-backend.json: rust' in capsys.readouterr().out
+
+
+@LAUNCHD
+def test_without_a_watchdog_heartbeat_install_takes_its_selection_back_and_python_serves(tmp_path, monkeypatch, capsys,
+                                                                                         native_module):
+    # Value: protects=Rust never starts unless the running watchdog has checked this exact selection;
+    #   fails_when=install restarts the API onto rust after a bootstrap alone; why_new=a watchdog can bootstrap and crash;
+    #   seam=none; no_claim=a real watchdog process (its heartbeat is faked)
+    native_module('ok')
+    config, selection, calls = launchd_install(tmp_path, monkeypatch, guarded=False)
+    assert serve.install(config, 'owner', tmp_path, False, False, False) == 0
+    assert calls == started(tmp_path) and not selection.exists()  # the API was never restarted onto it
+    assert ('note progress-backend.json: not set; no running watchdog checked it within 75 s, so Python serves'
+            in capsys.readouterr().out)
+
+
+@LAUNCHD
+def test_install_never_removes_a_selection_the_owner_made_while_it_waited(tmp_path, monkeypatch, native_module):
+    native_module('ok')
+    config, selection, calls = launchd_install(tmp_path, monkeypatch)
+
+    def owner_selects_python(config_path, written):
+        progress_backend.write_selection(config_path, 'python', set_by='owner')
+        return False
+    monkeypatch.setattr(serve, 'watchdog_saw', owner_selects_python)
+    assert serve.install(config, 'owner', tmp_path, False, False, False) == 0
+    assert json.loads(selection.read_text())['set_by'] == 'owner' and calls == started(tmp_path)
+
+
+@LAUNCHD
+def test_install_never_overwrites_a_selection_the_owner_made_while_it_checked(tmp_path, monkeypatch, capsys):
+    # Value: protects=an owner's concurrent postern.serve backend python survives the install;
+    #   fails_when=the install publishes with a replacing rename; why_new=the existence check alone leaves a window;
+    #   seam=none; no_claim=a real second process
+    config, selection, calls = launchd_install(tmp_path, monkeypatch)
+
+    def import_module(name):  # the owner selects Python between the install's check and its write
+        progress_backend.write_selection(config, 'python', set_by='owner')
+        return SimpleNamespace(API_VERSION=1, CHECKPOINT_VERSION=1, reduce_incremental=lambda *args: None)
+    monkeypatch.setattr(progress_backend, 'importlib', SimpleNamespace(import_module=import_module))
+    progress_backend.native.cache_clear()
+    try:
+        assert serve.install(config, 'owner', tmp_path, False, False, False) == 0
+    finally:
+        progress_backend.native.cache_clear()
+    assert json.loads(selection.read_text())['set_by'] == 'owner' and calls == started(tmp_path)
+    assert not list(config.parent.glob('.progress-backend-*'))
+    assert 'note progress-backend.json: already present; left unchanged' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('heartbeat', ['this selection', 'another selection', 'none'])
+def test_watchdog_saw_waits_for_a_heartbeat_naming_this_selection(tmp_path, monkeypatch, heartbeat):
+    config = write_config(tmp_path)
+    selection = progress_backend.selection_path(config)
+    progress_backend.write_selection(config, 'rust', set_by='install')
+    written = selection.lstat()
+    beat = tmp_path / 'data' / watchdog.GUARD
+    clock = iter(range(0, 1000, 10))
+    monkeypatch.setattr(serve.time, 'monotonic', lambda: next(clock))
+
+    def sleep(seconds):  # the watchdog's next check lands while install waits
+        if heartbeat != 'none':
+            identity = [written.st_ino, written.st_mtime_ns + (0 if heartbeat == 'this selection' else 1)]
+            beat.write_text(json.dumps({'pid': 1, 'selection': identity, 'state': 'waiting'}))
+    monkeypatch.setattr(serve.time, 'sleep', sleep)
+    assert serve.watchdog_saw(config, written) is (heartbeat == 'this selection')
