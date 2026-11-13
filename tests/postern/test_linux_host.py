@@ -69,6 +69,7 @@ def test_a_linux_install_never_selects_a_progress_backend(linux, tmp_path, monke
     assert not progress_backend.selection_path(linux).exists() and not progress_backend.selection_path(linux).is_symlink()
     assert 'progress-backend.json' not in capsys.readouterr().out
 
+
 def test_check_only_and_failed_preflight_write_nothing(linux, tmp_path, monkeypatch):
     monkeypatch.setattr(systemd, 'systemctl', lambda *args: pytest.fail('check-only queried units'))
     assert serve.install(linux, 'owner', tmp_path, False, True, False) == 0

@@ -86,7 +86,6 @@ def test_selection_and_active_records_are_private_and_complete(config_path):
     assert active['pid'] == os.getpid()
 
 
-
 @pytest.mark.parametrize('owner', [None, (4321, 20)])
 def test_a_root_writer_hands_the_selection_to_the_service_account_before_the_rename(config_path, monkeypatch, owner):
     # A macOS install's second phase runs as root; the API refuses a selection it does not own.
@@ -106,6 +105,7 @@ def test_a_root_writer_hands_the_selection_to_the_service_account_before_the_ren
         expected.insert(0, ('chown', temporary, *owner, False))
     assert events == expected
     assert json.loads(path.read_text()) == data and path.stat().st_mode & 0o777 == 0o600
+
 
 @pytest.mark.parametrize('state,expected', [
     ('none', 'ok   progress reads: no database yet'),
