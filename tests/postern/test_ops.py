@@ -338,3 +338,27 @@ def test_uninstall_only_removes_the_explicit_label_family(tmp_path, monkeypatch)
     assert calls == [('bootout', 'system/' + job_label) for job_label in serve.service_labels(label)]
     assert (tmp_path / (serve.LABEL + '.plist')).is_file()
     assert all(not (tmp_path / (job_label + '.plist')).exists() for job_label in serve.service_labels(label))
+
+
+@pytest.mark.parametrize('linux,restricted,diagnostic,hinted', [
+    (True, True, 'bwrap: No permissions to create new namespace', True),
+    (True, True, 'bwrap: Creating new namespace failed', True),
+    (True, True, "bwrap: Can't find source path /missing", False),
+    (True, False, 'bwrap: No permissions to create new namespace', False),
+    (False, True, 'bwrap: No permissions to create new namespace', False),
+])
+def test_namespace_refusal_hint_names_the_restriction_and_rule(tmp_path, monkeypatch, linux, restricted, diagnostic, hinted):
+    profile = tmp_path / 'derive.profile'
+    profile.write_text('synthetic profile')
+    monkeypatch.setattr(derive, 'PROFILE', profile)
+    monkeypatch.setattr(derive, 'LINUX', linux)
+    monkeypatch.setattr(derive, 'sandbox_command', lambda source, output, program: ['synthetic-sandbox', *program])
+    monkeypatch.setattr(serve, 'userns_restricted', lambda: restricted)
+    monkeypatch.setattr(serve.subprocess, 'run', lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout='', stderr=diagnostic))
+    ok, detail = serve.profile_compiles()
+    assert not ok and detail.startswith(diagnostic)
+    if hinted:
+        assert "Ubuntu's user-namespace restriction blocked the sandbox" in detail
+        assert 'load the checked-in AppArmor rule ' + str(profile.with_name('postern-bwrap.apparmor')) in detail
+    else:
+        assert detail == diagnostic
