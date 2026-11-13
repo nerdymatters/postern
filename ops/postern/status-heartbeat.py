@@ -39,7 +39,7 @@ def load_settings(path, *, sending=True):
                                            or re.fullmatch(SYSTEMD_TARGET, target))
         for target in agents.values()
     ):
-        raise ValueError('Invalid launchd agent targets')
+        raise ValueError('Invalid agent targets')
     if sending:
         token, url = settings.get('token'), settings.get('url')
         if not isinstance(token, str) or len(token) < 32:
@@ -78,7 +78,7 @@ def systemd_state(target, runner=subprocess.run):
     except (OSError, subprocess.TimeoutExpired):
         return 'unknown'
     state = result.stdout.strip()
-    if result.returncode == 0 and state in ('active', 'reloading'):
+    if result.returncode == 0 and state in ('active', 'reloading', 'refreshing'):
         return 'operational'
     if result.returncode == 3 and state in ('inactive', 'failed', 'activating', 'deactivating', 'maintenance'):
         return 'outage'
