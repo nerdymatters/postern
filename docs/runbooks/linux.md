@@ -60,7 +60,26 @@ ingress, before it serves staff.
    with `uv pip install --python .venv/bin/python --no-deps wheels/EXACT_NAME.whl`.
    Without it, Python remains the default.
 4. Review the rendered units and `install.sh` under the owner's
-   `~/.local/state/postern/install-*` directory. Run the **single root command
+   `~/.local/state/postern/install-*` directory. On a first install systemd has
+   not loaded these units yet, so install can refuse only each unit's own
+   `<unit>.d/` in the five unit directories. A type-wide `service.d/`, a
+   `system.control`, `system.attached`, transient or generator drop-in, or a
+   `<prefix>-.service.d/` for a custom label containing a hyphen would apply
+   unseen. List them first; on a clean host this prints nothing:
+
+   ```sh
+   for d in /etc/systemd/system.control /run/systemd/system.control /run/systemd/transient \
+            /run/systemd/generator.early /etc/systemd/system /etc/systemd/system.attached \
+            /run/systemd/system /run/systemd/system.attached /run/systemd/generator \
+            /usr/local/lib/systemd/system /usr/lib/systemd/system /lib/systemd/system \
+            /run/systemd/generator.late; do
+     ls -d "$d/service.d" "$d"/org.nerdymatters.postern*.d 2>/dev/null
+   done
+   ```
+
+   Use your label in place of `org.nerdymatters.postern`, and for a label
+   containing a hyphen also look for each `<prefix>-.service.d` it implies.
+   Reconcile anything listed, then run the **single root command
    printed by install**. It installs the units into `/etc/systemd/system`,
    reloads systemd, enables and restarts the three services. The service
    account owns the stage, so root never runs or installs a file from it
@@ -117,8 +136,9 @@ the manager deliberately, then render again. Install checks `/etc/systemd/system
 `/run/systemd/system`, `/usr/local/lib/systemd/system`, `/usr/lib/systemd/system`
 and `/lib/systemd/system` for `<unit>.d/`, including drop-ins the manager has not
 loaded yet; the printed root script checks those directories again before any
-install. Other drop-in locations (`system.control`, transient and generator
-directories, a type-wide `service.d/`) are refused only once systemd has loaded
+install. Other drop-in locations (`system.control`, `system.attached`, transient
+and generator directories, a type-wide `service.d/`, and `<prefix>-.service.d/`
+for a custom label containing a hyphen) are refused only once systemd has loaded
 them, so check `systemctl cat` for each unit after installing.
 Run the newly printed root command, then status, private health and a synthetic
 conversion.
