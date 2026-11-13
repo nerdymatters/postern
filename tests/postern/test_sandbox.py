@@ -535,6 +535,36 @@ def test_cleanup_never_follows_a_folder_swapped_for_a_link(config, tmp_path, mon
     assert not any((config.data_dir / 'staging').iterdir())
 
 
+# Value: protects=a job that leaves folders nested past the cleanup's depth cap cannot stall a conversion slot;
+#   fails_when=cleanup revisits folders it could not remove, so its work grows exponentially with depth; why_new=the
+#   tests above leave shallow trees; seam=a counter on os.scandir that stops a runaway cleanup; no_claim=time on a real
+#   host (unit only)
+def test_cleanup_of_a_deep_tree_stays_linear(config, monkeypatch):
+    config.validate()
+    def convert(*args, cwd, **kwargs):
+        deep = Path(cwd)
+        for _ in range(70):
+            deep = deep / 'd'
+        deep.mkdir(parents=True)
+        class Failed:
+            returncode = 1
+            def communicate(self, **kwargs):
+                return b'', b''
+        return Failed()
+    reads = []
+    scandir = os.scandir
+    def counted(*args, **kwargs):
+        reads.append(1)
+        if len(reads) > 2000:
+            raise RuntimeError('cleanup does not finish')
+        return scandir(*args, **kwargs)
+    monkeypatch.setattr(derive.subprocess, 'Popen', convert)
+    monkeypatch.setattr(derive.os, 'scandir', counted)
+    with pytest.raises(derive.DeriveError, match='could not be converted safely'):
+        derive.Deriver(config).run(FIXTURES / 'photo.jpg', config.data_dir / 'derived' / 'deep', 'photo')
+    assert len(reads) < 300  # two looks at about 65 folders
+
+
 # Value: protects=a job that leaves a link or file at its own path keeps the conversion's own error (charged or a
 #   fault) and leaves staging empty; fails_when=cleanup raises OSError over that error or skips the replacement;
 #   why_new=the swap test above covers a zero exit with a link only; seam=none; no_claim=a real leftover process (unit only)
