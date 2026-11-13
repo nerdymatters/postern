@@ -1191,3 +1191,23 @@ def test_native_errors_are_counted_where_the_service_records_them(config_path, m
 def test_zz_the_selection_tests_leave_the_backend_setting_as_found():
     # Runs last in this module: no fixture may leak a selected backend into later tests.
     assert os.environ.get(progress_backend.SETTING) == SETTING_AT_IMPORT
+
+
+def test_macos_override_record_and_line_remain_unchanged(guard, monkeypatch):
+    monkeypatch.setattr(watchdog, 'sys', SimpleNamespace(platform='darwin'))
+    monkeypatch.setattr(serve, 'sys', SimpleNamespace(platform='darwin'))
+    original = guard.host.run
+    def run(args, **kwargs):
+        assert args[0] != 'systemctl', 'macOS must not query systemd'
+        return original(args, **kwargs)
+    guard.fallback.run = run
+    select(guard.config, 'rust')
+    serving(guard, source='environment')
+    guard.tick()
+    record = beat(guard)
+    assert record['state'] == 'override' and 'reason' not in record
+    assert record['guard_version'] == watchdog.GUARD_VERSION == 2
+    expected = ('FAIL watchdog guard: the launchd job sets POSTERN_PROGRESS_BACKEND, so this file is not in effect '
+                'and the guard can only alert (runbook step 3 removes that setting)')
+    assert serve.host_words(serve.GUARD_STATES['override']) == expected
+    assert serve.guard_line(record, guard.config, active=guard.fallback.active()) == expected

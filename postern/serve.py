@@ -678,6 +678,10 @@ GUARD_STATES = {
     'waiting': 'ok   watchdog guard: watching; Rust is selected but the API has not restarted with it yet',
     'override': 'FAIL watchdog guard: the launchd job sets POSTERN_PROGRESS_BACKEND, so this file is not in effect '
                 'and the guard can only alert (runbook step 3 removes that setting)',
+    'inconclusive': 'FAIL watchdog guard: the systemd unit environment cannot be verified: {reason}; '
+                    'the guard can only alert. Check POSTERN_API_UNIT and LoadState in the Linux runbook\'s '
+                    'Python fallback section; run `systemctl show UNIT -p LoadState -p Environment -p EnvironmentFiles` '
+                    'for the API unit',
     'unverified': 'FAIL watchdog guard: it cannot verify the API process, so memory, CPU and parity checks are paused; '
                   'failed health checks still return Rust to Python',
     'error': 'FAIL watchdog guard: its checks raised an error (see the alert); failed health checks still return '
@@ -732,6 +736,9 @@ def guard_line(record, config_path, now=None, selected=None, active=None):
     state = record.get('state')
     if state == 'guarding':
         return f'ok   watchdog guard: {where}, guarding this selection'
+    if state == 'inconclusive':
+        reason = record.get('reason') or 'reason not recorded'
+        return GUARD_STATES[state].format(reason=reason) + f' ({where})'
     return host_words(GUARD_STATES.get(state, f'FAIL watchdog guard: unknown state {state!r}')) + f' ({where})'
 
 

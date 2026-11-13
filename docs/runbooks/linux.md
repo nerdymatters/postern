@@ -181,6 +181,17 @@ is unknown, never evidence that the unit has no override. Alerts name that
 load state. Inspect the watchdog unit if the API label and the reported unit
 state disagree.
 
+An unprovable environment is recorded as `inconclusive` in the watchdog's
+private guard heartbeat, with a `reason` such as `unknown (LoadState=not-found)`,
+`unknown (invalid POSTERN_API_UNIT)`, `unknown (EnvironmentFile)` or
+`unknown (unit environment unreadable)`. `postern.serve backend` prints that
+reason and the unit inspection command below. This means the guard can only
+alert; it does not establish that the unit sets `POSTERN_PROGRESS_BACKEND`.
+Check the API unit name, its load state and the watchdog account's ability to
+read it before changing any settings. `override` is reserved for a confirmed
+backend setting. Restart the updated watchdog to get the new distinction;
+older `override` records cannot be retrospectively classified.
+
 Do not put `POSTERN_PROGRESS_BACKEND` in the unit, manager environment or a
 service environment file for a guarded rollout. Inspect `systemctl cat UNIT`
 and `systemctl show UNIT -p LoadState -p Environment -p EnvironmentFiles`; remove the

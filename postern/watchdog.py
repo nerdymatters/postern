@@ -291,11 +291,13 @@ class Fallback:
             out = (result.stderr.strip().splitlines() or [out])[-1]
         return result.returncode, out[:500]
 
-    def heartbeat(self, key, state):
+    def heartbeat(self, key, state, *, reason=None):
         """Shows the owner (postern.serve backend) that a current watchdog is guarding this selection."""
         path = self.data_dir / GUARD
         data = {'pid': os.getpid(), 'guard_version': GUARD_VERSION, 'selection': list(key), 'state': state,
                 'checked_at': datetime.now(timezone.utc).isoformat(timespec='seconds')}
+        if reason is not None:
+            data['reason'] = reason
         try:
             write_private_json(path, data, '.progress-backend-guard-')
         except OSError:
@@ -436,7 +438,10 @@ class Fallback:
         else:
             self.pending = breach or self.pending
             reasons += self.pending
-        self.heartbeat(identity, 'override' if forced else state)
+        if forced and unknown:
+            self.heartbeat(identity, 'inconclusive', reason=override)
+        else:
+            self.heartbeat(identity, 'override' if forced else state)
         if not reasons:
             return None
         if forced:
