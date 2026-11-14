@@ -210,6 +210,7 @@ class Fallback:
         self.retry = (None, 0)  # (fallback selection, restarts tried) for a restart the fallback could not finish
         self.unconfirmed = (None, 0, False)  # (fallback selection, checks the Rust process stayed unconfirmable, alerted)
         self.known_override = None  # (answer,) from the last systemctl show that answered; Linux only
+        self.unit_startable = True  # whether systemd can start the API again, from the last answer; an expiry keeps it
         self.override_failures = 0
         self.reset()
 
@@ -367,8 +368,10 @@ class Fallback:
         override = self.checked_override()
         unknown = (override or '').startswith('unknown')
         # systemd starts the API again only from a loaded unit. A masked, missing or misnamed one may not come back,
-        # so a fallback there writes Python but never restarts the API.
-        stranded = unknown and override not in ('unknown (EnvironmentFile)', 'unknown (unit environment unreadable)')
+        # so a fallback there writes Python but never restarts the API. An expired lookup keeps the last verdict.
+        if override != 'unknown (unit environment unreadable)':
+            self.unit_startable = not unknown or override == 'unknown (EnvironmentFile)'
+        stranded = unknown and not self.unit_startable
         if backend == 'python' and selection.get('fallback') and (override is None or (unknown and not stranded)):
             # An unprovable unit must not strand a fallback after Python was written. finish_fallback
             # still verifies that the live Rust process took its backend from the file and bounds retries.
@@ -407,6 +410,8 @@ class Fallback:
             return None
         # Count health first: nothing below may stop a failing API from being returned to Python.
         self.unhealthy = 0 if healthy else self.unhealthy + 1
+        if healthy and not self.pending:
+            self.unwritten = False  # a health fallback ends when health recovers, as on the unforced path
         reasons = []
         if self.unhealthy >= self.failures:
             reasons.append(f'{self.unhealthy} consecutive health checks failed ({detail[:200]})')
