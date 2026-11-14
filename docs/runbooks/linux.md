@@ -210,7 +210,7 @@ failures (about five minutes at the default 30-second interval), it expires
 that answer and alerts once that the API unit environment cannot be read.
 New breaches remain alert-only until a lookup answers again, which also resets
 the failure count and allows a future outage to alert. Before the first
-successful lookup, it is alert-only too. On a Python-only host this produces
+successful lookup, new breaches are alert-only too. On a Python-only host this produces
 no Rust breach alert, though ten lookup failures still report the observation
 failure. The watchdog never edits root-owned unit configuration.
 
