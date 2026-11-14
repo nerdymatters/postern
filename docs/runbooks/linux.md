@@ -220,9 +220,9 @@ or an environment file appears. It retains the pending memory, CPU or parity
 breach, or a health fallback whose write failed while health keeps failing, and
 retries the write on later checks. After writing Python it still restarts only the verified API, with the
 existing limit of three later restart attempts if Rust continues serving from
-the file. When the API unit is masked, not found or misnamed, or was when its
-lookup expired, systemd may not start the API again, so the watchdog writes
-Python but does not restart it; the alert says to restart the API by hand. The heartbeat remains
+the file. When the API unit is not loaded (masked or not found, for example) or
+misnamed, or was when its lookup expired, systemd may not start the API again,
+so the watchdog writes Python but does not restart it; the alert says to restart the API by hand. The heartbeat remains
 `inconclusive`; writing Python cannot override an actual environment setting.
 A confirmed backend override cancels pending writes and remains alert-only.
 
