@@ -152,6 +152,11 @@ approves.
 **Effort:** M
 **Priority:** P1
 **Depends on:** The owner choosing the first Linux host (not the office Mac)
+**Notes from v0.30.1's review (PR #35):** two watchdog alert texts still say the
+guard is alert-only while a pending Python write continues; after a masked unit's
+lookup expires, the not-restarted alert names the expiry instead of the masked
+answer; and a breach that starts on the check where health recovers still takes
+the Python write once.
 
 ### Version the progress projection schema before changing it
 

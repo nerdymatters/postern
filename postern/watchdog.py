@@ -210,6 +210,7 @@ class Fallback:
         self.retry = (None, 0)  # (fallback selection, restarts tried) for a restart the fallback could not finish
         self.unconfirmed = (None, 0, False)  # (fallback selection, checks the Rust process stayed unconfirmable, alerted)
         self.known_override = None  # (answer,) from the last systemctl show that answered; Linux only
+        self.unit_startable = True  # whether systemd can start the API again, from the last answer; an expiry keeps it
         self.override_failures = 0
         self.reset()
 
@@ -219,6 +220,7 @@ class Fallback:
         self.next_parity = None
         self.unverified = 0
         self.pending = []  # a memory, CPU or parity breach stays a breach until Python is written
+        self.unwritten = False  # a fallback whose Python write failed and has not succeeded since
         self.reported = self.error_reported = self.write_reported = self.unverified_reported = False
 
     def alert(self, subject, body):
@@ -365,7 +367,14 @@ class Fallback:
         backend = selection.get('backend') if selection else None
         override = self.checked_override()
         unknown = (override or '').startswith('unknown')
-        if backend == 'python' and selection.get('fallback') and override is None:
+        # systemd starts the API again only from a loaded unit. A masked, missing or misnamed one may not come back,
+        # so a fallback there writes Python but never restarts the API. An expired lookup keeps the last verdict.
+        if override != 'unknown (unit environment unreadable)':
+            self.unit_startable = not unknown or override == 'unknown (EnvironmentFile)'
+        stranded = unknown and not self.unit_startable
+        if backend == 'python' and selection.get('fallback') and (override is None or (unknown and not stranded)):
+            # An unprovable unit must not strand a fallback after Python was written. finish_fallback
+            # still verifies that the live Rust process took its backend from the file and bounds retries.
             self.finish_fallback(selection)
         active, dropped = self.active(), False
         if (active is not None and active.get('source') == 'environment'
@@ -388,8 +397,12 @@ class Fallback:
             return None
         # An unreadable, unsafe or unknown selection stops the API from starting; health alone decides that case.
         identity = selection['identity'] if backend in ('rust', 'invalid') else ('environment', active.get('pid') if active else override)
-        # Counts from an alert-only override period never carry into the file-governed process, or back.
-        key = (identity, forced)
+        # An unknown answer cannot cancel a file fallback already pending for this selection. A confirmed
+        # setting still resets its counts and makes it alert-only, including a live environment-sourced API.
+        alert_only = forced and not (unknown and (self.pending or self.unwritten) and self.watched == (identity, False)
+                                     and not (active is not None and active.get('source') == 'environment'))
+        # Counts from an alert-only period never carry into the file-governed process, or back.
+        key = (identity, alert_only)
         if key != self.watched:
             self.watched = key
             self.reset()
@@ -397,6 +410,8 @@ class Fallback:
             return None
         # Count health first: nothing below may stop a failing API from being returned to Python.
         self.unhealthy = 0 if healthy else self.unhealthy + 1
+        if healthy and not self.pending:
+            self.unwritten = False  # a health fallback ends when health recovers, as on the unforced path
         reasons = []
         if self.unhealthy >= self.failures:
             reasons.append(f'{self.unhealthy} consecutive health checks failed ({detail[:200]})')
@@ -433,7 +448,7 @@ class Fallback:
                                f'lsof or ps could not confirm the process serving Rust on port {self.port}, so the '
                                f'memory, CPU and parity checks are paused. {fallback}')
                     self.unverified_reported = True
-        if forced:
+        if alert_only:
             reasons += breach  # alert only: a breach under an override is never kept for the file
         else:
             self.pending = breach or self.pending
@@ -446,13 +461,13 @@ class Fallback:
             self.heartbeat(identity, 'override' if forced else state)
         if not reasons:
             return None
-        if forced:
+        if alert_only:
             if not self.reported:
                 self.alert(f'Postern: Rust backend breach under a {self.supervisor()} override',
                            override_detail + '\n\n' + '\n'.join(reasons))
                 self.reported = True
             return None
-        return self.fall_back(selection, reasons, pid, dropped)
+        return self.fall_back(selection, reasons, pid, dropped, unstartable=override if stranded else None)
 
     def finish_fallback(self, selection):
         """A fallback selected Python but could not restart the API (a re-verification error, or a restart
@@ -553,7 +568,7 @@ class Fallback:
                     reasons.append(f'the parity check failed {self.parity_errors} times: {summary}')
         return reasons
 
-    def fall_back(self, selection, reasons, pid, dropped_override=False):
+    def fall_back(self, selection, reasons, pid, dropped_override=False, unstartable=None):
         """Select Python, then restart only a re-verified API; the alert reports what actually happened."""
         outcome = 'The next API start uses Python.'
         if dropped_override:  # the last start was forced by launchd; the file decides only once that setting is gone
@@ -568,12 +583,17 @@ class Fallback:
                             '\n'.join(reasons) + f'\n\nCould not write Python into {SELECTION} '
                             f'({type(error).__name__}); the watchdog keeps retrying. Select it by hand if this persists.')
                 self.write_reported = True
+            self.unwritten = True
             return reasons
         self.handled = self.watched
         self.pending = []
+        self.unwritten = False
         try:
             active = self.active()
-            if pid is not None and self.serving(active)[0] == pid:
+            if unstartable:
+                outcome = (f'Python is selected, but the API was not restarted: systemd may not start it again '
+                           f'({unstartable}). Restart it by hand to apply Python.')
+            elif pid is not None and self.serving(active)[0] == pid:
                 outcome = self.restart(pid)
             elif (active and active.get('backend') == 'rust' and active.get('source') == SELECTION
                   and self.alive(active['pid']) is not False):  # only a file-governed process is restarted later
