@@ -186,8 +186,8 @@ as `inconclusive` in the watchdog's private guard heartbeat, with a `reason`
 such as `unknown (LoadState=not-found)`, `unknown (invalid POSTERN_API_UNIT)`,
 `unknown (EnvironmentFile)` or `unknown (unit environment unreadable)`.
 `postern.serve backend` prints that reason and the unit inspection command
-below. This means the guard can only alert; it does not establish that the unit
-sets `POSTERN_PROGRESS_BACKEND`. Check the API unit name, its load state and the
+below. This does not establish that the unit sets `POSTERN_PROGRESS_BACKEND`.
+Check the API unit name, its load state and the
 watchdog account's ability to read it before changing any settings. `override`
 is reserved for a confirmed backend setting: a value the unit lookup reads, or a
 live API whose startup record says its backend came from the environment. That
@@ -201,18 +201,27 @@ service environment file for a guarded rollout. Inspect `systemctl cat UNIT`
 and `systemctl show UNIT -p LoadState -p Environment -p EnvironmentFiles`; remove the
 backend override, run `sudo systemctl daemon-reload`, then restart. The API's
 startup record and the unit's merged Environment detect overrides. An
-environment file on the API unit makes the guard alert-only while Rust is
+environment file on the API unit makes new breaches alert-only while Rust is
 selected or serving, because `systemctl show` cannot tell what it sets and the
 next start could take Rust whatever the selection says. This is reported in the
 alert; restore inspectable configuration before relying on automatic fallback.
 A brief failed lookup keeps the watchdog's last answer. After ten consecutive
 failures (about five minutes at the default 30-second interval), it expires
 that answer and alerts once that the API unit environment cannot be read.
-The guard remains alert-only until a lookup answers again, which also resets
+New breaches remain alert-only until a lookup answers again, which also resets
 the failure count and allows a future outage to alert. Before the first
 successful lookup, it is alert-only too. On a Python-only host this produces
 no Rust breach alert, though ten lookup failures still report the observation
 failure. The watchdog never edits root-owned unit configuration.
+
+A fallback already waiting to write Python keeps writing `progress-backend.json`
+while the unit environment cannot be verified, including after a lookup expires
+or an environment file appears. It retains the pending memory, CPU or parity
+breach and retries a failed write on later checks. After writing Python it still
+restarts only the verified API, with the existing limit of three later restart
+attempts if Rust continues serving from the file. The heartbeat remains
+`inconclusive`; writing Python cannot override an actual environment setting.
+A confirmed backend override cancels pending writes and remains alert-only.
 
 Prove automatic fallback using synthetic data on a disposable Linux host:
 select an installed Rust wheel, induce the documented guard threshold, then

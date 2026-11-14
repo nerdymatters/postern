@@ -365,7 +365,9 @@ class Fallback:
         backend = selection.get('backend') if selection else None
         override = self.checked_override()
         unknown = (override or '').startswith('unknown')
-        if backend == 'python' and selection.get('fallback') and override is None:
+        if backend == 'python' and selection.get('fallback') and (override is None or unknown):
+            # An unprovable unit must not strand a fallback after Python was written. finish_fallback
+            # still verifies that the live Rust process took its backend from the file and bounds retries.
             self.finish_fallback(selection)
         active, dropped = self.active(), False
         if (active is not None and active.get('source') == 'environment'
@@ -388,8 +390,12 @@ class Fallback:
             return None
         # An unreadable, unsafe or unknown selection stops the API from starting; health alone decides that case.
         identity = selection['identity'] if backend in ('rust', 'invalid') else ('environment', active.get('pid') if active else override)
-        # Counts from an alert-only override period never carry into the file-governed process, or back.
-        key = (identity, forced)
+        # An unknown answer cannot cancel a file fallback already pending for this selection. A confirmed
+        # setting still resets its counts and makes it alert-only, including a live environment-sourced API.
+        alert_only = forced and not (unknown and self.pending and self.watched == (identity, False)
+                                     and not (active is not None and active.get('source') == 'environment'))
+        # Counts from an alert-only period never carry into the file-governed process, or back.
+        key = (identity, alert_only)
         if key != self.watched:
             self.watched = key
             self.reset()
@@ -433,7 +439,7 @@ class Fallback:
                                f'lsof or ps could not confirm the process serving Rust on port {self.port}, so the '
                                f'memory, CPU and parity checks are paused. {fallback}')
                     self.unverified_reported = True
-        if forced:
+        if alert_only:
             reasons += breach  # alert only: a breach under an override is never kept for the file
         else:
             self.pending = breach or self.pending
@@ -446,7 +452,7 @@ class Fallback:
             self.heartbeat(identity, 'override' if forced else state)
         if not reasons:
             return None
-        if forced:
+        if alert_only:
             if not self.reported:
                 self.alert(f'Postern: Rust backend breach under a {self.supervisor()} override',
                            override_detail + '\n\n' + '\n'.join(reasons))

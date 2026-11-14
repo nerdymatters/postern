@@ -648,9 +648,10 @@ def test_invalid_api_unit_stays_alert_only_even_after_a_good_lookup(linux, monke
     assert json.loads(linux.with_name(watchdog.SELECTION).read_text())['backend'] == 'rust'
 
 
-def test_finish_fallback_waits_for_an_inconclusive_unit_lookup_to_clear(linux, monkeypatch):
+def test_finish_fallback_retries_through_an_inconclusive_unit_lookup(linux, monkeypatch):
     progress_backend.write_selection(linux, 'python', fallback={'from': 'rust'})
-    answers = iter([result('LoadState=loaded\nEnvironmentFiles=/etc/example.env\n'), result('', 1),
+    answers = iter([result('LoadState=loaded\nEnvironment=\nEnvironmentFiles=/etc/example.env\n'),
+                    result('LoadState=loaded\nEnvironment=\nEnvironmentFiles=\n', 1),
                     result('LoadState=loaded\nEnvironment=\nEnvironmentFiles=\n')])
     guard, alerts = make_guard(linux, lambda *args, **kwargs: next(answers))
     monkeypatch.setattr(guard, 'active', lambda: {'pid': 123, 'backend': 'rust', 'source': watchdog.SELECTION})
@@ -660,10 +661,159 @@ def test_finish_fallback_waits_for_an_inconclusive_unit_lookup_to_clear(linux, m
     monkeypatch.setattr(guard, 'restart', lambda pid: restarted.append(pid) or 'restarted')
     guard.observe(True)
     guard.observe(True)
-    assert restarted == [] and guard.retry == (None, 0)
+    assert restarted == [123, 123] and guard.retry[1] == 2
     guard.observe(True)
-    assert restarted == [123]
+    assert restarted == [123, 123, 123] and guard.retry[1] == 3
     assert alerts[-1][0] == 'Postern finished returning to the Python backend'
+
+
+def pending_linux_fallback(linux, monkeypatch, breach, lookup):
+    """Reach a real resource breach with a failed write, then make the next lookup unknown."""
+    progress_backend.write_selection(linux, 'rust', limits={'cpu_checks': 2, 'parity_every_seconds': 600})
+    loaded = 'LoadState=loaded\nEnvironment=\nEnvironmentFiles=\n'
+    state = SimpleNamespace(answer=result(loaded), rss=100, cpu=0, clock=0, parity=0, alive=True,
+                            source=watchdog.SELECTION, fail_write=True, fail_restart=False, writes=[], signals=[])
+
+    def run(args, **kwargs):
+        if args[0] == 'systemctl':
+            assert args[1:3] == ['--system', 'show'] and '--property=LoadState' in args
+            return state.answer
+        if args[0].endswith('lsof'):
+            return result('123\n' if state.alive else '')
+        if args[0] == '/bin/ps':
+            if not state.alive:
+                return result('', 1)
+            return result(f'{os.getuid()} {state.rss * 1024} 0:{state.cpu} python -m postern.serve run\n')
+        assert 'postern.progress_parity' in args
+        return result('synthetic parity result', state.parity)
+
+    def kill(pid, sig):
+        assert json.loads(linux.with_name(watchdog.SELECTION).read_text())['backend'] == 'python'
+        state.signals.append((pid, sig))
+        if state.fail_restart:
+            raise PermissionError('synthetic restart failure')
+        state.alive = False
+
+    guard, alerts = make_guard(linux, run, kill=kill, now=lambda: state.clock, sleep=lambda seconds: None)
+    monkeypatch.setattr(guard, 'active', lambda: {'pid': 123, 'backend': 'rust', 'source': state.source})
+    write_python = watchdog.write_python
+
+    def write(*args):
+        state.writes.append(list(args[1]))
+        if state.fail_write:
+            raise OSError('synthetic write failure')
+        return write_python(*args)
+
+    monkeypatch.setattr(watchdog, 'write_python', write)
+
+    def tick(seconds=30):
+        state.clock += seconds
+        return guard.observe(True)
+
+    if breach == 'memory':
+        state.rss = 2000
+        assert tick() is None
+        assert 'API memory' in tick()[0]
+    elif breach == 'cpu':
+        assert tick() is None
+        state.cpu += 30
+        assert tick() is None
+        state.cpu += 30
+        assert 'API CPU' in tick()[0]
+    else:
+        assert breach == 'parity' and tick() is None
+        state.parity = 3
+        assert 'Rust and Python progress differ' in tick(600)[0]
+    assert guard.pending and not state.signals
+    # The breach need not recur: pending work must survive even after resources recover.
+    state.rss, state.parity = 100, 0
+    if lookup == 'expiry':
+        state.answer = result(loaded, 1)
+        for _ in range(guard.OVERRIDE_FAILURES - 1):
+            assert tick()
+        assert guard.override_failures == guard.OVERRIDE_FAILURES - 1
+    else:
+        assert lookup == 'EnvironmentFile'
+        state.answer = result('LoadState=loaded\nEnvironment=\nEnvironmentFiles=/etc/synthetic.env\n')
+    return guard, alerts, state, tick
+
+
+@pytest.mark.parametrize('lookup', ['expiry', 'EnvironmentFile'])
+@pytest.mark.parametrize('breach', ['memory', 'cpu', 'parity'])
+def test_pending_fallback_keeps_retrying_writes_when_the_unit_becomes_unknown(linux, monkeypatch, breach, lookup):
+    guard, alerts, state, tick = pending_linux_fallback(linux, monkeypatch, breach, lookup)
+    reasons, attempts = list(guard.pending), len(state.writes)
+    next_parity = guard.next_parity
+    for retry in range(1, 3):
+        assert tick() == reasons
+        assert len(state.writes) == attempts + retry and guard.pending == reasons
+        assert guard.next_parity == next_parity  # unknown must not reset the guard's accumulated state
+        assert not state.signals
+        assert json.loads(linux.with_name(watchdog.SELECTION).read_text())['backend'] == 'rust'
+        record = json.loads((linux.parent / watchdog.GUARD).read_text())
+        assert record['state'] == 'inconclusive'
+        assert record['reason'] == ('unknown (unit environment unreadable)' if lookup == 'expiry'
+                                    else 'unknown (EnvironmentFile)')
+    state.fail_write = False
+    assert tick() == reasons
+    assert state.signals == [(123, signal.SIGTERM)]
+    selected = linux.with_name(watchdog.SELECTION).read_bytes()
+    assert json.loads(selected)['fallback']['reasons'] == reasons
+    assert json.loads(selected)['backend'] == 'python' and guard.pending == []
+    assert sum(subject == 'Postern could not return to the Python backend' for subject, _ in alerts) == 1
+    assert alerts[-1][0] == 'Postern returned to the Python backend'
+    # A recovered lookup resumes ordinary guarding without writing or restarting this fallback again.
+    state.answer = result('LoadState=loaded\nEnvironment=\nEnvironmentFiles=\n')
+    for _ in range(4):
+        assert tick() is None
+    assert guard.override_failures == 0 and guard.watched is None
+    assert len(state.writes) == attempts + 3 and state.signals == [(123, signal.SIGTERM)]
+    assert linux.with_name(watchdog.SELECTION).read_bytes() == selected
+
+
+@pytest.mark.parametrize('lookup', ['expiry', 'EnvironmentFile'])
+def test_pending_fallback_writes_immediately_and_bounds_restart_retries_under_unknown(linux, monkeypatch, lookup):
+    guard, alerts, state, tick = pending_linux_fallback(linux, monkeypatch, 'memory', lookup)
+    attempts = len(state.writes)
+    state.fail_write, state.fail_restart = False, True
+    assert tick()  # the first unknown answer must still write Python and attempt the restart
+    assert len(state.writes) == attempts + 1 and state.signals == [(123, signal.SIGTERM)]
+    selected = linux.with_name(watchdog.SELECTION).read_bytes()
+    for retry in range(1, 4):
+        tick()
+        assert len(state.signals) == 1 + retry and guard.retry[1] == retry
+    for _ in range(4):
+        tick()
+    state.answer = result('LoadState=loaded\nEnvironment=\nEnvironmentFiles=\n')
+    for _ in range(4):
+        tick()
+    assert len(state.signals) == 4 and len(state.writes) == attempts + 1
+    assert linux.with_name(watchdog.SELECTION).read_bytes() == selected
+    assert sum(subject == 'Postern finished returning to the Python backend' for subject, _ in alerts) == 3
+
+
+@pytest.mark.parametrize('confirmed', ['unit', 'live record'])
+def test_a_confirmed_override_cancels_pending_retries_after_an_unknown_lookup(linux, monkeypatch, confirmed):
+    guard, alerts, state, tick = pending_linux_fallback(linux, monkeypatch, 'memory', 'EnvironmentFile')
+    attempts = len(state.writes)
+    assert tick() and len(state.writes) == attempts + 1
+    if confirmed == 'unit':
+        state.answer = result('LoadState=loaded\nEnvironment=POSTERN_PROGRESS_BACKEND=rust\nEnvironmentFiles=\n')
+    else:
+        state.source = 'environment'
+    state.fail_write, state.rss = False, 2000
+    for _ in range(4):
+        assert tick() is None
+    assert guard.pending == [] and not state.signals and len(state.writes) == attempts + 1
+    assert json.loads(linux.with_name(watchdog.SELECTION).read_text())['backend'] == 'rust'
+    record = json.loads((linux.parent / watchdog.GUARD).read_text())
+    assert record['state'] == 'override' and 'reason' not in record
+    assert alerts[-1][0] == 'Postern: Rust backend breach under a systemd override'
+    # Removing the confirmed override starts fresh; its breach does not carry into file guarding.
+    state.answer = result('LoadState=loaded\nEnvironment=\nEnvironmentFiles=\n')
+    state.source = watchdog.SELECTION
+    assert tick() is None and len(state.writes) == attempts + 1
+    assert tick() and state.signals == [(123, signal.SIGTERM)]
 
 
 # Generated by Claude Code (ship test coverage audit, pass 1): the dangling-symlink rows.
