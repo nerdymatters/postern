@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.30.1 — Keep returning to Python when the Linux watchdog cannot read the API service (2026-11-14)
+
+### Fixed
+
+- A Rust API that breached its memory, CPU or parity limits now still returns to Python when the Linux watchdog can no longer read the API service's environment. Before, a fallback waiting to write Python dropped to alert-only as soon as the unit lookup expired or the unit gained an environment file, so a breaching Rust API kept serving. The watchdog now keeps writing Python and restarts the verified API, within the existing limit of three restarts, and keeps retrying a failed write. A health fallback whose write failed keeps retrying the same way while health keeps failing. A confirmed backend setting in the unit, or a live API whose record says its backend came from the environment, still cancels the pending write and stays alert-only.
+- Never restart the API when its unit is not loaded (masked or not found, for example) or misnamed, or was when the lookup expired, because systemd may not start it again. The watchdog writes Python and the alert says to restart the API by hand.
+
+### Upgrade
+
+- Restart the watchdog to apply; the API needs no restart. macOS behavior, alert subjects, the selection file and the guard heartbeat are unchanged. The database, the Python dependencies and the native wheel (0.2.0) are unchanged, so a rollback needs no restore.
+
 ## 0.29.2 — See why the Linux backend guard cannot check the API service (2026-11-13)
 
 ### Fixed
