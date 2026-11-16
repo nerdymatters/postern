@@ -86,6 +86,41 @@ def test_selection_and_active_records_are_private_and_complete(config_path):
     assert active['pid'] == os.getpid()
 
 
+@pytest.mark.parametrize('owner', [None, (4321, 20)])
+def test_a_root_writer_hands_the_selection_to_the_service_account_before_the_rename(config_path, monkeypatch, owner):
+    # A macOS install's second phase runs as root; the API refuses a selection it does not own.
+    path = progress_backend.selection_path(config_path)
+    events, rename = [], os.replace
+    monkeypatch.setattr(os, 'chown', lambda name, uid, gid: events.append(('chown', Path(name).name, uid, gid, path.exists())))
+
+    def replace(source, target):
+        events.append(('replace', Path(source).name, Path(target), path.exists()))
+        rename(source, target)
+    monkeypatch.setattr(os, 'replace', replace)
+    data = progress_backend.write_selection(config_path, 'rust', owner=owner, set_by='install')
+    temporary = events[-1][1]
+    assert temporary.startswith('.progress-backend-')
+    expected = [('replace', temporary, path, False)]
+    if owner:
+        expected.insert(0, ('chown', temporary, *owner, False))
+    assert events == expected
+    assert json.loads(path.read_text()) == data and path.stat().st_mode & 0o777 == 0o600
+
+
+
+def test_a_non_replacing_write_never_overwrites_a_selection(config_path):
+    # Value: protects=install's write_selection(replace=False) keeps any selection that appeared after its check;
+    #   fails_when=the no-replace path renames over the file; why_new=the default path replaces by design; seam=none;
+    #   no_claim=a real concurrent writer
+    path = progress_backend.selection_path(config_path)
+    data = progress_backend.write_selection(config_path, 'rust', replace=False, set_by='install')
+    assert json.loads(path.read_text()) == data and path.stat().st_mode & 0o777 == 0o600
+    before = path.read_bytes()
+    with pytest.raises(FileExistsError):
+        progress_backend.write_selection(config_path, 'python', replace=False, set_by='install')
+    assert path.read_bytes() == before
+    assert not [p.name for p in config_path.parent.iterdir() if p.name.startswith('.progress-backend-')]
+
 @pytest.mark.parametrize('state,expected', [
     ('none', 'ok   progress reads: no database yet'),
     ('compact', 'ok   progress reads: the compact progress table'),
