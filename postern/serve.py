@@ -639,7 +639,10 @@ def run(config_path):
     print(f'postern: progress backend {backend} ({source})', file=sys.stderr, flush=True)
     import uvicorn
     from .app import create_app
-    uvicorn.run(create_app(config), host='127.0.0.1', port=config.port, log_level='warning', access_log=False)
+    # Service.context owns the explicit loopback trust policy and address validation.
+    # Preserve the socket peer so Uvicorn cannot accept forwarding headers first.
+    uvicorn.run(create_app(config), host='127.0.0.1', port=config.port, log_level='warning',
+                access_log=False, proxy_headers=False)
     return 0
 
 
