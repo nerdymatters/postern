@@ -20,7 +20,9 @@ and validate it there before selecting Rust.
 
 That builds the macOS bundle. For a Linux host add `--platform linux`; the [Linux runbook](linux.md#durability-and-releases) describes that bundle and how to include an approved native wheel.
 
-Tag the exact merged commit and upload its archive and `SHA256SUMS` as a pilot prerelease. Inspect the archive for credentials, private training, machine paths and installation artifacts. Keep root license/notice files with the bundle. Do not distribute a Python wheel as a complete host installation: operational files live beside the Python package.
+For releases supporting both hosts, build the macOS and Linux bundles into separate output directories so their checksum files do not overwrite each other. The current pilot release layout publishes both archives without bundled wheels, the separately tested macOS arm64 wheel, `NATIVE-PROVENANCE.json` and one combined `SHA256SUMS` covering the other four assets. Retrieve the wheel from the successful exact-merged-commit CI run's `progress-native-macos-arm64` artifact. Record that commit, run/attempt, artifact identifier and ZIP digest, wheel digest and native-library digest in the provenance file. Keep the native package version independent of the application version.
+
+Tag the exact merged commit and upload those files as a pilot prerelease. Inspect both archives for credentials, private training, machine paths and installation artifacts, then download the published assets and verify their checksums. Keep root license/notice files with each bundle. Do not distribute a Python wheel as a complete host installation: operational files live beside the Python package.
 
 ## Private training content
 
