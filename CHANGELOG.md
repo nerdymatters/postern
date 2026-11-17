@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.30.2 — Honor the configured client-address trust policy (2026-11-17)
+
+### Fixed
+
+- The running API now leaves forwarded client addresses to Postern's explicit `trust_loopback_proxy` policy. Uvicorn previously rewrote the socket peer before that policy ran, accepting forwarded addresses even with trust disabled and bypassing validation of malformed addresses with trust enabled. With trust disabled, Postern records the socket peer. With trust enabled, a loopback proxy must supply one valid IP address; missing, malformed or multiple addresses are refused before sign-in creates a session or audit event.
+
+### Upgrade
+
+- Restart the API to apply. A host behind a verified proxy must set `trust_loopback_proxy: true` to record the original client address; leaving it false records the loopback peer. Follow the [proxy setup](ops/postern/README.md#proxy-and-https-ingress) before enabling trust: the proxy must replace client-supplied forwarding headers with one verified address. The checked-in Caddyfile already does this. Custom proxies that send a chain of addresses must be adjusted before upgrading.
+- The database, Python dependencies and native wheel version (0.2.0) are unchanged. Rolling back needs no database restore; preserve current data and remember that older code has the forwarding-header bug.
+
 ## 0.30.1 — Keep returning to Python when the Linux watchdog cannot read the API service (2026-11-14)
 
 ### Fixed
