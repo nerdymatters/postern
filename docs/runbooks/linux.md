@@ -12,9 +12,14 @@ sandbox and each conversion tool inside it; do not start serving until it
 passes. Install, a clean-exit restart, a boot, an update to a new release
 directory, uninstall and the watchdog's Rust-to-Python fallback were rehearsed
 with synthetic data in a disposable Debian 13 container running systemd 257 as
-PID 1 (Nov 12). A real host has not served yet: repeat these steps there,
-including a real reboot, journald retention, network wait-online and public
-ingress, before it serves staff.
+PID 1 (Nov 12). Subsequent private rehearsals used a Debian VM on a physical
+Linux host, including isolated application serving, lifecycle checks, journald
+retention, network wait-online, guest/host reboot and private ingress. See the
+[dated verification scope](standby-recovery.md#verified-status-18-november-2026)
+for results and remaining gates. These checks span releases and do not establish
+Linux production support. Repeat the relevant lifecycle and ingress checks on
+the intended production host before it serves staff. Physical-host disk unlock
+and VM startup are separate from the guest's system-unit boot behavior.
 
 ## Provision and install
 
