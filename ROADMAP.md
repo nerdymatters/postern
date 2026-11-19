@@ -452,12 +452,22 @@ with chosen audiences.
 - [ ] **M2-03** Adapt existing documents, videos and training to the resource
   catalog. Preserve existing links and historical attribution; handle legacy
   identity conflicts explicitly during migration.
+  The [native content rehearsal](docs/runbooks/native-content.md) now connects
+  real converted documents/video to the restricted catalog API and explicitly
+  bound training resources to existing lesson, quiz and certificate rules.
+  Controlled fixtures preserve resource IDs and history; production identity
+  reconciliation and migration remain open.
 - [ ] **M2-04** Enforce space/resource permissions across discovery, content,
   media tickets, caches, search, exports, background jobs and restores. Define
   scoped activity records and measurable revocation behavior.
+  The same rehearsal checks admission/disclosure races, protected thumbnails,
+  short media tickets, actual socket deadlines and quarantined object/training
+  recovery. Hosted storage, exports and background-job isolation remain open.
 - [ ] **M2-05** Verify two independent spaces cannot discover, read or manage one
   another's private resources, including through direct requests and restored
   data. Pilot a second audience with a real owner.
+  Synthetic two-space content and training checks include direct requests and
+  restored copies. The real second-owner pilot remains open.
 - [ ] **M2-06** Choose storage for more users and spaces, including
   permission-checked search, retrieval and analytics, before M2-03 moves
   existing resources into the catalog and before M2-04 and M3-02. Migrate from

@@ -100,7 +100,8 @@ class SpaceService:
                    'resource_detail', 'resource_revoke', 'end_resource_session',
                    'create_invitation', 'list_invitations', 'revoke_invitation',
                    'resource_members', 'resource_membership_change',
-                   'resource_sharing', 'resource_sharing_change', 'resource_access'}
+                   'resource_sharing', 'resource_sharing_change', 'resource_access',
+                   'resource_content_manifest', 'resource_content_admit', 'resource_content_disclose'}
         if function not in allowed:
             raise ValueError('unknown operation')
         try:

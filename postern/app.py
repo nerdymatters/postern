@@ -141,7 +141,11 @@ class CertificateName(BaseModel):
     name: str = Field(max_length=200)
 
 
-def create_app(config, store=None, service=None, *, spaces=None):
+def create_app(config, store=None, service=None, *, spaces=None, content=None, training=None):
+    if any(adapter is not None and (spaces is None or adapter.spaces is not spaces)
+           for adapter in (content, training)):
+        raise ValueError('content adapters must share the configured space authority')
+
     @asynccontextmanager
     async def lifespan(app):
         app.state.service = service if service is not None else Service(config, store=store)
@@ -149,21 +153,34 @@ def create_app(config, store=None, service=None, *, spaces=None):
             await app.state.service.start()
             if spaces is not None:
                 await spaces.start()
+            if training is not None:
+                await training.start()
             yield
         finally:
             try:
-                if spaces is not None:
-                    await spaces.close()
+                try:
+                    if content is not None:
+                        await content.close()
+                finally:
+                    if spaces is not None:
+                        await spaces.close()
             finally:
                 await app.state.service.close()
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    # Install narrow adapters before the metadata router's fail-closed catchall.
+    if content is not None:
+        from postern.content_delivery import install as install_content
+        install_content(app, content)
+    if training is not None:
+        from postern.space_training import install as install_training
+        install_training(app, training)
     if spaces is not None:
         from postern.spaces import install
         install(app, spaces)
     app.add_middleware(UploadBoundary)
     app.add_middleware(CORSMiddleware, allow_origins=config.origins, allow_credentials=False,
-                       allow_methods=['GET', 'POST'], allow_headers=['authorization', 'content-type', 'x-postern-client', 'x-postern-device'],
+                       allow_methods=['GET', 'POST'], allow_headers=['authorization', 'content-type', 'x-postern-client', 'x-postern-device'] + (['x-postern-legacy-authorization'] if training is not None else []),
                        max_age=600)
 
     def current(request) -> Service:
@@ -397,4 +414,8 @@ def create_app(config, store=None, service=None, *, spaces=None):
             return FileResponse(root / 'index.html', headers=PRIVATE)
 
     app.add_middleware(HealthTiming)
+    if content is not None or training is not None:
+        from postern.content_delivery import ContentDeliveryDeadline, ContentRequestBoundary
+        app.add_middleware(ContentRequestBoundary)
+        app.add_middleware(ContentDeliveryDeadline)
     return app

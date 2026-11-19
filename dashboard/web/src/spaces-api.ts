@@ -15,9 +15,19 @@ export interface OwnershipStatus { title: string; role: SpaceRole; membership_id
 export interface TransferResult { transfer_id: string; state: 'pending' | 'accepted' | 'cancelled' | 'declined' | 'invalidated' | 'expired' }
 export interface OwnershipProposal { operation_id: string; recipient_membership_id: string; former_role: 'admin' | 'member'; expires_in_seconds: number; expected_revision: number }
 export interface Catalog { resources: ResourceMetadata[]; next_cursor: string | null }
+export interface ContentRoute { space: string; resource: string; kind: 'document' | 'video'; revision: number }
+export interface DocumentPresentation { resource_id: string; revision: number; page_count: number }
+export interface VideoPresentation { resource_id: string; revision: number; duration_ms: number; viewer_label: string }
+export interface VideoTicket { ticket: string; expires_in_seconds: number }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export const nativeSpacesEnabled = () => Boolean(import.meta.env.VITE_POSTERN_SPACES_API)
-export const nativeSpaceId = (path: string) => { const id = /^\/s\/([^/]+)(?:\/(?:members|leave|ownership|sharing))?\/?$/.exec(path)?.[1]; return id && UUID.test(id) ? id : null }
+export const nativeContentEnabled = () => nativeSpacesEnabled() && ['1', 'true'].includes(import.meta.env.VITE_POSTERN_NATIVE_CONTENT ?? '')
+export function nativeContentRoute(path: string): ContentRoute | null {
+  const match = /^\/s\/([^/]+)\/resources\/([^/]+)\/(document|video)\/([1-9][0-9]*)\/?$/.exec(path)
+  if (!match || !UUID.test(match[1]) || !UUID.test(match[2]) || !Number.isSafeInteger(Number(match[4]))) return null
+  return { space: match[1], resource: match[2], kind: match[3] as ContentRoute['kind'], revision: Number(match[4]) }
+}
+export const nativeSpaceId = (path: string) => { const id = /^\/s\/([^/]+)(?:\/(?:members|leave|ownership|sharing))?\/?$/.exec(path)?.[1]; return id && UUID.test(id) ? id : nativeContentEnabled() ? nativeContentRoute(path)?.space ?? null : null }
 export const onboardingDestination = (path: string) => path === '/spaces/new' || path === '/invitations/join' || Boolean(nativeSpaceId(path))
 
 function encode(prefix: string, value: unknown) {
@@ -94,7 +104,7 @@ export class SpacesClient {
       throw error
     }
   }
-  private async transport<T>(space: string, path: string, token: string, method = 'GET', body?: unknown): Promise<T> {
+  private async transport<T>(space: string, path: string, token: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
     if (!UUID.test(space)) throw new SpaceError(422, 'invalid_space', 'Choose a valid Postern.')
     const base = (import.meta.env.VITE_POSTERN_SPACES_API ?? '').replace(/\/+$/, '')
     if (!base) throw new SpaceError(503, 'unconfigured', 'Private Posterns are not configured.')
@@ -102,7 +112,7 @@ export class SpacesClient {
     if (token) headers.set('Authorization', `Bearer ${token}`)
     if (body !== undefined) headers.set('Content-Type', 'application/json')
     let response: Response
-    try { response = await fetch(`${base}/v1/spaces/${space}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), credentials: 'omit', cache: 'no-store', signal: AbortSignal.timeout(15000) }) }
+    try { response = await fetch(`${base}/v1/spaces/${space}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), credentials: 'omit', cache: 'no-store', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) }) }
     catch { throw new SpaceError(0, 'unreachable', 'This Postern could not be reached. Check your connection and try again.') }
     const value = await response.json().catch(() => null)
     if (!response.ok) throw new SpaceError(response.status, value?.error ?? '', value?.message ?? 'This Postern could not complete the request.')
@@ -129,14 +139,84 @@ export class SpacesClient {
     void operation.finally(() => { if (this.pending.get(space) === operation) this.pending.delete(space) }).catch(() => {})
     return operation
   }
-  async resource<T>(space: string, path: string, method = 'GET', body?: unknown): Promise<T> {
+  async resource<T>(space: string, path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
     const check = this.guard(); const token = await this.session(space); this.requireCurrent(check)
-    try { const value = await this.transport<T>(space, path, token, method, body); this.requireCurrent(check); return value }
+    try { signal?.throwIfAborted(); const value = await this.transport<T>(space, path, token, method, body, signal); this.requireCurrent(check); signal?.throwIfAborted(); return value }
     catch (error) {
       if (check() && error instanceof SpaceError && [401, 403, 404].includes(error.status)) {
         this.sessions.delete(space)
         void this.transport(space, '/session/signout', token, 'POST').catch(() => {})
       }
+      throw error
+    }
+  }
+  private contentPath(space: string, resource: string, revision: number) {
+    if (!nativeContentEnabled()) throw new SpaceError(404, 'content_disabled', 'Protected content is not enabled.')
+    if (!UUID.test(space) || !UUID.test(resource) || !Number.isSafeInteger(revision) || revision < 1) throw new SpaceError(422, 'invalid_content', 'Choose a valid resource revision.')
+    return `/resources/${resource}`
+  }
+  async document(space: string, resource: string, revision: number, signal?: AbortSignal) {
+    const path = this.contentPath(space, resource, revision)
+    const value = await this.resource<DocumentPresentation>(space, `${path}/document?revision=${revision}`, 'GET', undefined, signal)
+    if (value.resource_id !== resource || value.revision !== revision || !Number.isInteger(value.page_count) || value.page_count < 1 || value.page_count > 10000) throw new SpaceError(502, 'invalid_response', 'This document returned an incomplete response.')
+    return value
+  }
+  async video(space: string, resource: string, revision: number, signal?: AbortSignal) {
+    const path = this.contentPath(space, resource, revision)
+    const value = await this.resource<VideoPresentation>(space, `${path}/video?revision=${revision}`, 'GET', undefined, signal)
+    if (value.resource_id !== resource || value.revision !== revision || !Number.isInteger(value.duration_ms) || value.duration_ms < 1 || value.duration_ms > 86400000 || typeof value.viewer_label !== 'string' || !UUID.test(value.viewer_label)) throw new SpaceError(502, 'invalid_response', 'This video returned an incomplete response.')
+    return value
+  }
+  async videoTicket(space: string, resource: string, revision: number, signal?: AbortSignal) {
+    const path = this.contentPath(space, resource, revision)
+    const value = await this.resource<VideoTicket>(space, `${path}/video/ticket?revision=${revision}`, 'POST', undefined, signal)
+    if (typeof value.ticket !== 'string' || !/^pc_[A-Za-z0-9_-]{43}$/.test(value.ticket) || !Number.isInteger(value.expires_in_seconds) || value.expires_in_seconds < 1 || value.expires_in_seconds > 30) throw new SpaceError(502, 'invalid_response', 'This video returned an incomplete response.')
+    return value
+  }
+  videoSource(space: string, resource: string, revision: number, ticket: string) {
+    this.requireCurrent()
+    const path = this.contentPath(space, resource, revision)
+    if (!/^pc_[A-Za-z0-9_-]{43}$/.test(ticket)) throw new SpaceError(502, 'invalid_response', 'This video returned an incomplete response.')
+    const base = (import.meta.env.VITE_POSTERN_SPACES_API ?? '').replace(/\/+$/, '')
+    return `${base}/v1/spaces/${space}${path}/video/content.mp4?revision=${revision}&ticket=${encodeURIComponent(ticket)}`
+  }
+  async documentPage(space: string, resource: string, revision: number, page: number, signal: AbortSignal): Promise<Blob> {
+    const path = this.contentPath(space, resource, revision)
+    if (!Number.isInteger(page) || page < 0 || page >= 10000) throw new SpaceError(422, 'invalid_page', 'Choose a valid document page.')
+    const check = this.guard(), token = await this.session(space)
+    this.requireCurrent(check); signal.throwIfAborted()
+    const base = (import.meta.env.VITE_POSTERN_SPACES_API ?? '').replace(/\/+$/, '')
+    try {
+      const response = await fetch(`${base}/v1/spaces/${space}${path}/document/pages/${page}.jpg?revision=${revision}`, {
+        headers: { Authorization: `Bearer ${token}`, Accept: 'image/jpeg' }, cache: 'no-store', credentials: 'omit',
+        signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]),
+      })
+      this.requireCurrent(check); signal.throwIfAborted()
+      if (!response.ok) {
+        const value = await response.json().catch(() => null)
+        throw new SpaceError(response.status, value?.error ?? '', 'This document is unavailable. Check access again.')
+      }
+      if (response.headers.get('content-type')?.split(';')[0] !== 'image/jpeg' || !response.body) {
+        await response.body?.cancel().catch(() => {})
+        throw new SpaceError(502, 'invalid_response', 'This document returned an incomplete response.')
+      }
+      const reader = response.body.getReader(), chunks: ArrayBuffer[] = []
+      let size = 0, complete = false
+      try {
+        while (true) {
+          const result = await reader.read()
+          this.requireCurrent(check); signal.throwIfAborted()
+          if (result.done) { complete = true; break }
+          size += result.value.byteLength
+          if (size > 4 * 1024 * 1024) throw new SpaceError(502, 'invalid_response', 'This document exceeded its page limit.')
+          chunks.push(new Uint8Array(result.value).buffer)
+        }
+      } finally { if (!complete) await reader.cancel().catch(() => {}); reader.releaseLock() }
+      if (!size) throw new SpaceError(502, 'invalid_response', 'This document returned an incomplete response.')
+      return new Blob(chunks, { type: 'image/jpeg' })
+    } catch (error) {
+      if (check() && error instanceof SpaceError && [401, 403, 404].includes(error.status)) this.forgetResourceSession(space)
+      if (!(error instanceof SpaceError) && !signal.aborted) throw new SpaceError(0, 'unreachable', 'This document could not be reached. Check your connection and try again.')
       throw error
     }
   }
