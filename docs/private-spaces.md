@@ -1,6 +1,6 @@
 # Private Posterns: ownership and permission contract
 
-**M2-01 contract, October 29, 2026. Isolated metadata/onboarding APIs implemented; full content integration pending.** This defines the
+**M2-01 contract, October 29, 2026. Isolated metadata/onboarding and opt-in content APIs implemented; full legacy migration and hosting pending.** This defines the
 model that M2 will build and verify. The current resource host still serves one
 private space; its restaurant/location tabs only filter reports. This document
 does not enable multi-space hosting or expand anyone's existing access.
@@ -9,6 +9,7 @@ A **Postern** is a private space with its own membership, resources and policies
 An account may belong to several Posterns with different roles in each. An
 account with no memberships has a usable profile and an empty **My Posterns**.
 See [audience and grant management](runbooks/resource-sharing.md),
+the [opt-in native content rehearsal](runbooks/native-content.md),
 the [design rationale and implementation order](designs/private-spaces.md),
 [current architecture](architecture.md) and [roadmap](../ROADMAP.md#m2-private-spaces-and-resource-catalog).
 

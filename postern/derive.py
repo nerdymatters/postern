@@ -242,8 +242,12 @@ class Deriver:
                 env=job_env(output),start_new_session=True)
             try:
                 _, stderr = self.wait(process)
-            except DeriveError:
-                os.killpg(process.pid,signal.SIGKILL)
+            except BaseException:
+                # Interruptions and accounting failures must not release the
+                # caller's slot or clean staging while a converter is still alive.
+                # Its group may already have exited between wait and this kill.
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(process.pid,signal.SIGKILL)
                 process.communicate()
                 raise
             returncode = outcome(process.returncode, stderr or b'')

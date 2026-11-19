@@ -12,9 +12,10 @@ listing/search, resource metadata and membership revocation to the core schema.
 account-bound invitations, verified in isolation.
 [Groups and sharing](resource-sharing.md) adds audience management, explicit
 resource grants, effective-access inspection and audited stale-grant cleanup.
-It does **not** expose document/video bytes, imported legacy content, object keys,
-training, exports or background processing through the new API. Those require the
-legacy agreement/enrollment/training gates and private object adapter first.
+The separate opt-in [native content rehearsal](native-content.md) adds protected
+document/video delivery and an explicitly bound legacy training adapter. Default
+entrypoints remain unchanged. Original downloads, exports, broad legacy migration
+and production hosted rollout remain outside that adapter.
 
 ## Reproduce
 
@@ -77,7 +78,7 @@ Terms validation and public profile disclosure reuse the existing account helper
 The production Worker still constructs its D1 store. The synthetic verifier is
 injected only by a separate rehearsal entrypoint.
 
-Apply core migrations in order (currently `001`–`008`), then private account
+Apply core migrations in order (currently `001`–`010`), then private account
 migrations in order (currently `001`–`006`), using the migration
 operator. Core `apply_schema` verifies each applied version's SHA-256, holds one
 installer lock/transaction and rejects unknown versions. Version 1 is unchanged.

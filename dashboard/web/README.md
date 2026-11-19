@@ -43,8 +43,10 @@ privacy page explains publication, deletion and separately retained space data.
 ## Native private Posterns (isolated)
 
 Also set `VITE_POSTERN_SPACES_API` to the native resource API to enable the
-multi-space home. Both services must use the PostgreSQL adapters and migrations
-through `008`; the default D1 Worker does not expose these onboarding routes.
+multi-space home. Both services must use the PostgreSQL adapters. Apply core
+migrations through `010` and the private account migrations described in the
+[service integration guide](../../docs/runbooks/service-integration.md); the default
+D1 Worker does not expose these onboarding routes.
 This path is verified locally with synthetic identities, not deployed.
 
 **Groups and sharing** opens `/s/{uuid}/sharing` for owners and administrators.
@@ -66,9 +68,32 @@ Resource sessions are held only in memory, bound to the current account and spac
 and revoked on SPA route/account changes when reachable. Reloading discards the
 local session; remaining server sessions expire. Account switches discard late results;
 resource denials preserve the Postern account. Creation and invitation retries keep
-the original operation ID. Metadata listing/search is available; content previews,
-playback and legacy training migration are still pending. See the
+the original operation ID. Metadata listing/search is available. See the
 [onboarding runbook](../../docs/runbooks/space-onboarding.md) for limits and recovery.
+
+The separate `VITE_POSTERN_NATIVE_CONTENT=true` build flag enables **Read document**
+and **Watch video** for published native resources. It requires the explicitly
+configured [native content backend](../../docs/runbooks/native-content.md); leaving
+the flag absent or false retains the metadata-only catalog. Reader paths preserve
+the catalog identity and revision:
+`/s/{space}/resources/{resource}/{document|video}/{revision}`.
+
+Document pages are authenticated, bounded JPEG fetches with `no-store`, shown
+through memory-only object URLs. Page navigation, account/space changes, refusal
+and unmount abort pending requests and release those URLs. Hiding the tab removes
+the current content; returning or focusing checks authority before redisplay.
+While visible, the reader checks authority every five seconds and clears media
+after ten seconds without a successful check. It never falls back to originals.
+
+Video uses a resource-scoped media ticket with at most thirty seconds of lifetime,
+renewed through the authenticated API while the reader remains authorized. A
+renewal preserves the playback position; refusal removes the source and clears
+buffered playback. Account and space bearer credentials stay out of media URLs.
+The player overlays the server-resolved principal label and current UTC minute;
+this overlay is not embedded into MP4 bytes. Native download, picture-in-picture,
+fullscreen and remote-playback controls are disabled. These browser controls do
+not prevent a recipient from retaining already delivered content. This reader
+does not report watched progress or expose native training/quiz controls.
 
 Owners and administrators can open **Manage members** from a native Postern.
 The directory uses immutable invitation addresses and pages through active
@@ -127,6 +152,7 @@ then shows an email box instead of the Google button, which is what the Playwrig
 | `src/accounts.tsx` | My Posterns, profile editing/publication, public profiles, account privacy/deletion, and the account-to-space entry gate |
 | `src/spaces-api.ts`, `src/spaces-ui.tsx` | opt-in native account/resource requests, invitation codes and shared space controls |
 | `src/spaces.tsx` | native My Posterns, creation, invitation review/acceptance and metadata catalog |
+| `src/space-content.tsx` | separately enabled native document/video reader; scoped media, current-authority checks, short-ticket renewal and media cleanup |
 | `src/memberships.tsx`, `src/ownership.tsx` | membership directory, role/removal/departure controls and recipient-accepted ownership transfer |
 | `src/sharing.tsx` | owner/admin audience groups, resource grants, effective-access inspection and stale-grant cleanup, each reviewed before sending; loaded on demand from `/s/{uuid}/sharing` |
 | `src/app.tsx` | config/session gate, the refusal states, the shell and the routes |

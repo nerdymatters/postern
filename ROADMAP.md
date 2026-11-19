@@ -53,7 +53,7 @@ described in [Architecture](docs/architecture.md).
 | Rust server migration | P1; RS-06 passed; the RS-07 live pilot has served production from Rust since Nov 9 with the watchdog guarding, and a staff document check passed; Python remains the code default, and v0.30.0 selects Rust at a fresh macOS install with the verified wheel | The Nov 16 read-only pilot check, then the v0.30.0 release; RS-08–RS-09 after Linux support and M2 content |
 | Linux support | In progress alongside RS-07 observation (owner, Nov 11): LX-01 done, so conversions run under bubblewrap and CI runs the full suite on Ubuntu; LX-02's host layer shipped in v0.27.0 and was rehearsed in a Debian 13 systemd container | A real-host rehearsal before a Linux host serves production |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
-| M2 Private spaces and resource catalog | Isolated metadata/onboarding implemented; content integration and hosting pending | M1 identity and access boundaries |
+| M2 Private spaces and resource catalog | Isolated metadata/onboarding and opt-in content implemented; migration and hosting pending | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
 | M4 Rust folder client | Later | M2 resource API and permissions |
 | M5 Screen sharing | Research, then implementation | M2 permissions and a validated integration |
@@ -452,12 +452,22 @@ with chosen audiences.
 - [ ] **M2-03** Adapt existing documents, videos and training to the resource
   catalog. Preserve existing links and historical attribution; handle legacy
   identity conflicts explicitly during migration.
+  The [native content rehearsal](docs/runbooks/native-content.md) now connects
+  real converted documents/video to the restricted catalog API and explicitly
+  bound training resources to existing lesson, quiz and certificate rules.
+  Controlled fixtures preserve resource IDs and history; production identity
+  reconciliation and migration remain open.
 - [ ] **M2-04** Enforce space/resource permissions across discovery, content,
   media tickets, caches, search, exports, background jobs and restores. Define
   scoped activity records and measurable revocation behavior.
+  The same rehearsal checks admission/disclosure races, protected thumbnails,
+  short media tickets, actual socket deadlines and quarantined object/training
+  recovery. Hosted storage, exports and background-job isolation remain open.
 - [ ] **M2-05** Verify two independent spaces cannot discover, read or manage one
   another's private resources, including through direct requests and restored
   data. Pilot a second audience with a real owner.
+  Synthetic two-space content and training checks include direct requests and
+  restored copies. The real second-owner pilot remains open.
 - [ ] **M2-06** Choose storage for more users and spaces, including
   permission-checked search, retrieval and analytics, before M2-03 moves
   existing resources into the catalog and before M2-04 and M3-02. Migrate from

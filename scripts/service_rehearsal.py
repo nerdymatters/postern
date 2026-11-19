@@ -20,8 +20,13 @@ def run(output, accounts=None):
     root=Path(__file__).resolve().parents[1]
     output=output.resolve();output.mkdir(parents=True,exist_ok=False,mode=0o700)
     inputs=[root/p for p in ('postern/app.py','postern/spaces.py','postern/pg.py','postern/migration_bundle.py',
+        'postern/content_delivery.py','postern/content_objects.py','postern/content_render.py',
+        'postern/content_prepare.py','postern/space_training.py','postern/derive.py','postern/stamp.py',
         'pyproject.toml','scripts/local_postgres.py','scripts/service_rehearsal.py')]
     inputs+=sorted((root/'postern/sql').glob('*.sql'))+sorted((root/'tests/storage').glob('*.py'))
+    inputs+=sorted((root/'postern').rglob('*.py'))
+    inputs+=[p for p in (root/'postern/sample_training').rglob('*') if p.is_file()]
+    inputs+=sorted((root/'config/sandbox').glob('*'))
     stages=[('resource', [sys.executable,'-m','pytest','tests/storage','-q','--basetemp',str(output/'resource-fixtures'),
                          '--junitxml',str(output/'resource.xml')],root)]
     if accounts is not None:
@@ -39,7 +44,7 @@ def run(output, accounts=None):
     def hashes():
         return {('private-accounts/'+str(p.relative_to(accounts)) if accounts and p.is_relative_to(accounts) else str(p.relative_to(root))):
                 hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs}
-    report={'scope':'isolated native adapters; synthetic accounts and metadata only; no hosted cutover',
+    report={'scope':'isolated native adapters; synthetic accounts, metadata, content and bound training; no hosted cutover',
             'private_account_contract':accounts is not None,'inputs':hashes(),'stages':[],
             'toolchain':{name:version(name) for name in ('psycopg','psycopg-pool','PyJWT','fastapi','pytest')}}
     report['toolchain']['python']=sys.version.split()[0]
