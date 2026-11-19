@@ -22,8 +22,13 @@ sockets, private object directories, synthetic signing keys and two separate
 legacy training services. One transport test listens on an ephemeral loopback
 port. Keep the output private: it contains synthetic credentials and fixtures.
 
-The report records source hashes, versions and JUnit results. A changed source,
-skipped test, timeout or failure prevents a passing report. The checks include
+The report records source hashes, versions, JUnit results and the complete
+collected/executed test inventory. It clears ambient pytest selection/plugin
+options and disables plugin autoloading. Every declared module must contribute
+tests, with no deselection and exactly one successful setup, call and teardown
+per collected case. Changed source, missing evidence, skipped tests, timeout or
+failure prevents a passing report. Interrupting or terminating the command stops
+its owned process group and reaps its child before returning. The checks include
 real PDF/video conversion, stamped HTTP delivery, permission races, actual TCP
 backpressure, two-space isolation and fresh quarantined restores. Platform
 sandbox results apply only to the platform on which the command ran.
