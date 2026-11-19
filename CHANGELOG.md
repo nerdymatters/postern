@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.31.0 — Read protected content in private Posterns (2026-11-19)
+
+### Added
+
+- Open protected document pages and videos from the native resource catalog when an operator explicitly enables the content service and browser reader. Document pages are stamped for the current reader; video displays a viewer label and uses short-lived media tickets. Requests recheck current access, record required audits and refuse missing or changed content. Originals are not exposed.
+- Connect explicitly bound native training resources to existing progress, quizzes and certificates. Both the native and legacy sessions must authorize the same bound person. Retrying a quiz submission or certificate-name change with its original operation ID does not repeat a committed effect. Native document and video reading does not grant legacy learning credit.
+- Run the isolated native-content acceptance command with owned synthetic databases and real sandboxed conversion. It verifies the complete test inventory and unchanged source, rejects incomplete results, and stops its child processes when interrupted. See the [native content runbook](docs/runbooks/native-content.md) for setup, contracts and recovery limits.
+
+### Upgrade
+
+- Existing installations keep their current entrypoint and behavior. Native content requires explicit capability wiring, a restricted PostgreSQL runtime role, core migrations through `010`, private object storage and an appropriate content policy. The browser feature is off by default. This release does not enable hosted accounts, migrate production data or provide the native training interface.
+- Preserve PostgreSQL, object inventories and bound training databases together before enabling the adapter. Restore into quarantine and reconcile later revocations before reopening a space. Per-Postern encryption, a persistent pilot and real-owner acceptance remain separate rollout work. The existing Python dependencies and optional Rust wheel version are unchanged.
+
 ## 0.30.2 — Honor the configured client-address trust policy (2026-11-17)
 
 ### Fixed
