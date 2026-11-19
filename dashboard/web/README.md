@@ -43,8 +43,10 @@ privacy page explains publication, deletion and separately retained space data.
 ## Native private Posterns (isolated)
 
 Also set `VITE_POSTERN_SPACES_API` to the native resource API to enable the
-multi-space home. Both services must use the PostgreSQL adapters and migrations
-through `008`; the default D1 Worker does not expose these onboarding routes.
+multi-space home. Both services must use the PostgreSQL adapters. Apply core
+migrations through `010` and the private account migrations described in the
+[service integration guide](../../docs/runbooks/service-integration.md); the default
+D1 Worker does not expose these onboarding routes.
 This path is verified locally with synthetic identities, not deployed.
 
 **Groups and sharing** opens `/s/{uuid}/sharing` for owners and administrators.

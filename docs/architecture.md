@@ -47,7 +47,9 @@ The [M2 design contract](private-spaces.md) defines responsible owners,
 space-scoped roles, memberships, audience groups and resource grants. Native
 metadata/session, onboarding, membership, ownership and sharing APIs are implemented and
 verified in isolation; see the [service integration guide](runbooks/service-integration.md).
-They are not enabled in production, and full content integration remains pending.
+The separate [native content adapter](runbooks/native-content.md) now provides
+opt-in document/video delivery and explicitly bound legacy training APIs in isolation.
+Production activation, full legacy migration and hosted content integration remain pending.
 Restaurant/location groups remain reporting metadata. The
 [implementation plan](designs/private-spaces.md) preserves the account/resource
 boundary and legacy attribution, selects storage before catalog migration, and

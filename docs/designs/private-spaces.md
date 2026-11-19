@@ -8,8 +8,9 @@ how it fits the existing application and what must be verified before rollout.
 This dated plan records the design round. Current implementation status and the
 selected creation policy are in the [onboarding](../runbooks/space-onboarding.md),
 [membership](../runbooks/membership-management.md),
-[ownership](../runbooks/ownership-transfer.md) and
-[sharing](../runbooks/resource-sharing.md) runbooks; hosted rollout remains pending.
+[ownership](../runbooks/ownership-transfer.md),
+[sharing](../runbooks/resource-sharing.md) and
+[native content](../runbooks/native-content.md) runbooks; hosted rollout remains pending.
 
 ## The problem in the current system
 

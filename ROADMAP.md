@@ -53,7 +53,7 @@ described in [Architecture](docs/architecture.md).
 | Rust server migration | P1; RS-06 passed; the RS-07 live pilot has served production from Rust since Nov 9 with the watchdog guarding, and a staff document check passed; Python remains the code default, and v0.30.0 selects Rust at a fresh macOS install with the verified wheel | The Nov 16 read-only pilot check, then the v0.30.0 release; RS-08–RS-09 after Linux support and M2 content |
 | Linux support | In progress alongside RS-07 observation (owner, Nov 11): LX-01 done, so conversions run under bubblewrap and CI runs the full suite on Ubuntu; LX-02's host layer shipped in v0.27.0 and was rehearsed in a Debian 13 systemd container | A real-host rehearsal before a Linux host serves production |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
-| M2 Private spaces and resource catalog | Isolated metadata/onboarding implemented; content integration and hosting pending | M1 identity and access boundaries |
+| M2 Private spaces and resource catalog | Isolated metadata/onboarding and opt-in content implemented; migration and hosting pending | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
 | M4 Rust folder client | Later | M2 resource API and permissions |
 | M5 Screen sharing | Research, then implementation | M2 permissions and a validated integration |
