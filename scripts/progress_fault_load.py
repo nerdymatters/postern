@@ -140,6 +140,8 @@ def run(output, representative=False):
     load = None
     client = None
     lock = threading.Lock()
+    settled = threading.Condition(lock)
+    pages_in_flight = set()
     health_lock = threading.Lock()
     serving = threading.Event()
     expected_backup_delay = threading.Event()
@@ -262,9 +264,17 @@ def run(output, representative=False):
         assert dict(before_standing['locks'])[capacity.VIDEO] is None
 
         def page(i, workload=False):
-            began = time.monotonic()
-            response = client.get(f'/api/views/{views[i-1]}/page/0.jpg', headers=headers[i])
-            ended = time.monotonic()
+            request = object()
+            with lock:
+                pages_in_flight.add(request)
+            try:
+                began = time.monotonic()
+                response = client.get(f'/api/views/{views[i-1]}/page/0.jpg', headers=headers[i])
+                ended = time.monotonic()
+            finally:
+                with lock:
+                    pages_in_flight.discard(request)
+                    settled.notify_all()
             with lock:
                 counts['page_attempts'] += 1
                 if workload:
@@ -277,7 +287,8 @@ def run(output, representative=False):
                         load_pages[i] += 1
                 else:
                     allowed = any(start <= ended and (end is None or began <= end) for start, end in windows)
-                    assert allowed and response.status_code == 409 and response.json()['error'] == 'preparing'
+                    assert allowed and response.status_code == 409 and response.json()['error'] == 'preparing', (
+                        'page refusal', record.get('phase'), allowed, response.status_code, response.text[:200])
                     counts['expected_media_refusals'] += 1
 
         started = time.monotonic()
@@ -302,6 +313,9 @@ def run(output, representative=False):
             except Exception as error:
                 with lock:
                     record['failures'].append('reader '+type(error).__name__)
+                    # Name the request that failed so a hosted-runner failure can be diagnosed from report.json.
+                    record.setdefault('reader_errors', []).append(
+                        {'reader': i, 'phase': record.get('phase'), 'error': repr(error)[:400]})
                 stop.set()
                 raise
         load = ThreadPoolExecutor(max_workers=users, thread_name_prefix='fault-reader')
@@ -429,7 +443,13 @@ def run(output, representative=False):
         try:
             page(1)
         finally:
-            service.composite, service.schedule_derive = composite, derive
+            service.composite = composite
+            # A reader page that met the missing derivative may still be re-queuing the item. Let every page
+            # in flight now finish inside the window before the item is marked ready and the window closes.
+            with lock:
+                crossing = set(pages_in_flight)
+                settled.wait_for(lambda: not crossing & pages_in_flight, timeout=15)
+            service.schedule_derive = derive
             service.db.submit(lambda db: db.execute("UPDATE items SET derive_status='ready' WHERE id=?", (capacity.PDF,))).result(5)
             with lock:
                 windows[-1][1] = time.monotonic()
