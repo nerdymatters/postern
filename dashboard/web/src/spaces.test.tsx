@@ -173,6 +173,9 @@ test('manual copy fallback is usable and invitation issuing retries preserve the
   expect(issued).toHaveLength(2); expect(issued[0].body).toEqual(issued[1].body)
 })
 
+// Value: protects=the manual copy field appears when Copy is clicked right after the button is drawn;
+//   fails_when=a mount-time reset wipes the copy result, or a result shows for a newer code;
+//   why_new=the fallback was only tested with a click after mount effects had run; seam=none; no_claim=that CI hit exactly this interleaving
 test('copy fallback survives a click that lands before mount effects run, and never shows for a newer code', async () => {
   vi.stubGlobal('navigator', Object.create(navigator, { clipboard: { value: { writeText: vi.fn(async () => { throw new Error('blocked') }) } } }))
   let change!: (code: string) => void
@@ -184,6 +187,38 @@ test('copy fallback survives a click that lands before mount effects run, and ne
   expect(await screen.findByLabelText('Invitation code — select and copy')).toHaveProperty('value', 'pi1.first')
   act(() => change('pi1.second'))
   expect(screen.queryByLabelText('Invitation code — select and copy')).toBeNull()
+})
+
+// Value: protects=a successful copy says who to share with, per kind, and the note belongs to the copied code only;
+//   fails_when=the secret and address notes are swapped, or a note stays up after the code changes;
+//   why_new=no test reached the success branch of CopyCode; seam=none; no_claim=real clipboard access (navigator stubbed)
+test('copy success names who to share with, and the note goes away for a newer code', async () => {
+  const write = vi.fn(async () => {})
+  vi.stubGlobal('navigator', Object.create(navigator, { clipboard: { value: { writeText: write } } }))
+  let change!: (code: string) => void
+  function Parent() { const [code, setCode] = useState('pi1.first'); change = setCode; return <><CopyCode code={code} label="Copy invitation code" secret /><CopyCode code="pr1.address" label="Copy invitation address" /></> }
+  render(<StrictMode><Parent /></StrictMode>)
+  fireEvent.click(screen.getByRole('button', { name: 'Copy invitation code' }))
+  expect(await screen.findByText('Copied. Share it privately with the invited person.')).toBeTruthy()
+  expect(write).toHaveBeenCalledWith('pi1.first')
+  fireEvent.click(screen.getByRole('button', { name: 'Copy invitation address' }))
+  expect(await screen.findByText('Copied. Share this address with a Postern owner.')).toBeTruthy()
+  expect(write).toHaveBeenCalledWith('pr1.address')
+  act(() => change('pi1.second'))
+  expect(screen.queryByText('Copied. Share it privately with the invited person.')).toBeNull()
+  expect(screen.getByText('Copied. Share this address with a Postern owner.')).toBeTruthy()
+})
+
+// Value: protects=a blocked clipboard offers an invitation address for manual copy under its own label;
+//   fails_when=the address fallback is missing or carries the invitation-code label;
+//   why_new=the fallback was only tested for the secret invitation code; seam=none; no_claim=text selection on focus
+test('a blocked clipboard offers the invitation address for manual copy under its own label', async () => {
+  vi.stubGlobal('navigator', Object.create(navigator, { clipboard: { value: { writeText: vi.fn(async () => { throw new Error('blocked') }) } } }))
+  render(<StrictMode><CopyCode code="pr1.address" label="Copy invitation address" /></StrictMode>)
+  fireEvent.click(screen.getByRole('button', { name: 'Copy invitation address' }))
+  expect(await screen.findByLabelText('Invitation address — select and copy')).toHaveProperty('value', 'pr1.address')
+  expect(screen.queryByLabelText('Invitation code — select and copy')).toBeNull()
+  expect(screen.queryByText(/^Copied\./)).toBeNull()
 })
 
 test('account-bound invitation formats reject arbitrary URLs, extra fields and malformed secrets', () => {

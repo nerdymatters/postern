@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { copyText } from './clipboard'
 import { Button, Field, input } from './ui'
 import { SpacesClient, type SpaceRole } from './spaces-api'
@@ -24,11 +24,9 @@ export function CopyCode({ code, label, secret = false }: { code: string; label:
   // never shows. No reset effect: one that ran on mount after an early click
   // (before React flushed effects) would wipe the result for the same code.
   const [result, setResult] = useState<{ code: string; ok: boolean } | null>(null)
-  const live = useRef(true)
-  useEffect(() => { live.current = true; return () => { live.current = false } }, [])
   async function copy() {
     const ok = await copyText(code)
-    if (live.current) setResult({ code, ok })
+    setResult({ code, ok })
   }
   const copied = result?.code === code && result.ok
   const manual = result?.code === code && !result.ok
