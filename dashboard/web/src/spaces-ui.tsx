@@ -20,16 +20,18 @@ export function Heading({ title, description }: { title: string; description: st
 }
 
 export function CopyCode({ code, label, secret = false }: { code: string; label: string; secret?: boolean }) {
-  const [copied, setCopied] = useState(false)
-  const [manual, setManual] = useState(false)
-  const generation = useRef(0)
-  useEffect(() => { generation.current++; setCopied(false); setManual(false); return () => { generation.current++ } }, [code])
+  // The result remembers which code it belongs to, so a result for an older code
+  // never shows. No reset effect: one that ran on mount after an early click
+  // (before React flushed effects) would wipe the result for the same code.
+  const [result, setResult] = useState<{ code: string; ok: boolean } | null>(null)
+  const live = useRef(true)
+  useEffect(() => { live.current = true; return () => { live.current = false } }, [])
   async function copy() {
-    const current = generation.current
     const ok = await copyText(code)
-    if (current !== generation.current) return
-    setCopied(ok); setManual(!ok)
+    if (live.current) setResult({ code, ok })
   }
+  const copied = result?.code === code && result.ok
+  const manual = result?.code === code && !result.ok
   return <div className="space-y-2">
     <Button variant="secondary" onClick={() => void copy()}>{label}</Button>
     {copied ? <p role="status" className="text-sm">Copied. {secret ? 'Share it privately with the invited person.' : 'Share this address with a Postern owner.'}</p> : null}

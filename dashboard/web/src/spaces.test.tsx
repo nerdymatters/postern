@@ -1,9 +1,10 @@
-import { StrictMode } from 'react'
+import { StrictMode, useEffect, useState } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { AccountsApp } from './accounts'
 import { accountToken, setAccountToken, type Account } from './accounts-api'
 import { currentToken, setToken } from './api'
+import { CopyCode } from './spaces-ui'
 import { SpacesClient, invitationCode, readInvitation, readReference, referenceCode, type SpaceRole } from './spaces-api'
 
 vi.mock('./google', () => ({ loadIdentity: async () => ({ accounts: { id: { initialize() {}, renderButton() {} } } }) }))
@@ -170,6 +171,19 @@ test('manual copy fallback is usable and invitation issuing retries preserve the
   expect(field).toHaveProperty('value', invitationCode(inv))
   const issued = f.calls.filter(c => c.path.endsWith('/invitations') && c.method === 'POST')
   expect(issued).toHaveLength(2); expect(issued[0].body).toEqual(issued[1].body)
+})
+
+test('copy fallback survives a click that lands before mount effects run, and never shows for a newer code', async () => {
+  vi.stubGlobal('navigator', Object.create(navigator, { clipboard: { value: { writeText: vi.fn(async () => { throw new Error('blocked') }) } } }))
+  let change!: (code: string) => void
+  function Parent() { const [code, setCode] = useState<string | null>(null); change = setCode; useEffect(() => { void Promise.resolve().then(() => setCode('pi1.first')) }, []); return code ? <CopyCode code={code} label="Copy invitation code" secret /> : null }
+  // Click as soon as the button is in the DOM, as findByRole can on a slow runner: after commit, before React runs passive effects.
+  const observer = new MutationObserver(() => { const button = screen.queryByRole('button', { name: 'Copy invitation code' }); if (button) { observer.disconnect(); button.click() } })
+  observer.observe(document.body, { childList: true, subtree: true })
+  render(<StrictMode><Parent /></StrictMode>)
+  expect(await screen.findByLabelText('Invitation code — select and copy')).toHaveProperty('value', 'pi1.first')
+  act(() => change('pi1.second'))
+  expect(screen.queryByLabelText('Invitation code — select and copy')).toBeNull()
 })
 
 test('account-bound invitation formats reject arbitrary URLs, extra fields and malformed secrets', () => {
