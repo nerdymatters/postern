@@ -39,6 +39,10 @@ described in [Architecture](docs/architecture.md).
   dedicated deployment of the same software for a customer who needs their data
   kept apart. Reasons and references are in the
   [storage design](docs/designs/storage.md#tenancy-shared-by-default-a-dedicated-copy-on-request).
+- **Cloud provider choice:** the last step on this roadmap (owner, Nov 25,
+  2026). Until it is made, the resource server stays on the project's own
+  machines, and earlier work targets plain Linux so that it does not depend
+  on a provider. See [Cloud provider choice](#cloud-provider-choice).
 - **Later milestones:** ordered proposals, with implementation details to settle
   at each milestone. Their order is not a release-date commitment.
 - **Tracking:** task IDs remain stable. Check a task only after its outcome is
@@ -58,6 +62,7 @@ described in [Architecture](docs/architecture.md).
 | M4 Rust folder client | Later | M2 resource API and permissions |
 | M5 Screen sharing | Research, then implementation | M2 permissions and a validated integration |
 | M6 Bounded compute | Research, then implementation | M2 permissions and a selected workload |
+| Cloud provider choice | Last step; not started | The milestones above |
 
 M3 and M4 can proceed independently after M2. Screen-sharing research can run
 earlier; it does not require rewriting the upstream application in Rust.
@@ -431,7 +436,8 @@ with chosen audiences.
   [source-grounded implementation plan](docs/designs/private-spaces.md) on Oct 29,
   2026. This completes the design-definition task. An opt-in metadata/session
   runtime is now verified in isolation; complete content isolation is still pending.
-  M2-06's provider selection and migration remain open.
+  M2-06's migration remains open; the provider is chosen in the last step
+  ([CP-01](#cloud-provider-choice)).
 - [ ] **M2-02** Build invitations, acceptance, membership management and
   revocation. Decide who may create spaces and under what limits.
   The owner selected operator-approved creators with configurable per-account
@@ -485,8 +491,11 @@ with chosen audiences.
   On Oct 31, catalog pages for a member who sees little of a space holding 10,000
   or 100,000 resources took 3–17 ms locally instead of exceeding the five-second
   deadline ([catalog listing at scale](docs/runbooks/service-integration.md#catalog-listing-at-scale)).
-  Legacy content/object adapters, provider/region/budget, real account-store cutover
-  and complete hosted/object recovery verification remain; this task is not complete.
+  Legacy content/object adapters, real account-store cutover and complete
+  hosted/object recovery verification remain; this task is not complete. On Nov
+  25, 2026 the owner moved the provider, region and budget choice out of this
+  task to the last step ([CP-01](#cloud-provider-choice)); the hosted
+  verification that needs a provider follows that choice.
   On Nov 10 the owner settled tenancy: shared by default, a dedicated deployment
   on request, and a key per Postern kept outside the database
   ([reasons](docs/designs/storage.md#tenancy-shared-by-default-a-dedicated-copy-on-request)).
@@ -573,3 +582,16 @@ the integration, including after a participant has joined.
 **Done when:** the chosen job completes within its permissions and limits, and
 owners can observe and stop it. Arbitrary uploaded programs or remote shells
 require a separate design.
+
+## Cloud provider choice
+
+**Outcome:** a chosen cloud provider and region for the hosted Postern service.
+The owner placed this choice last on Nov 25, 2026, after the work above.
+
+- [ ] **CP-01** Choose the cloud provider and region for the hosted service,
+  using the traffic, storage and conversion needs measured by then and the
+  prices current at the time. The comparison and costs stay in the private
+  cloud plan; this roadmap records the decision's place in the order.
+
+**Done when:** the owner has chosen the provider and region, and the choice is
+recorded.
