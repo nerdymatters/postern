@@ -39,6 +39,11 @@ described in [Architecture](docs/architecture.md).
   dedicated deployment of the same software for a customer who needs their data
   kept apart. Reasons and references are in the
   [storage design](docs/designs/storage.md#tenancy-shared-by-default-a-dedicated-copy-on-request).
+- **Cloud provider choice:** the last step on this roadmap (owner, Nov 25,
+  2026). Earlier work stays provider-neutral: it targets plain Linux, and
+  development, pilots and the current deployment stay on the project's own
+  machines until the choice is made. See
+  [Cloud provider choice](#cloud-provider-choice).
 - **Later milestones:** ordered proposals, with implementation details to settle
   at each milestone. Their order is not a release-date commitment.
 - **Tracking:** task IDs remain stable. Check a task only after its outcome is
@@ -58,6 +63,7 @@ described in [Architecture](docs/architecture.md).
 | M4 Rust folder client | Later | M2 resource API and permissions |
 | M5 Screen sharing | Research, then implementation | M2 permissions and a validated integration |
 | M6 Bounded compute | Research, then implementation | M2 permissions and a selected workload |
+| Cloud provider choice | Last step; not started | The milestones above |
 
 M3 and M4 can proceed independently after M2. Screen-sharing research can run
 earlier; it does not require rewriting the upstream application in Rust.
@@ -573,3 +579,16 @@ the integration, including after a participant has joined.
 **Done when:** the chosen job completes within its permissions and limits, and
 owners can observe and stop it. Arbitrary uploaded programs or remote shells
 require a separate design.
+
+## Cloud provider choice
+
+**Outcome:** a chosen cloud provider and region for the hosted Postern service.
+The owner placed this choice last on Nov 25, 2026, after the work above.
+
+- [ ] **CP-01** Choose the cloud provider and region for the hosted service,
+  using the traffic, storage and conversion needs measured by then and the
+  prices current at the time. The comparison and costs stay in the private
+  cloud plan; this roadmap records the decision's place in the order.
+
+**Done when:** the owner has chosen the provider and region, and the choice is
+recorded.
