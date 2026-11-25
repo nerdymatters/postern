@@ -40,10 +40,9 @@ described in [Architecture](docs/architecture.md).
   kept apart. Reasons and references are in the
   [storage design](docs/designs/storage.md#tenancy-shared-by-default-a-dedicated-copy-on-request).
 - **Cloud provider choice:** the last step on this roadmap (owner, Nov 25,
-  2026). Earlier work stays provider-neutral: it targets plain Linux, and
-  development, pilots and the current deployment stay on the project's own
-  machines until the choice is made. See
-  [Cloud provider choice](#cloud-provider-choice).
+  2026). Until it is made, the resource server stays on the project's own
+  machines, and earlier work targets plain Linux so that it does not depend
+  on a provider. See [Cloud provider choice](#cloud-provider-choice).
 - **Later milestones:** ordered proposals, with implementation details to settle
   at each milestone. Their order is not a release-date commitment.
 - **Tracking:** task IDs remain stable. Check a task only after its outcome is
