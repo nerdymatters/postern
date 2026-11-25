@@ -436,7 +436,8 @@ with chosen audiences.
   [source-grounded implementation plan](docs/designs/private-spaces.md) on Oct 29,
   2026. This completes the design-definition task. An opt-in metadata/session
   runtime is now verified in isolation; complete content isolation is still pending.
-  M2-06's provider selection and migration remain open.
+  M2-06's migration remains open; the provider is chosen in the last step
+  ([CP-01](#cloud-provider-choice)).
 - [ ] **M2-02** Build invitations, acceptance, membership management and
   revocation. Decide who may create spaces and under what limits.
   The owner selected operator-approved creators with configurable per-account
@@ -490,8 +491,11 @@ with chosen audiences.
   On Oct 31, catalog pages for a member who sees little of a space holding 10,000
   or 100,000 resources took 3–17 ms locally instead of exceeding the five-second
   deadline ([catalog listing at scale](docs/runbooks/service-integration.md#catalog-listing-at-scale)).
-  Legacy content/object adapters, provider/region/budget, real account-store cutover
-  and complete hosted/object recovery verification remain; this task is not complete.
+  Legacy content/object adapters, real account-store cutover and complete
+  hosted/object recovery verification remain; this task is not complete. On Nov
+  25, 2026 the owner moved the provider, region and budget choice out of this
+  task to the last step ([CP-01](#cloud-provider-choice)); the hosted
+  verification that needs a provider follows that choice.
   On Nov 10 the owner settled tenancy: shared by default, a dedicated deployment
   on request, and a key per Postern kept outside the database
   ([reasons](docs/designs/storage.md#tenancy-shared-by-default-a-dedicated-copy-on-request)).
