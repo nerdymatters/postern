@@ -68,7 +68,9 @@ def test_native_catalog_and_private_boundaries(api, runtime):
     assert 'binding' not in response.text and 'fixture' not in response.text
     assert f.client.get(f.url+'/resources',params={'query':'Visible'},headers=h).json()['resources'][0]['id']==m.r
     assert f.client.get(f.url+'/resources',params={'query':"'; SELECT secret --"},headers=h).json()['resources']==[]
-    assert f.client.get(f.url+'/resources/'+m.r,headers=h).status_code==200
+    detail=f.client.get(f.url+'/resources/'+m.r,headers=h)
+    # The web viewer reads this exact shape (dashboard/web/src/space-content.tsx).
+    assert detail.status_code==200 and set(detail.json())=={'resource'} and detail.json()['resource']['id']==m.r
     for resource in (m.hidden,m.foreign,str(uuid.uuid4())):
         assert f.client.get(f.url+'/resources/'+resource,headers=h).status_code==404
     assert f.client.get(f'/v1/spaces/{m.t}/resources',headers=h).status_code==401

@@ -31,7 +31,8 @@ function server(kind: 'document' | 'video' = 'document') {
     const detail = { id: resource, title, kind, content_revision: 7, state: 'published' }
     if (path.endsWith('/session')) return json({ title: 'Workshop', role: 'member' })
     if (path.endsWith('/resources')) return json({ resources: [detail], next_cursor: null })
-    if (path.endsWith(`/resources/${resource}`)) return json(detail)
+    // The service wraps the detail row (postern/spaces.py: {'resource': ...}); the viewer read it unwrapped before.
+    if (path.endsWith(`/resources/${resource}`)) return json({ resource: detail })
     if (path.endsWith('/document')) return json({ resource_id: resource, revision: 7, page_count: 2 })
     if (/\/document\/pages\/\d+.jpg$/.test(path)) return jpeg()
     if (path.endsWith('/video/ticket')) return json({ ticket: 'pc_'+String.fromCharCode(97+state.tickets++).repeat(43), expires_in_seconds: 30 })
