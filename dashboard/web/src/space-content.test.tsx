@@ -131,6 +131,19 @@ test('account change clears an existing page and ignores a late page result', as
   await screen.findByRole('img', { name: 'Native resource, page 1' })
 })
 
+// Value: protects=a refused file open says what is true for every reason the service hides behind its uniform 404;
+//   fails_when=the viewer claims the member's access changed, or the wording drifts from the pinned text;
+//   why_new=the owner was told their access changed on Nov 23 when it had not; seam=fetch stubbed; no_claim=which of the hidden reasons applied
+test.each([404, 401])('a refused file open (%i) does not claim that access changed', async status => {
+  const f = server()
+  f.state.intercept = call => call.path.endsWith('/document') ? json({ error: 'not_found', message: 'Private content unavailable' }, status) : undefined
+  render(<SpaceContentPage {...props} />)
+  await screen.findByText("This file can't be opened right now. It may not be available in this Postern, or your access may have changed. Check access again or return to My Posterns.")
+  expect(screen.queryByText(/Your access to this Postern has changed/)).toBeNull()
+  expect(screen.getByRole('button', { name: 'Check access again' })).toBeTruthy()
+  expect(screen.queryByRole('img')).toBeNull()
+})
+
 test('hiding immediately clears pixels and foregrounding requires fresh authorization', async () => {
   const f = server()
   let visibility: DocumentVisibilityState = 'visible'
@@ -141,7 +154,7 @@ test('hiding immediately clears pixels and foregrounding requires fresh authoriz
   expect(screen.queryByRole('img')).toBeNull(); expect(objectUrls.revoked).toEqual(objectUrls.created)
   f.state.refuse = true
   act(() => { visibility = 'visible'; window.dispatchEvent(new Event('focus')) })
-  await screen.findByText(/Your access to this Postern has changed/)
+  await screen.findByText(/This file can't be opened right now/)
   expect(screen.queryByRole('img')).toBeNull()
 })
 
@@ -154,7 +167,7 @@ test('periodic authority refusal clears displayed pixels without waiting for nav
   await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
   expect(screen.queryByRole('img')).toBeNull()
   expect(objectUrls.revoked).toEqual(objectUrls.created)
-  expect(screen.getByText(/Your access to this Postern has changed/)).toBeTruthy()
+  expect(screen.getByText(/This file can't be opened right now/)).toBeTruthy()
 })
 
 test('a stalled authority loses displayed pixels at the ten-second deadline and cannot restore them late', async () => {

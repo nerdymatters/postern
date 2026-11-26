@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { accountToken, subscribeAccount } from './accounts-api'
 import { Link } from './routes'
-import { SpaceError, nativeContentEnabled, spaceMessage, type ContentRoute, type ResourceMetadata } from './spaces-api'
+import { SpaceError, fileMessage, nativeContentEnabled, type ContentRoute, type ResourceMetadata } from './spaces-api'
 import { Heading, useClient } from './spaces-ui'
 import { Button, Message, Panel } from './ui'
 
@@ -48,7 +48,7 @@ function ContentReader({ credential, space, resource, kind, revision }: Props) {
     }
     const fail = (failure: unknown) => {
       if (closed) return
-      stopped = true; clear(); setBusy(false); setError(spaceMessage(failure))
+      stopped = true; clear(); setBusy(false); setError(fileMessage(failure))
     }
     mediaFailure.current = () => fail(new SpaceError(503, 'media_unavailable', 'This content could not be displayed. Check access again.'))
     const armDeadline = () => {
