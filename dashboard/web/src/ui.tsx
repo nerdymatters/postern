@@ -1,4 +1,5 @@
-import type { ComponentProps, ReactNode } from 'react'
+import { useState, type ComponentProps, type ReactNode } from 'react'
+import { copyText } from './clipboard'
 import { PosternWordmark } from './PosternWordmark'
 
 const VARIANTS = {
@@ -49,6 +50,26 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
 }
 
 export const input = 'w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-4 py-3 text-base outline-none focus:border-neutral-900 dark:focus:border-neutral-100'
+
+/**
+ * Copy text to the clipboard and remember the result for that text only, so a
+ * result for an older value never shows. No reset effect: one that ran on mount
+ * after an early click (before React flushed effects) would wipe the result.
+ * `manual` is true when the browser blocked copying: show a ManualCopy field.
+ */
+export function useCopy(text: string) {
+  const [result, setResult] = useState<{ text: string; ok: boolean } | null>(null)
+  async function copy() {
+    const ok = await copyText(text)
+    setResult({ text, ok })
+  }
+  return { copy, copied: result?.text === text && result.ok, manual: result?.text === text && !result.ok }
+}
+
+/** The fallback when copying is blocked: a read-only field that selects itself on focus. */
+export function ManualCopy({ label, text, rows = 4 }: { label: string; text: string; rows?: number }) {
+  return <Field label={label}><textarea className={`${input} break-all font-mono text-sm`} rows={rows} readOnly value={text} onFocus={event => event.currentTarget.select()} /></Field>
+}
 
 export function Centred({ title, children }: { title: ReactNode; children?: ReactNode }) {
   return (

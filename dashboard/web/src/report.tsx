@@ -2,15 +2,13 @@ import { useEffect, useState } from 'react'
 import { SelfieImage } from './selfie'
 import { api, inline, type Denial, type Person, type Report as Opened } from './api'
 import { Link } from './routes'
-import { copyText } from './clipboard'
 import { day, moment } from './format'
-import { Button, Message, Panel } from './ui'
+import { Button, ManualCopy, Message, Panel, useCopy } from './ui'
 import { IconArrowRight } from './PosternIcons'
 
 export function Report({ postId, onBack }: { postId: string; onBack: () => void }) {
   const [report, setReport] = useState<Opened | null>(null)
   const [error, setError] = useState('')
-  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     let live = true
@@ -18,6 +16,9 @@ export function Report({ postId, onBack }: { postId: string; onBack: () => void 
       .catch(failure => { if (live) setError(inline(failure)) })
     return () => { live = false }
   }, [postId])
+  // The addresses the button copies: the people who have not opened the post yet.
+  const emails = (report?.people ?? []).filter(person => person.status === 'not_opened').map(person => person.email).join(', ')
+  const { copy, copied, manual } = useCopy(emails)
 
   if (!report) {
     return (
@@ -67,11 +68,12 @@ export function Report({ postId, onBack }: { postId: string; onBack: () => void 
           <Button
             variant="secondary"
             disabled={!waiting.length}
-            onClick={async () => setCopied(await copyText(waiting.map(person => person.email).join(', ')))}
+            onClick={() => void copy()}
           >
             {copied ? 'Copied' : 'Copy emails'}
           </Button>
         </div>
+        {waiting.length && manual ? <ManualCopy label="Email addresses — select and copy" text={emails} /> : null}
         {waiting.map(person => (
           <Row key={person.email} person={person} note={person.attempts ? attemptNote : 'Not opened yet'} />
         ))}

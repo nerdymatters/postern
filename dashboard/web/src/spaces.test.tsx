@@ -290,6 +290,16 @@ test('administrator sees removal of ordinary members but no promotion controls',
   expect(within(own).queryByRole('button', { name: 'Remove from Postern' })).toBeNull()
 })
 
+// Value: protects=a refused member list keeps the access-changed wording, which is accurate there;
+//   fails_when=the file viewer's hedged wording leaks into membership screens;
+//   why_new=only regex checks covered this path; seam=fetch stubbed; no_claim=the reason for the refusal
+test('a refused member list still says access to this Postern has changed', async () => {
+  const f = fake(); f.state.intercept = c => c.path.endsWith('/memberships') ? json({ error: 'not_found', message: 'Unavailable' }, 404) : undefined
+  open('/s/' + space + '/members')
+  await screen.findByText('Your access to this Postern has changed. Check access again or return to My Posterns.')
+  expect(screen.queryByText(/This file can't be opened/)).toBeNull()
+})
+
 test('member roster denial and late account-switch responses never show a directory', async () => {
   const f = fake(), held = deferred<Response>()
   f.state.intercept = c => c.path.endsWith('/memberships') ? c.authorization === 'Bearer ' + ps && accountToken() === 'pa_a' ? held.promise : json({ message: 'forbidden' }, 403) : undefined

@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, inline, type Config, type SignIn } from './api'
 import { inAppBrowser } from './browser'
-import { copyText } from './clipboard'
 import { loadIdentity } from './google'
-import { Button, Centred, Field, Message, Panel, Wordmark, input, Thai } from './ui'
+import { Button, Centred, Field, ManualCopy, Message, Panel, Wordmark, input, Thai, useCopy } from './ui'
 import { Link } from './routes'
 import { IconArrowRight, IconPrivacy } from './PosternIcons'
 import { useBranding } from './branding'
@@ -15,7 +14,8 @@ export function Landing({ config, notice, onSignedIn }: { config: Config; notice
   const [error, setError] = useState('')
   const [email, setEmail] = useState('')
   const [busy, setBusy] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const address = window.location.href
+  const { copy, copied, manual } = useCopy(address)
   const target = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -55,10 +55,11 @@ export function Landing({ config, notice, onSignedIn }: { config: Config; notice
             Tap the menu in the corner of this screen and choose "Open in Safari" or "Open in Chrome", or copy the
             link and paste it into a browser.
           </p>
-          <p className="break-all rounded-xl bg-neutral-100 dark:bg-neutral-800 px-4 py-3 font-mono text-xs text-neutral-700 dark:text-neutral-300">{window.location.href}</p>
-          <Button variant="secondary" onClick={async () => setCopied(await copyText(window.location.href))} className="w-full">
+          <p className="break-all rounded-xl bg-neutral-100 dark:bg-neutral-800 px-4 py-3 font-mono text-xs text-neutral-700 dark:text-neutral-300">{address}</p>
+          <Button variant="secondary" onClick={() => void copy()} className="w-full">
             {copied ? 'Link copied' : 'Copy the link'}
           </Button>
+          {manual ? <ManualCopy label="Link — select and copy" text={address} rows={3} /> : null}
         </Panel>
       </Centred>
     )

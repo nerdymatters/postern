@@ -69,6 +69,17 @@ export function spaceMessage(error: unknown) {
   if (error instanceof SpaceError && [401, 403, 404].includes(error.status)) return 'Your access to this Postern has changed. Check access again or return to My Posterns.'
   return error instanceof Error ? error.message : 'The request could not be completed. Please try again.'
 }
+/**
+ * The file viewer's message. The service answers the same 404 on purpose whether
+ * the file is not available, file reading is off for this Postern, or the member's
+ * rights changed (do not probe which), so "access has changed" would often be false.
+ * A 401 means the space session ended or was refused: Check access again opens a
+ * new one, and the wording below stays true if the access did change.
+ */
+export function fileMessage(error: unknown) {
+  if (error instanceof SpaceError && [401, 403, 404].includes(error.status)) return "This file can't be opened right now. It may not be available in this Postern, or your access may have changed. Check access again or return to My Posterns."
+  return spaceMessage(error)
+}
 
 /** Per-screen, memory-only resource sessions. Account tokens go only to the account service. */
 export class SpacesClient {
