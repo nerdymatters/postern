@@ -75,7 +75,9 @@ function ContentReader({ credential, space, resource, kind, revision }: Props) {
           // The detail route wraps its row: {resource: {id, kind, title, state, content_revision}} (postern/spaces.py detail).
           const detail = (await client.resource<{ resource: ResourceMetadata }>(space, `/resources/${resource}`, 'GET', undefined, abort.signal))?.resource
           if (!current()) return
-          if (!detail || detail.id !== resource || detail.kind !== kind || detail.content_revision !== revision || detail.state !== 'published' || typeof detail.title !== 'string') throw new SpaceError(404, 'content_changed', 'This resource is unavailable.')
+          // A body of the wrong shape is a broken response, not a loss of access: say so, as the other content calls do.
+          if (!detail || typeof detail !== 'object' || typeof detail.title !== 'string') throw new SpaceError(502, 'invalid_response', 'This Postern returned an incomplete response.')
+          if (detail.id !== resource || detail.kind !== kind || detail.content_revision !== revision || detail.state !== 'published') throw new SpaceError(404, 'content_changed', 'This resource is unavailable.')
           title = detail.title; metadataKey = key
         }
         if (kind === 'document' && initial) {

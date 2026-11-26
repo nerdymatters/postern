@@ -70,7 +70,10 @@ def test_native_catalog_and_private_boundaries(api, runtime):
     assert f.client.get(f.url+'/resources',params={'query':"'; SELECT secret --"},headers=h).json()['resources']==[]
     detail=f.client.get(f.url+'/resources/'+m.r,headers=h)
     # The web viewer reads this exact shape (dashboard/web/src/space-content.tsx).
-    assert detail.status_code==200 and set(detail.json())=={'resource'} and detail.json()['resource']['id']==m.r
+    assert detail.status_code==200 and set(detail.json())=={'resource'}
+    row=detail.json()['resource']
+    assert set(row)=={'id','kind','title','state','content_revision'} and row['id']==m.r and row['state']=='published'
+    assert isinstance(row['kind'],str) and isinstance(row['title'],str) and type(row['content_revision']) is int
     for resource in (m.hidden,m.foreign,str(uuid.uuid4())):
         assert f.client.get(f.url+'/resources/'+resource,headers=h).status_code==404
     assert f.client.get(f'/v1/spaces/{m.t}/resources',headers=h).status_code==401

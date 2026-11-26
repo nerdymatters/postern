@@ -75,6 +75,23 @@ test('catalog links preserve resource identity and revision only when enabled', 
   expect(screen.queryByRole('link', { name: /Read document/ })).toBeNull()
 })
 
+// Value: protects=a detail body of the wrong shape is refused as a broken response, never opened and never shown as lost access;
+//   fails_when=the viewer reads a bare row again, drops the missing-row guard, or reports a malformed body as 404; why_new=every other
+//   viewer test answers the detail route in the right shape; seam=none; no_claim=real service (stubbed fetch; test_service_api pins the shape)
+test.each([
+  ['no resource key', {}],
+  ['a null row', { resource: null }],
+  ['the bare row', { id: resource, title: 'Native resource', kind: 'document', content_revision: 7, state: 'published' }],
+])('a detail body with %s is refused as an incomplete response', async (_label, body) => {
+  const f = server()
+  f.state.intercept = call => call.path.endsWith(`/resources/${resource}`) ? json(body) : undefined
+  render(<SpaceContentPage {...props} />)
+  await screen.findByText('This Postern returned an incomplete response.')
+  expect(screen.queryByText(/your access may have changed/)).toBeNull()
+  expect(screen.queryByRole('img')).toBeNull()
+  expect(f.calls.some(call => call.path.endsWith('/pages/0.jpg'))).toBe(false)
+})
+
 test('document pages use authenticated no-store blobs and release URLs on navigation and unmount', async () => {
   const f = server(), shown = render(<SpaceContentPage {...props} />)
   const first = await screen.findByRole('img', { name: 'Native resource, page 1' })
