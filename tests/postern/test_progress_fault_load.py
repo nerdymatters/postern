@@ -65,6 +65,51 @@ def test_export_pause_with_existing_batch_can_recover(tmp_path, monkeypatch, pen
     assert injected and report['status'] == 'completed'
 
 
+def test_reader_page_in_flight_across_the_media_window_cannot_requeue_the_item(tmp_path, monkeypatch):
+    """A reader page that meets the injected missing derivative may finish its re-queue after the probe has
+    restored the page and marked it ready. Force that order: hold the reader's re-queue until the restore."""
+    apps, reader_hit, held = [], threading.Event(), []
+    original_start, original_get, original_write = probe.Running.start, probe.httpx.Client.get, service_module.Service.write
+    def start(app):
+        apps.append(app)
+        return original_start(app)
+    def in_media_window():
+        return bool(apps) and getattr(apps[0].service.__dict__.get('composite'), '__name__', '') == 'missing'
+    def get(client, url, **kwargs):
+        if (threading.current_thread() is threading.main_thread() and str(url).endswith('/page/0.jpg')
+                and in_media_window()):
+            assert reader_hit.wait(5), 'No reader page met the injected missing derivative'
+        return original_get(client, url, **kwargs)
+    async def write(service, operation, timings=None):
+        code = getattr(operation, '__code__', None)
+        if code and "UPDATE items SET derive_status='queued' WHERE id=? AND derive_status='ready'" in code.co_consts \
+                and not held:
+            held.append(True)
+            reader_hit.set()
+            def restored():
+                deadline = time.monotonic()+5
+                while in_media_window() and time.monotonic() < deadline:
+                    time.sleep(.01)  # gstack-timing-ok: poll for the probe's restore of the missing derivative.
+                # Give a restore that marks the item ready at once (the race) up to one second to commit.
+                deadline = time.monotonic()+1
+                while time.monotonic() < deadline and service.db.read(lambda db: db.execute(
+                        'SELECT derive_status FROM items WHERE id=?', (probe.capacity.PDF,)).fetchone()[0]) != 'ready':
+                    time.sleep(.01)  # gstack-timing-ok: poll for the ready mark the reader's re-queue must not undo.
+            await probe.asyncio.to_thread(restored)
+        return await original_write(service, operation, timings)
+    monkeypatch.setattr(probe.Running, 'start', start)
+    monkeypatch.setattr(probe.httpx.Client, 'get', get)
+    monkeypatch.setattr(service_module.Service, 'write', write)
+    output = tmp_path/'media-window'
+    try:
+        report = probe.run(output)
+    except AssertionError:
+        report = json.loads((output/'report.json').read_text())
+    assert held, 'The forced interleaving did not happen'
+    assert report['status'] == 'completed', (report['failures'], report.get('reader_errors'))
+    assert report['requests']['expected_media_refusals'] >= 2
+
+
 @pytest.mark.parametrize('tamper', [None, {'audit': 'unavailable'}, {'storage': 'low'}])
 def test_historical_import_backup_delay_during_export_fault_is_expected(tmp_path, monkeypatch, tamper):
     observed = threading.Event()
@@ -110,7 +155,7 @@ def test_backup_delay_outside_import_export_window_fails(tmp_path, monkeypatch):
     with pytest.raises(AssertionError):
         probe.run(output)
     report = json.loads((output/'report.json').read_text())
-    assert report['status'] == 'failed' and 'health contract' in report['failures']
+    assert report['status'] == 'failed' and 'health contract' in report['failures'], report.get('reader_errors')
 
 
 def test_final_disclosure_bypass_fails_the_sustained_probe(tmp_path, monkeypatch):
@@ -171,7 +216,7 @@ def test_sustained_cpu_guard_fails_the_fault_probe(tmp_path, monkeypatch):
         probe.run(output)
     report = json.loads((output/'report.json').read_text())
     assert report['status'] == 'failed'
-    assert 'host CPU exceeded70% for five seconds' in report['failures']
+    assert 'host CPU exceeded70% for five seconds' in report['failures'], report.get('reader_errors')
 
 
 def test_wrong_reader_progress_after_rollback_fails(tmp_path, monkeypatch):
