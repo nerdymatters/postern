@@ -4,10 +4,9 @@ import { PostTitle } from './post-title'
 import { Categories } from './categories'
 import { SelfieHistory } from './selfie'
 import { api, inline, type AdminHealth, type Post } from './api'
-import { copyText } from './clipboard'
 import { moment, when } from './format'
 import { Link, navigate } from './routes'
-import { Button, Field, Message, Panel, input } from './ui'
+import { Button, Field, ManualCopy, Message, Panel, input, useCopy } from './ui'
 import { IconArchive, IconArrowRight, IconManage, IconNewPost, IconNotOnList, IconReport, IconSearch, IconStaff } from './PosternIcons'
 
 const ACCEPTED = '.pdf,.jpg,.jpeg,.png,.heic,.heif,.mp4'
@@ -174,7 +173,8 @@ function Preparation({ post, onChanged, onRenamed }: { post: Post; onChanged: ()
   const [error, setError] = useState('')
   const [publishing, setPublishing] = useState(false)
   const [note, setNote] = useState('')
-  const [copied, setCopied] = useState(false)
+  const link = `${window.location.origin}/post/${post.id}`
+  const { copy, copied, manual } = useCopy(link)
   const mounted = useRef(true)
   useEffect(() => () => { mounted.current = false }, [])
 
@@ -247,7 +247,6 @@ function Preparation({ post, onChanged, onRenamed }: { post: Post; onChanged: ()
     }
   }
 
-  const link = `${window.location.origin}/post/${post.id}`
   return (
     <Panel className="space-y-4">
       <PostTitle post={post} onChanged={onRenamed} />
@@ -284,13 +283,14 @@ function Preparation({ post, onChanged, onRenamed }: { post: Post; onChanged: ()
           <Button onClick={publish} disabled={!post.items.length || preparing || publishing}>Publish</Button>
         ) : null}
         {post.status === 'published' ? (
-          <Button variant="secondary" onClick={async () => setCopied(await copyText(link))}>
+          <Button variant="secondary" onClick={() => void copy()}>
             {copied ? 'Link copied' : 'Copy link'}
           </Button>
         ) : null}
         {post.status !== 'archived' ? <Button variant="secondary" onClick={archive}>Archive</Button> : null}
         <Button variant="quiet" onClick={() => navigate(`/admin/posts/${post.id}`)}>Who opened it</Button>
       </div>
+      {post.status === 'published' && manual ? <ManualCopy label="Post link — select and copy" text={link} rows={2} /> : null}
       {post.status === 'published' ? (
         <p className="break-all rounded-xl bg-neutral-100 dark:bg-neutral-800 px-4 py-3 font-mono text-xs text-neutral-700 dark:text-neutral-300">{link}</p>
       ) : null}

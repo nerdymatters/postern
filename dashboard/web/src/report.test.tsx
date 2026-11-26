@@ -71,3 +71,30 @@ test('mixed document and video posts use neutral viewing wording for attempts', 
   await screen.findByText('Tried to open · no viewing recorded')
   expect(screen.queryByText(/nothing served/)).toBeNull()
 })
+
+// Value: protects=an admin whose browser blocks copying can still take the unopened readers' addresses;
+//   fails_when=Copy emails fails silently with no manual copy field;
+//   why_new=copyText was always mocked to succeed; seam=clipboard module mocked; no_claim=text selection on focus
+test('a blocked clipboard offers the unopened readers\' addresses for manual copy', async () => {
+  vi.mocked(copyText).mockResolvedValueOnce(false)
+  vi.spyOn(api, 'report').mockResolvedValue(report(post('p1', 'Tip pooling policy')))
+  render(<Report postId="p1" onBack={() => {}} />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Copy emails' }))
+  expect(await screen.findByLabelText('Email addresses — select and copy')).toHaveProperty('value', 'carlos.rivera@example.invalid')
+  screen.getByRole('button', { name: 'Copy emails' })
+})
+
+// Value: protects=a copy that works on a retry says Copied and takes the manual field away;
+//   fails_when=the success label is lost, or the fallback stays up after a successful copy;
+//   why_new=the success label had no assertion; seam=clipboard module mocked; no_claim=real clipboard access
+test('after a blocked copy, a successful retry of the unopened readers\' addresses says Copied', async () => {
+  vi.mocked(copyText).mockResolvedValueOnce(false)
+  vi.spyOn(api, 'report').mockResolvedValue(report(post('p1', 'Tip pooling policy')))
+  render(<Report postId="p1" onBack={() => {}} />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Copy emails' }))
+  await screen.findByLabelText('Email addresses — select and copy')
+  fireEvent.click(screen.getByRole('button', { name: 'Copy emails' }))
+  await screen.findByRole('button', { name: 'Copied' })
+  expect(copyText).toHaveBeenCalledWith('carlos.rivera@example.invalid')
+  expect(screen.queryByLabelText('Email addresses — select and copy')).toBeNull()
+})

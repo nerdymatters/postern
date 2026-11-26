@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { expect, test } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, expect, test, vi } from 'vitest'
 import { inAppBrowser } from './browser'
 import { Landing } from './landing'
 import { world } from './testing'
@@ -42,4 +42,40 @@ test('a real browser in demo mode gets the email box', () => {
   render(<Landing config={world().config} notice="" onSignedIn={() => {}} />)
   screen.getByRole('button', { name: 'Continue' })
   expect(screen.queryByText('Open in Safari or Chrome')).toBeNull()
+})
+
+afterEach(() => { vi.unstubAllGlobals() })
+
+function clipboard(write: () => Promise<void>) {
+  const writeText = vi.fn(write)
+  vi.stubGlobal('navigator', Object.create(navigator, { clipboard: { value: { writeText } } }))
+  return writeText
+}
+
+// Value: protects=a reader stuck in a chat app's browser can still take the link when copying is blocked;
+//   fails_when=Copy the link fails silently with no manual copy field;
+//   why_new=no test clicked Copy the link; seam=navigator.clipboard stubbed; no_claim=text selection on focus
+test('in an in-app browser, a blocked clipboard offers the link for manual copy', async () => {
+  agent(MESSENGER)
+  clipboard(async () => { throw new Error('blocked') })
+  render(<Landing config={world().config} notice="" onSignedIn={() => {}} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Copy the link' }))
+  expect(await screen.findByLabelText('Link — select and copy')).toHaveProperty('value', window.location.href)
+})
+
+// Value: protects=a copy that works on a retry says so and takes the manual field away;
+//   fails_when=the success label is lost, or the fallback stays up after a successful copy;
+//   why_new=no test clicked Copy the link; seam=navigator.clipboard stubbed; no_claim=real clipboard access
+test('in an in-app browser, a successful retry after a blocked copy says the link was copied', async () => {
+  agent(MESSENGER)
+  let blocked = true
+  const writeText = clipboard(async () => { if (blocked) throw new Error('blocked') })
+  render(<Landing config={world().config} notice="" onSignedIn={() => {}} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Copy the link' }))
+  await screen.findByLabelText('Link — select and copy')
+  blocked = false
+  fireEvent.click(screen.getByRole('button', { name: 'Copy the link' }))
+  await screen.findByRole('button', { name: 'Link copied' })
+  expect(writeText).toHaveBeenCalledWith(window.location.href)
+  expect(screen.queryByLabelText('Link — select and copy')).toBeNull()
 })

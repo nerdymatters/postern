@@ -1,8 +1,49 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import { Admin } from './admin'
 import { Denials, Report } from './report'
-import { calls, draft, installApi, world } from './testing'
+import { calls, draft, installApi, post, world } from './testing'
+
+afterEach(() => { vi.unstubAllGlobals() })
+
+function clipboard(write: () => Promise<void>) {
+  const writeText = vi.fn(write)
+  vi.stubGlobal('navigator', Object.create(navigator, { clipboard: { value: { writeText } } }))
+  return writeText
+}
+
+async function openPublished() {
+  installApi(world({ posts: [post('p1', 'Tip pooling policy')] }))
+  render(<Admin />)
+  await waitFor(() => screen.getByText('Tip pooling policy'))
+  fireEvent.click(screen.getByRole('button', { name: 'Manage' }))
+  return await screen.findByRole('button', { name: 'Copy link' })
+}
+
+// Value: protects=an admin whose browser blocks copying can still take the post link;
+//   fails_when=Copy link fails silently with no manual copy field;
+//   why_new=no test reached the failure branch of Copy link; seam=navigator.clipboard stubbed; no_claim=text selection on focus
+test('a blocked clipboard offers the post link for manual copy', async () => {
+  clipboard(async () => { throw new Error('blocked') })
+  fireEvent.click(await openPublished())
+  expect(await screen.findByLabelText('Post link — select and copy')).toHaveProperty('value', `${window.location.origin}/post/p1`)
+  screen.getByRole('button', { name: 'Copy link' })
+})
+
+// Value: protects=a copy that works on a retry says so and takes the manual field away;
+//   fails_when=the success label is lost, or the fallback stays up after a successful copy;
+//   why_new=the success branch had no test; seam=navigator.clipboard stubbed; no_claim=real clipboard access
+test('after a blocked copy, a successful retry says the link was copied and hides the manual field', async () => {
+  let blocked = true
+  const writeText = clipboard(async () => { if (blocked) throw new Error('blocked') })
+  fireEvent.click(await openPublished())
+  await screen.findByLabelText('Post link — select and copy')
+  blocked = false
+  fireEvent.click(screen.getByRole('button', { name: 'Copy link' }))
+  await screen.findByRole('button', { name: 'Link copied' })
+  expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/post/p1`)
+  expect(screen.queryByLabelText('Post link — select and copy')).toBeNull()
+})
 
 test('a draft is created, published through its status url, and offers a link to copy', async () => {
   const state = world({ posts: [draft('p1', 'Tip pooling policy')] })
