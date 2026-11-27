@@ -144,6 +144,12 @@ security fixes still take precedence.
 **What:** Run docs/runbooks/linux.md end to end on the first real Debian or
 Ubuntu host (a hardware reboot, journald retention, network wait-online, public
 ingress and a synthetic conversion), then close the remaining notes below.
+On Nov 27, 2026 the owner chose the host: the project's physical Linux standby
+host, the machine that already runs the Debian rehearsal VM, so the rehearsal
+needs no cloud provider. It runs an Arch-based distribution, not Debian or
+Ubuntu, so the run proves the host behavior (hardware reboot, journald,
+wait-online, ingress) while the Debian container and VM rehearsals keep
+covering the Debian packages.
 
 **Why:** v0.27.0's install, restart, boot, update, uninstall and Rust-to-Python
 fallback were rehearsed only in a disposable Debian 13 systemd container, and

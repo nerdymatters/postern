@@ -27,14 +27,15 @@ described in [Architecture](docs/architecture.md).
   service passed a controlled pilot on Oct 28, 2026 from a separate pilot
   frontend; registration stays closed outside watched pilot windows. Opening
   registration waits for M0 launch preparation, which runs alongside it.
-- **Next engineering priority:** finish the Rust pilot (RS-07), then
-  [Linux support](#linux-support), then M2 content integration. The owner set
-  this order on Nov 10, 2026: content inside Posterns is the only road to an
-  outside customer, and every way of hosting the server needs Linux. RS-08 and
-  RS-09 resume after the first outside Postern, or earlier where measurement
-  shows a cost. This replaces the Nov 1 order, which put the whole Rust server
-  migration ahead of M2 content because of office-Mac overload. Urgent
-  production/security fixes and required launch checks retain precedence.
+- **Next engineering priority:** [Linux support](#linux-support), then M2
+  content integration. The Rust pilot (RS-07), first in this order, finished on
+  Nov 16, 2026. The owner set this order on Nov 10, 2026: content inside
+  Posterns is the only road to an outside customer, and every way of hosting
+  the server needs Linux. RS-08 and RS-09 resume after the first outside
+  Postern, or earlier where measurement shows a cost. This replaces the Nov 1
+  order, which put the whole Rust server migration ahead of M2 content because
+  of office-Mac overload. Urgent production/security fixes and required launch
+  checks retain precedence.
 - **Tenancy:** one shared platform and database for every Postern, and later a
   dedicated deployment of the same software for a customer who needs their data
   kept apart. Reasons and references are in the
@@ -54,8 +55,8 @@ described in [Architecture](docs/architecture.md).
 |---|---|---|
 | M0 Launch preparation | In progress; parallel with M1 | Current deployment baseline |
 | M1 Accounts and profiles | Production pilot passed; registration closed | M0 launch checks before release |
-| Rust server migration | P1; RS-06 passed; the RS-07 live pilot has served production from Rust since Nov 9 with the watchdog guarding, and a staff document check passed; Python remains the code default, and v0.30.0 selects Rust at a fresh macOS install with the verified wheel | The Nov 16 read-only pilot check, then the v0.30.0 release; RS-08–RS-09 after Linux support and M2 content |
-| Linux support | In progress alongside RS-07 observation (owner, Nov 11): LX-01 done, so conversions run under bubblewrap and CI runs the full suite on Ubuntu; LX-02's host layer shipped in v0.27.0 and was rehearsed in a Debian 13 systemd container | A real-host rehearsal before a Linux host serves production |
+| Rust server migration | P1; RS-07 done Nov 16: the pilot check passed, v0.30.0 selects Rust at a fresh macOS install with the verified wheel, and v0.30.1 serves production from Rust under the watchdog; Python remains the code default and the Linux selection | RS-08–RS-09 after Linux support and M2 content |
+| Linux support | Next: LX-01 done, so conversions run under bubblewrap and CI runs the full suite on Ubuntu; LX-02's host layer shipped in v0.27.0 and was rehearsed in a Debian 13 systemd container; the real-host rehearsal runs on the project's physical Linux standby host (owner, Nov 27) | A real-host rehearsal before a Linux host serves production |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
 | M2 Private spaces and resource catalog | Isolated metadata/onboarding and opt-in content implemented; migration and hosting pending | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
@@ -221,7 +222,7 @@ its background workers. Python remains the code default.
   tested: a removed projection table or trigger is now rebuilt, and rowid-alias
   moves are mirrored. See the
   [capacity protocol](docs/runbooks/capacity.md#incremental-dashboard-candidate-protocol).
-- [ ] **RS-07 — Make the first reducer the serving default.** Use the reviewed
+- [x] **RS-07 — Make the first reducer the serving default.** Use the reviewed
   release, backup, single-writer checks and fresh benchmark; confirm real staff
   behavior, observe sustained operation, and retain a tested Python fallback.
   v0.23.0 was installed on November 7 with Python serving, after a startup and
@@ -244,6 +245,14 @@ its background workers. Python remains the code default.
   The code default and Linux installs stay on Python. By owner decision on
   November 13, it merges on November 16 if a read-only check shows the pilot
   stayed clean.
+  **Done Nov 16:** the read-only pilot check passed (Rust serving on one process
+  since the November 9 restart, three matching staff-report comparisons, the
+  selection with no fallback), then v0.30.0 (#34) and v0.30.1 (#35) merged and
+  v0.30.1 was installed on the office Mac. On November 27 the same check showed
+  Rust serving on the process started at that install, the watchdog guarding,
+  two further comparisons with a full Python replay all matching and no native
+  errors. A Linux install selects Rust once the Linux bundle ships the wheel
+  (tracked in TODOS.md under the Linux real-host item).
 - [ ] **RS-08 — Migrate the remaining server responsibilities.** Inventory and
   rank the next slice using measured cost before each port. The remaining areas
   are HTTP routing and sessions/authorization; catalog and reports; durable audit
