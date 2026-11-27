@@ -56,7 +56,7 @@ described in [Architecture](docs/architecture.md).
 | M0 Launch preparation | In progress; parallel with M1 | Current deployment baseline |
 | M1 Accounts and profiles | Production pilot passed; registration closed | M0 launch checks before release |
 | Rust server migration | P1; RS-07 done Nov 16: the pilot check passed, v0.30.0 selects Rust at a fresh macOS install with the verified wheel, and v0.30.1 serves production from Rust under the watchdog; Python remains the code default and the Linux selection | RS-08–RS-09 after Linux support and M2 content |
-| Linux support | Next: LX-01 done, so conversions run under bubblewrap and CI runs the full suite on Ubuntu; LX-02's host layer shipped in v0.27.0 and was rehearsed in a Debian 13 systemd container; the real-host rehearsal runs on a spare office machine with Debian 13 (owner, Nov 27) | A real-host rehearsal before a Linux host serves production |
+| Linux support | Next: LX-01 done, so conversions run under bubblewrap and CI runs the full suite on Ubuntu; LX-02's host layer shipped in v0.27.0 and was rehearsed in a Debian 13 systemd container; the real-host rehearsal runs on the project's physical Linux standby host (owner, Nov 27) | A real-host rehearsal before a Linux host serves production |
 | UI design and marketing | Planned with Ploy.ai; parallel with M1 | Product direction and current user flows |
 | M2 Private spaces and resource catalog | Isolated metadata/onboarding and opt-in content implemented; migration and hosting pending | M1 identity and access boundaries |
 | M3 Read-only agent access | Later | M2 resource API and permissions |
