@@ -31,7 +31,8 @@ function server(kind: 'document' | 'video' = 'document') {
     const detail = { id: resource, title, kind, content_revision: 7, state: 'published' }
     if (path.endsWith('/session')) return json({ title: 'Workshop', role: 'member' })
     if (path.endsWith('/resources')) return json({ resources: [detail], next_cursor: null })
-    if (path.endsWith(`/resources/${resource}`)) return json(detail)
+    // The service wraps the detail row (postern/spaces.py: {'resource': ...}); the viewer read it unwrapped before.
+    if (path.endsWith(`/resources/${resource}`)) return json({ resource: detail })
     if (path.endsWith('/document')) return json({ resource_id: resource, revision: 7, page_count: 2 })
     if (/\/document\/pages\/\d+.jpg$/.test(path)) return jpeg()
     if (path.endsWith('/video/ticket')) return json({ ticket: 'pc_'+String.fromCharCode(97+state.tickets++).repeat(43), expires_in_seconds: 30 })
@@ -72,6 +73,23 @@ test('catalog links preserve resource identity and revision only when enabled', 
   render(<SpaceOnboarding account={account} credential="pa_a" path={`/s/${space}`} />)
   await screen.findByText('Resource previews and playback are not available in this version.')
   expect(screen.queryByRole('link', { name: /Read document/ })).toBeNull()
+})
+
+// Value: protects=a detail body of the wrong shape is refused as a broken response, never opened and never shown as lost access;
+//   fails_when=the viewer reads a bare row again, drops the missing-row guard, or reports a malformed body as 404; why_new=every other
+//   viewer test answers the detail route in the right shape; seam=none; no_claim=real service (stubbed fetch; test_service_api pins the shape)
+test.each([
+  ['no resource key', {}],
+  ['a null row', { resource: null }],
+  ['the bare row', { id: resource, title: 'Native resource', kind: 'document', content_revision: 7, state: 'published' }],
+])('a detail body with %s is refused as an incomplete response', async (_label, body) => {
+  const f = server()
+  f.state.intercept = call => call.path.endsWith(`/resources/${resource}`) ? json(body) : undefined
+  render(<SpaceContentPage {...props} />)
+  await screen.findByText('This Postern returned an incomplete response.')
+  expect(screen.queryByText(/your access may have changed/)).toBeNull()
+  expect(screen.queryByRole('img')).toBeNull()
+  expect(f.calls.some(call => call.path.endsWith('/pages/0.jpg'))).toBe(false)
 })
 
 test('document pages use authenticated no-store blobs and release URLs on navigation and unmount', async () => {
